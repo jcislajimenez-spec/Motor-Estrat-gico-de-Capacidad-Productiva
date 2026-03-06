@@ -128,6 +128,69 @@ def save_csv(df: pd.DataFrame, name: str) -> None:
     # Guardamos SIEMPRE como utf-8-sig para compatibilidad con Excel
     df.to_csv(path, index=False, encoding="utf-8-sig")
 
+# =========================================================
+# DB IO (Neon / Postgres)
+# =========================================================
+def _has_db() -> bool:
+    return bool(os.getenv("DATABASE_URL"))
+
+@st.cache_data
+def load_table(table: str) -> pd.DataFrame:
+    """
+    Carga una tabla completa desde Postgres (Neon) y devuelve DataFrame.
+    Si no hay DATABASE_URL, cae a CSV local (mismo nombre + .csv) para no romper.
+    """
+    if not _has_db():
+        return load_csv(f"{table}.csv")
+
+    c = get_connection()
+    with c.cursor() as cur:
+        cur.execute(f'SELECT * FROM "{table}"')
+        cols = [d[0] for d in cur.description]
+        rows = cur.fetchall()
+    df = pd.DataFrame(rows, columns=cols)
+
+    # Limpieza suave (mismo criterio que CSV)
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].astype(str).str.strip()
+    return df
+
+def save_table(df: pd.DataFrame, table: str) -> None:
+    """
+    Sobrescribe completamente la tabla en Postgres con el contenido de df.
+    (Es el equivalente a "guardar el CSV", pero persistente en Neon.)
+    Si no hay DATABASE_URL, cae a CSV local.
+    """
+    if not _has_db():
+        save_csv(df, f"{table}.csv")
+        return
+
+    c = get_connection()
+    cols = list(df.columns)
+    if not cols:
+        return
+
+    placeholders = ",".join(["%s"] * len(cols))
+    col_list = ",".join([f'"{cname}"' for cname in cols])
+
+    # Convertimos NaN -> None para psycopg2
+    values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+
+    with c.cursor() as cur:
+        cur.execute(f'TRUNCATE TABLE "{table}"')
+        cur.executemany(
+            f'INSERT INTO "{table}" ({col_list}) VALUES ({placeholders})',
+            values
+        )
+    c.commit()
+
+    # invalidar cache de lecturas
+    try:
+        load_table.clear()
+    except Exception:
+        pass
+
 
 def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     out = df.copy()
@@ -167,10 +230,10 @@ st.sidebar.caption(f"Semanas equivalentes: **{weeks_equiv:.2f} sem/año**")
 # =========================================================
 # CARGA DATOS
 # =========================================================
-models_df = run_query("SELECT * FROM models")
-times_df = run_query("SELECT * FROM models_process_times")
-stations_df = run_query("SELECT * FROM lines_process_stations")
-compat_df = run_query("SELECT * FROM compatibility")
+models_df = load_table("models")
+times_df = load_table("models_process_times")
+stations_df = load_table("lines_process_stations")
+compat_df = load_table("compatibility")
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
@@ -274,7 +337,7 @@ with tabs[1]:
         out["model"] = out["model"].astype(str).str.strip()
         out["description"] = out["description"].astype(str).str.strip()
         out["active"] = out["active"].astype(bool).astype(int)
-        save_csv(out, "models.csv")
+        save_table(out, "models")
         st.session_state["models_saved"] = True
         st.cache_data.clear()
         st.rerun()
@@ -302,7 +365,7 @@ with tabs[1]:
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
-        save_csv(out, "models_process_times.csv")
+        save_table(out, "models_process_times")
         st.session_state["times_saved"] = True
         st.cache_data.clear()
         st.rerun()
@@ -332,7 +395,7 @@ with tabs[1]:
         out["process"] = out["process"].astype(str).str.strip()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0).astype(int)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0).astype(int)
-        save_csv(out, "lines_process_stations.csv")
+        save_table(out, "lines_process_stations")
         st.session_state["stations_saved"] = True
         st.cache_data.clear()
         st.rerun()
@@ -369,7 +432,7 @@ with tabs[1]:
 
     if st.button("💾 Guardar compatibilidades"):
         out = pd.DataFrame(edited_rows)
-        save_csv(out, "compatibility.csv")
+        save_table(out, "compatibility")
         st.session_state["compat_saved"] = True
         st.cache_data.clear()
         st.rerun()
