@@ -28,6 +28,9 @@ conn = None
 if DATABASE_URL:
     conn = psycopg2.connect(DATABASE_URL)
 
+def get_connection():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
 # --- Helper cacheado para consultas SQL ---
 @st.cache_data
 def run_query(query: str):
