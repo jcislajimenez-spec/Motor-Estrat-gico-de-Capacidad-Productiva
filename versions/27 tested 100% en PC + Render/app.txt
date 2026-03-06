@@ -3,7 +3,6 @@ import sys
 import streamlit as st
 import pandas as pd
 from PIL import Image
-import psycopg2
 
 def resource_path(relative_path: str) -> str:
     """Devuelve la ruta absoluta a un recurso.
@@ -21,20 +20,6 @@ st.set_page_config(
     page_title="Planificador de Capacidad",
     layout="wide"
 )
-
-# --- Conexión a base de datos Neon ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
-conn = None
-if DATABASE_URL:
-    conn = psycopg2.connect(DATABASE_URL)
-
-# --- Helper cacheado para consultas SQL ---
-@st.cache_data
-def run_query(query: str):
-    if conn is None:
-        return pd.DataFrame()
-    return pd.read_sql(query, conn)
-
 
 ASSETS_DIR = resource_path("assets")
 # --- Cargar logo ---
