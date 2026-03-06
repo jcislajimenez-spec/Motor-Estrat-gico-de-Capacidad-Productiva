@@ -167,10 +167,10 @@ st.sidebar.caption(f"Semanas equivalentes: **{weeks_equiv:.2f} sem/año**")
 # =========================================================
 # CARGA DATOS
 # =========================================================
-models_df = load_csv("models.csv")
-times_df = load_csv("models_process_times.csv")
-stations_df = load_csv("lines_process_stations.csv")
-compat_df = load_csv("compatibility.csv")
+models_df = run_query("SELECT * FROM models")
+times_df = run_query("SELECT * FROM models_process_times")
+stations_df = run_query("SELECT * FROM lines_process_stations")
+compat_df = run_query("SELECT * FROM compatibility")
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
