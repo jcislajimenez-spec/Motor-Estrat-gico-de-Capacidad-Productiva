@@ -1165,7 +1165,7 @@ with tabs[3]:
                                     x=0.5, y=0.5, font=dict(size=16), showarrow=False
                                 )]
                             )
-                            st.plotly_chart(fig_d, use_container_width=True, key=f"chart_donut_{sel_model}")
+                            st.plotly_chart(fig_d, use_container_width=True, key=f"chart_donut_{m}")
 
                             df_m = pd.DataFrame({
                                 "": ["Seleccionado", "Máximo modelo"],
