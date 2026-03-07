@@ -359,7 +359,13 @@ with tabs[1]:
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "cycle_time": st.column_config.NumberColumn("cycle_time", help="Horas por unidad (HH/ud) en ese proceso.")
+            "cycle_time": st.column_config.NumberColumn(
+                "cycle_time",
+                help="Horas por unidad (HH/ud) en ese proceso.",
+                min_value=0.0,
+                step=0.1,
+                format="%.2f"
+            )
         }
     )
 
@@ -387,8 +393,8 @@ with tabs[1]:
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "stations": st.column_config.NumberColumn("stations", min_value=0, step=1),
-            "operators_per_station": st.column_config.NumberColumn("operators_per_station", min_value=0, step=1),
+            "stations": st.column_config.NumberColumn("stations", min_value=0.0, step=0.1, format="%.2f"),
+            "operators_per_station": st.column_config.NumberColumn("operators_per_station", min_value=0.0, step=0.1, format="%.2f"),
         }
     )
 

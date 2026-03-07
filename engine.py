@@ -97,12 +97,6 @@ def compute_line_capacity(
     line = str(line).strip().upper()
     model = str(model).strip().upper()
 
-    # ✅ Operarios fijos por proceso (para validar contra Excel)
-    OPERARIOS_POR_PROCESO = {
-        "PREM": 1,
-        "ML": 2,
-        "PTBI": 2,
-    }
 
     # ✅ Alias por si vienen nombres distintos en CSV
     PROCESS_ALIASES = {
@@ -124,7 +118,7 @@ def compute_line_capacity(
 
     # Filtrado por modelo y línea
     t = t[t["model"].astype(str).str.strip().str.upper() == model][["process", "cycle_time"]].copy()
-    s = s[s["line"].astype(str).str.strip().str.upper() == line][["process", "stations"]].copy()
+    s = s[s["line"].astype(str).str.strip().str.upper() == line][["process", "stations", "operators_per_station"]].copy()
 
     # Asegurar numéricos
     t["cycle_time"] = _to_num(t["cycle_time"])
@@ -145,7 +139,7 @@ def compute_line_capacity(
         }
 
     # Operarios por proceso (si no existe -> 1)
-    merged["operators"] = merged["process"].map(OPERARIOS_POR_PROCESO).fillna(1).astype(float)
+    merged["operators"] = _to_num(merged["operators_per_station"]).fillna(1).astype(float)
 
     # ✅ Fórmula Excel (tal cual)
     merged["capacity"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["cycle_time"]
