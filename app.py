@@ -247,7 +247,7 @@ compat_df["model"] = compat_df["model"].astype(str).str.strip()
 
 models_df = ensure_int(models_df, ["active"])
 compat_df = ensure_int(compat_df, ["compatible"])
-stations_df = ensure_int(stations_df, ["stations", "operators_per_station"])
+stations_df = stations_df.copy()
 
 # Modelos activos (lista oficial de la app)
 active_models = models_df.loc[models_df["active"] == 1, "model"].tolist()
@@ -402,8 +402,8 @@ with tabs[1]:
         out = edited_stations.copy()
         out["line"] = out["line"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
-        out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0).astype(int)
-        out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0).astype(int)
+        out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
+        out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
         save_table(out, "lines_process_stations")
         st.session_state["stations_saved"] = True
         st.cache_data.clear()
