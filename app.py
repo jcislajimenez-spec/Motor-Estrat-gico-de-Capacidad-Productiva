@@ -473,6 +473,7 @@ with tabs[1]:
 
     if st.button("💾 Guardar modelos"):
         out = edited_models.copy()
+        out = out.reset_index(drop=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["description"] = out["description"].astype(str).str.strip()
         out["active"] = out["active"].astype(bool).astype(int)
@@ -508,7 +509,7 @@ with tabs[1]:
 
     if st.button("💾 Guardar tiempos"):
         out = edited_times.copy()
-
+        out = out.reset_index(drop=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
@@ -543,6 +544,7 @@ with tabs[1]:
 
     if st.button("💾 Guardar estaciones / operarios"):
         out = edited_stations.copy()
+        out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
