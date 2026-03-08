@@ -161,9 +161,12 @@ def load_table(table: str) -> pd.DataFrame:
 
 def save_table(df: pd.DataFrame, table: str) -> None:
     """
-    Sobrescribe completamente la tabla en Postgres con el contenido de df.
-    (Es el equivalente a "guardar el CSV", pero persistente en Neon.)
-    Si no hay DATABASE_URL, cae a CSV local.
+    Sobrescribe los datos de la planta activa en Postgres.
+    
+    Elimina primero los registros de esa planta
+    y luego inserta los nuevos.
+
+    Evita borrar datos de otras plantas.
     """
     if not _has_db():
         save_csv(df, f"{table}.csv")
@@ -181,7 +184,12 @@ def save_table(df: pd.DataFrame, table: str) -> None:
     values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
 
     with c.cursor() as cur:
-        cur.execute(f'TRUNCATE TABLE "{table}"')
+        if "plant_id" in cols:
+            plant_value = df["plant_id"].iloc[0] if not df.empty else st.session_state["plant_id"]
+            cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
+        else:
+            cur.execute(f'TRUNCATE TABLE "{table}"')
+
         cur.executemany(
             f'INSERT INTO "{table}" ({col_list}) VALUES ({placeholders})',
             values
@@ -202,7 +210,49 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
     return out
 
+# =========================================================
+# SELECCIÓN DE PLANTA
+# =========================================================
+plants_df = load_table("plants")
 
+if plants_df.empty:
+    st.sidebar.error("No hay plantas definidas en la tabla plants")
+    st.stop()
+
+plant_names = plants_df["name"].astype(str).tolist()
+
+selected_plant_name = st.sidebar.selectbox(
+    "Seleccionar planta",
+    plant_names
+)
+
+plant_id = int(
+    plants_df.loc[plants_df["name"] == selected_plant_name, "id"].iloc[0]
+)
+
+st.session_state["plant_id"] = plant_id
+
+# =========================================================
+# AÑADIR NUEVA PLANTA
+# =========================================================
+new_plant_name = st.sidebar.text_input("Nueva planta")
+
+if st.sidebar.button("Añadir planta"):
+    if new_plant_name.strip():
+        next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
+
+        new_row = pd.DataFrame([{
+            "id": next_id,
+            "name": new_plant_name.strip()
+        }])
+
+        plants_df = pd.concat([plants_df, new_row], ignore_index=True)
+        save_table(plants_df, "plants")
+
+        st.sidebar.success("Planta añadida")
+        st.rerun()
+    else:
+        st.sidebar.warning("Escribe un nombre de planta")
 # =========================================================
 # APP CONFIG
 # =========================================================
@@ -215,14 +265,73 @@ st.caption("Planificación por líneas y simulación de mix")
 # =========================================================
 st.sidebar.header("Parámetros de planificación")
 
-hours_week = st.sidebar.number_input("Horas por semana", min_value=0.0, value=43.0, step=0.5)
-shifts = st.sidebar.number_input("Turnos", min_value=1, value=1, step=1)
-availability = st.sidebar.slider("Disponibilidad", 0.0, 1.0, 1.0, 0.01)
-efficiency = st.sidebar.slider("Eficiencia", 0.0, 1.0, 1.0, 0.01)
+settings_df = load_table("settings")
+settings_df = settings_df[settings_df["plant_id"] == plant_id]
+
+if settings_df.empty:
+    current_settings = {
+        "hours_week": 43.0,
+        "shifts": 1,
+        "availability": 1.0,
+        "efficiency": 1.0,
+        "days_open_year": 250,
+        "days_open_week": 5,
+    }
+else:
+    row = settings_df.iloc[0]
+    current_settings = {
+        "hours_week": float(row["hours_week"]),
+        "shifts": int(row["shifts"]),
+        "availability": float(row["availability"]),
+        "efficiency": float(row["efficiency"]),
+        "days_open_year": int(row["days_open_year"]),
+        "days_open_week": int(row["days_open_week"]),
+    }
+
+hours_week = st.sidebar.number_input(
+    "Horas por semana",
+    min_value=0.0,
+    value=current_settings["hours_week"],
+    step=0.5
+)
+
+shifts = st.sidebar.number_input(
+    "Turnos",
+    min_value=1,
+    value=current_settings["shifts"],
+    step=1
+)
+
+availability = st.sidebar.slider(
+    "Disponibilidad",
+    0.0, 1.0,
+    current_settings["availability"],
+    0.01
+)
+
+efficiency = st.sidebar.slider(
+    "Eficiencia",
+    0.0, 1.0,
+    current_settings["efficiency"],
+    0.01
+)
 
 st.sidebar.divider()
-days_open_year = st.sidebar.number_input("Días abiertos al año", min_value=1, value=250, step=1)
-days_open_week = st.sidebar.number_input("Días abiertos por semana", min_value=1, max_value=7, value=5, step=1)
+
+days_open_year = st.sidebar.number_input(
+    "Días abiertos al año",
+    min_value=1,
+    value=current_settings["days_open_year"],
+    step=1
+)
+
+days_open_week = st.sidebar.number_input(
+    "Días abiertos por semana",
+    min_value=1,
+    max_value=7,
+    value=current_settings["days_open_week"],
+    step=1
+)
 
 weeks_equiv = days_open_year / max(days_open_week, 1)
 hours_eff = hours_week * shifts * availability * efficiency
@@ -230,13 +339,40 @@ hours_eff = hours_week * shifts * availability * efficiency
 st.sidebar.caption(f"Horas efectivas planta: **{hours_eff:.2f} h/semana**")
 st.sidebar.caption(f"Semanas equivalentes: **{weeks_equiv:.2f} sem/año**")
 
+# ---------------------------------------------------------
+# GUARDAR PARÁMETROS DE ESTA PLANTA
+# ---------------------------------------------------------
+
+if st.sidebar.button("Guardar parámetros de esta planta"):
+
+    new_settings = pd.DataFrame([{
+        "plant_id": plant_id,
+        "hours_week": hours_week,
+        "shifts": shifts,
+        "availability": availability,
+        "efficiency": efficiency,
+        "days_open_year": days_open_year,
+        "days_open_week": days_open_week
+    }])
+
+    save_table(new_settings, "settings")
+
+    st.sidebar.success("Parámetros guardados para esta planta")
+
 # =========================================================
 # CARGA DATOS
 # =========================================================
 models_df = load_table("models")
+models_df = models_df[models_df["plant_id"] == plant_id].copy()
+
 times_df = load_table("models_process_times")
+times_df = times_df[times_df["plant_id"] == plant_id].copy()
+
 stations_df = load_table("lines_process_stations")
+stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
+
 compat_df = load_table("compatibility")
+compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
@@ -340,6 +476,7 @@ with tabs[1]:
         out["model"] = out["model"].astype(str).str.strip()
         out["description"] = out["description"].astype(str).str.strip()
         out["active"] = out["active"].astype(bool).astype(int)
+        out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
         st.cache_data.clear()
@@ -378,7 +515,7 @@ with tabs[1]:
 
         # evitar duplicados modelo-proceso
         out = out.drop_duplicates(subset=["model", "process"])
-
+        out["plant_id"] = plant_id
         save_table(out, "models_process_times")
 
         st.session_state["times_saved"] = True
@@ -410,6 +547,7 @@ with tabs[1]:
         out["process"] = out["process"].astype(str).str.strip()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
+        out["plant_id"] = plant_id
         save_table(out, "lines_process_stations")
         st.session_state["stations_saved"] = True
         st.cache_data.clear()
@@ -447,6 +585,7 @@ with tabs[1]:
 
     if st.button("💾 Guardar compatibilidades"):
         out = pd.DataFrame(edited_rows)
+        out["plant_id"] = plant_id
         save_table(out, "compatibility")
         st.session_state["compat_saved"] = True
         st.cache_data.clear()
