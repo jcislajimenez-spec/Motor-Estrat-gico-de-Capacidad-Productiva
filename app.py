@@ -185,7 +185,7 @@ def save_table(df: pd.DataFrame, table: str) -> None:
 
     with c.cursor() as cur:
         if "plant_id" in cols:
-            plant_value = df["plant_id"].iloc[0] if not df.empty else st.session_state["plant_id"]
+            plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
             cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
         else:
             cur.execute(f'TRUNCATE TABLE "{table}"')
