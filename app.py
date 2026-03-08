@@ -137,7 +137,7 @@ def save_csv(df: pd.DataFrame, name: str) -> None:
 def _has_db() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
-@st.cache_data
+@st.cache_data(ttl=5)
 def load_table(table: str) -> pd.DataFrame:
     """
     Carga una tabla completa desde Postgres (Neon) y devuelve DataFrame.
@@ -371,10 +371,16 @@ with tabs[1]:
 
     if st.button("💾 Guardar tiempos"):
         out = edited_times.copy()
+
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
+
+        # evitar duplicados modelo-proceso
+        out = out.drop_duplicates(subset=["model", "process"])
+
         save_table(out, "models_process_times")
+
         st.session_state["times_saved"] = True
         st.cache_data.clear()
         st.rerun()
