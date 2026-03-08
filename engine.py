@@ -81,6 +81,7 @@ def compatible_models_for_line(compat_df: pd.DataFrame, line: str) -> List[str]:
 # =========================
 def compute_line_capacity(
     plant: PlantParams,
+    plant_id: int,
     line: str,
     model: str,
     times_df: pd.DataFrame,
@@ -96,6 +97,8 @@ def compute_line_capacity(
     hours_eff = float(plant.hours_effective)
     line = str(line).strip().upper()
     model = str(model).strip().upper()
+    line = _norm_str(pd.Series([line])).iloc[0]
+    model = _norm_str(pd.Series([model])).iloc[0]
 
 
     # ✅ Alias por si vienen nombres distintos en CSV
@@ -110,8 +113,9 @@ def compute_line_capacity(
     }
 
     # Copias y normalización en cálculo (por si algo se cuela)
-    t = times_df.copy()
-    s = stations_df.copy()
+    # Filtrar datos por planta
+    t = times_df[times_df["plant_id"] == plant_id].copy()
+    s = stations_df[stations_df["plant_id"] == plant_id].copy()
 
     t["process"] = _norm_str(t["process"]).replace(PROCESS_ALIASES)
     s["process"] = _norm_str(s["process"]).replace(PROCESS_ALIASES)
@@ -123,6 +127,13 @@ def compute_line_capacity(
     # Asegurar numéricos
     t["cycle_time"] = _to_num(t["cycle_time"])
     s["stations"] = _to_num(s["stations"])
+    s["operators_per_station"] = _to_num(s["operators_per_station"])
+
+    print("DEBUG TIMES")
+    print(t)
+
+    print("DEBUG STATIONS")
+    print(s)
 
     merged = pd.merge(s, t, on="process", how="inner")
 
@@ -140,6 +151,8 @@ def compute_line_capacity(
 
     # Operarios por proceso (si no existe -> 1)
     merged["operators"] = _to_num(merged["operators_per_station"]).fillna(1).astype(float)
+
+    merged = merged[merged["cycle_time"] > 0]
 
     # ✅ Fórmula Excel (tal cual)
     merged["capacity"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["cycle_time"]
@@ -176,6 +189,7 @@ def compute_line_capacity(
 # Análisis planta
 # =========================
 def analyze_plant(
+    plant_id: int,
     plant: PlantParams,
     line_to_model: Dict[str, str],
     demand_by_model: Dict[str, float],
@@ -186,6 +200,7 @@ def analyze_plant(
     for line, model in line_to_model.items():
         res = compute_line_capacity(
             plant=plant,
+            plant_id=plant_id,
             line=line,
             model=model,
             times_df=data["times"],
