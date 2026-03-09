@@ -370,24 +370,12 @@ times_df = times_df[times_df["plant_id"] == plant_id].copy()
 
 naves_df = load_table("lines_process_stations")
 
-st.write("DEBUG NAVES:", naves_df["nave"].unique())
-
-naves = sorted(
-    naves_df.loc[naves_df["plant_id"] == plant_id, "nave"]
-    .dropna()
-    .astype(str)
-    .unique()
-    .tolist()
-)
-nave = st.sidebar.selectbox("Seleccionar nave", naves)
-
 stations_df = load_table("lines_process_stations")
-stations_df = stations_df[(stations_df["plant_id"] == plant_id) & (stations_df["nave"] == nave)].copy()
+stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
 
 compat_df = load_table("compatibility")
 compat_df = compat_df[
-    (compat_df["plant_id"] == plant_id) &
-    (compat_df["nave"] == nave)
+    (compat_df["plant_id"] == plant_id)
 ].copy()
 
 # Normalización mínima
@@ -566,8 +554,8 @@ with tabs[1]:
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
         out["plant_id"] = plant_id
-        out["nave"] = nave
         save_table(out, "lines_process_stations")
+
         st.session_state["stations_saved"] = True
         st.cache_data.clear()
         st.rerun()
@@ -607,6 +595,22 @@ with tabs[1]:
                     "model": m,
                     "compatible": 1 if checked else 0
                 })
+
+                naves_linea = sorted(
+                    stations_df.loc[stations_df["line"] == line, "nave"]
+                    .astype(str)
+                    .str.strip()
+                    .unique()
+                    .tolist()
+                )
+
+                for nave_linea in naves_linea:
+                    edited_rows.append({
+                        "nave": nave_linea,
+                        "line": line,
+                        "model": m,
+                        "compatible": 1 if checked else 0
+                    })
 
     if st.button("💾 Guardar compatibilidades"):
         out = pd.DataFrame(edited_rows)
