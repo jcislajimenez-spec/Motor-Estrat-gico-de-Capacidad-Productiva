@@ -394,6 +394,13 @@ active_models = models_df.loc[models_df["active"] == 1, "model"].tolist()
 
 # Líneas disponibles (derivadas de stations_df)
 lines = sorted(stations_df["line"].unique().tolist())
+line_ids_nave = sorted(
+    stations_df["line_id"]
+    .astype(str)
+    .str.strip()
+    .unique()
+    .tolist()
+)
 
 # =========================================================
 # TABS
