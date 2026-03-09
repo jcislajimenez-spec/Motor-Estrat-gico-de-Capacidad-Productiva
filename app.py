@@ -369,7 +369,7 @@ times_df = load_table("models_process_times")
 times_df = times_df[times_df["plant_id"] == plant_id].copy()
 
 stations_df = load_table("lines_process_stations")
-stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
+stations_df = stations_df[(stations_df["plant_id"] == plant_id) & (stations_df["nave"] == nave)].copy()
 
 compat_df = load_table("compatibility")
 compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
