@@ -431,7 +431,7 @@ with tabs[0]:
                 .tolist()
             )
 
-            for line_id in line_ids_nave:
+            for line_id in all_line_ids:
                 _nave, base_line = line_id.split("-", 1)
                 allowed = allowed_by_line.get(base_line, [])
                 if not allowed:
@@ -461,7 +461,7 @@ with tabs[0]:
                 .unique()
                 .tolist()
             )
-            for line_id in line_ids_nave:
+            for line_id in all_line_ids:
                 model = st.session_state.line_model.get(line_id)
                 if not model:
                     continue
@@ -597,8 +597,16 @@ with tabs[1]:
 
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
+
     for line_id in all_line_ids:
-        nave, base_line = line_id.split("-", 1)
+
+        parts = line_id.split("-", 1)
+
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
 
         st.markdown(f"### Línea {line_id}")
         with st.expander(f"Línea {line_id}", expanded=True):
@@ -714,8 +722,16 @@ with tabs[2]:
     summary_rows = []
     detail_by_line = {}
 
-    for line_id in lines:
-        nave, base_line = line_id.split("-", 1)
+    for line_id in all_line_ids:
+
+        parts = line_id.split("-", 1)
+
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
+
         model = st.session_state.line_model.get(line_id)
         if not model:
             continue
@@ -949,8 +965,16 @@ with tabs[3]:
     capU_line_model = {}
     max_h_week_by_line = {}
 
-    for line_id in lines:
-        nave, base_line = line_id.split("-", 1)
+    for line_id in all_line_ids:
+
+        parts = line_id.split("-", 1)
+
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
+
         models_allowed = allowed_by_line.get(base_line, [])
         if not models_allowed:
             continue
