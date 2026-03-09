@@ -369,6 +369,9 @@ times_df = load_table("models_process_times")
 times_df = times_df[times_df["plant_id"] == plant_id].copy()
 
 naves_df = load_table("lines_process_stations")
+
+st.write("DEBUG NAVES:", naves_df["nave"].unique())
+
 naves = sorted(
     naves_df.loc[naves_df["plant_id"] == plant_id, "nave"]
     .dropna()
