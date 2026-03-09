@@ -211,7 +211,7 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return out
 
 # =========================================================
-# SELECCIÓN DE PLANTA
+# SELECCIÓN DE PLANTA.
 # =========================================================
 plants_df = load_table("plants")
 
