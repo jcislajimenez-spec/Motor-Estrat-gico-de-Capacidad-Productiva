@@ -368,11 +368,24 @@ models_df = models_df[models_df["plant_id"] == plant_id].copy()
 times_df = load_table("models_process_times")
 times_df = times_df[times_df["plant_id"] == plant_id].copy()
 
+naves_df = load_table("lines_process_stations")
+naves = sorted(
+    naves_df.loc[naves_df["plant_id"] == plant_id, "nave"]
+    .dropna()
+    .astype(str)
+    .unique()
+    .tolist()
+)
+nave = st.sidebar.selectbox("Seleccionar nave", naves)
+
 stations_df = load_table("lines_process_stations")
 stations_df = stations_df[(stations_df["plant_id"] == plant_id) & (stations_df["nave"] == nave)].copy()
 
 compat_df = load_table("compatibility")
-compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
+compat_df = compat_df[
+    (compat_df["plant_id"] == plant_id) &
+    (compat_df["nave"] == nave)
+].copy()
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
@@ -550,6 +563,7 @@ with tabs[1]:
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
         out["plant_id"] = plant_id
+        out["nave"] = nave
         save_table(out, "lines_process_stations")
         st.session_state["stations_saved"] = True
         st.cache_data.clear()
@@ -583,7 +597,13 @@ with tabs[1]:
                     cur_val = int(current.iloc[0]["compatible"])
 
                 checked = cols[i % 3].checkbox(m, value=bool(cur_val), key=f"compat_{line}_{m}")
-                edited_rows.append({"line": line, "model": m, "compatible": 1 if checked else 0})
+
+                edited_rows.append({
+                    "nave": nave,
+                    "line": line,
+                    "model": m,
+                    "compatible": 1 if checked else 0
+                })
 
     if st.button("💾 Guardar compatibilidades"):
         out = pd.DataFrame(edited_rows)
