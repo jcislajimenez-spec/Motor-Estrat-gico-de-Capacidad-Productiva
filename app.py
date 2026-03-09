@@ -664,13 +664,12 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
     """
-    nave, line = line_id.split("-", 1)
 
     t = times_df[times_df["model"] == model].copy()
     s = stations_df[
-        (stations_df["line"] == line) &
-        (stations_df["nave"] == nave)
+        stations_df["line_id"] == line_id
     ].copy()
+
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
@@ -729,7 +728,15 @@ with tabs[2]:
     summary_rows = []
     detail_by_line = {}
 
-    for line_id in line_ids_nave:
+    all_line_ids = sorted(
+        stations_df["line_id"]
+        .astype(str)
+        .str.strip()
+        .unique()
+       .tolist()
+    )
+
+    for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
 
