@@ -589,13 +589,6 @@ with tabs[1]:
 
                 checked = cols[i % 3].checkbox(m, value=bool(cur_val), key=f"compat_{line}_{m}")
 
-                edited_rows.append({
-                    "nave": nave,
-                    "line": line,
-                    "model": m,
-                    "compatible": 1 if checked else 0
-                })
-
                 naves_linea = sorted(
                     stations_df.loc[stations_df["line"] == line, "nave"]
                     .astype(str)
