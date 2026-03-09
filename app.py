@@ -605,7 +605,7 @@ with tabs[1]:
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
 
-    for line_id in line_ids_nave:
+    for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
 
