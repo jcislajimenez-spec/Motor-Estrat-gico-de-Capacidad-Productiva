@@ -403,10 +403,11 @@ tabs = st.tabs(["📊 Planificación", "⚙️ Configuración (Power User)", "�
 # =========================================================
 # 1) PLANIFICACIÓN
 # =========================================================
+
 with tabs[0]:
     st.subheader("Selección de modelo por línea")
 
-    # Construimos un “catálogo” de compatibilidad: por línea → lista de modelos permitidos
+    # Compatibilidad por línea base (sin nave)
     compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
     allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
@@ -420,38 +421,58 @@ with tabs[0]:
 
     with colL:
         st.markdown("### Selección")
-        for line in lines:
-            allowed = allowed_by_line.get(line, [])
-            if not allowed:
-                st.info(f"{line}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
-                continue
-
-            default_model = st.session_state.line_model.get(line, allowed[0])
-            if default_model not in allowed:
-                default_model = allowed[0]
-
-            m = st.selectbox(
-                f"Modelo ({line})",
-                options=allowed,
-                index=allowed.index(default_model),
-                key=f"sel_model_{line}"
+        for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
+            st.markdown(f"#### NAVE {nave}")
+            line_ids_nave = sorted(
+                stations_df.loc[stations_df["nave"] == nave, "line_id"]
+                .astype(str)
+                .str.strip()
+                .unique()
+                .tolist()
             )
-            st.session_state.line_model[line] = m
+
+            for line_id in line_ids_nave:
+                _nave, base_line = line_id.split("-", 1)
+                allowed = allowed_by_line.get(base_line, [])
+                if not allowed:
+                    st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
+                    continue
+
+                default_model = st.session_state.line_model.get(line_id, allowed[0])
+                if default_model not in allowed:
+                    default_model = allowed[0]
+
+                m = st.selectbox(
+                    f"Modelo ({line_id})",
+                    options=allowed,
+                    index=allowed.index(default_model),
+                    key=f"sel_model_{line_id}"
+                )
+                st.session_state.line_model[line_id] = m
 
     with colR:
         st.markdown("### Demanda (UDS/SEM)")
-        for line in lines:
-            model = st.session_state.line_model.get(line)
-            if not model:
-                continue
-            d = st.number_input(
-                f"Demanda ({line} – {model})",
-                min_value=0.0,
-                value=float(st.session_state.line_demand.get(line, 0.0)),
-                step=1.0,
-                key=f"demand_{line}",
+        for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
+            st.markdown(f"#### NAVE {nave}")
+            line_ids_nave = sorted(
+                stations_df.loc[stations_df["nave"] == nave, "line_id"]
+                .astype(str)
+                .str.strip()
+                .unique()
+                .tolist()
             )
-            st.session_state.line_demand[line] = d
+            for line_id in line_ids_nave:
+                model = st.session_state.line_model.get(line_id)
+                if not model:
+                    continue
+                d = st.number_input(
+                    f"Demanda ({line_id} – {model})",
+                    min_value=0.0,
+                    value=float(st.session_state.line_demand.get(line_id, 0.0)),
+                    step=1.0,
+                    key=f"demand_{line_id}",
+                )
+                st.session_state.line_demand[line_id] = d
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
@@ -566,44 +587,44 @@ with tabs[1]:
 
     st.divider()
 
+    
     # --- D) Compatibilidad modelo ↔ línea (checkbox)
     st.markdown("## Compatibilidad modelo ↔ línea (compatibility.csv)")
 
     # Sólo mostramos modelos existentes en models.csv (da igual activos o no: compat se define aquí)
     all_models = sorted(models_df["model"].astype(str).str.strip().unique().tolist())
-    all_lines = sorted(stations_df["line"].astype(str).str.strip().unique().tolist())
+    all_line_ids = sorted(stations_df["line_id"].astype(str).str.strip().unique().tolist())
 
-    # Matriz editable por línea
+    # Matriz editable por línea real (nave + línea)
     edited_rows = []
-    for line in all_lines:
-        st.markdown(f"### Línea {line}")
-        with st.expander(f"Línea {line}", expanded=True):
+    for line_id in all_line_ids:
+        nave, base_line = line_id.split("-", 1)
+
+        st.markdown(f"### Línea {line_id}")
+        with st.expander(f"Línea {line_id}", expanded=True):
             cols = st.columns(3)
             for i, m in enumerate(all_models):
                 current = compat_df[
-                    (compat_df["line"] == line) & (compat_df["model"] == m)
+                    (compat_df["line"] == base_line) &
+                    (compat_df["model"] == m) &
+                    (compat_df["nave"] == nave)
                 ]
                 cur_val = 0
                 if not current.empty:
                     cur_val = int(current.iloc[0]["compatible"])
 
-                checked = cols[i % 3].checkbox(m, value=bool(cur_val), key=f"compat_{line}_{m}")
-
-                naves_linea = sorted(
-                    stations_df.loc[stations_df["line"] == line, "nave"]
-                    .astype(str)
-                    .str.strip()
-                    .unique()
-                    .tolist()
+                checked = cols[i % 3].checkbox(
+                    m,
+                    value=bool(cur_val),
+                    key=f"compat_{line_id}_{m}"
                 )
 
-                for nave_linea in naves_linea:
-                    edited_rows.append({
-                        "nave": nave_linea,
-                        "line": line,
-                        "model": m,
-                        "compatible": 1 if checked else 0
-                    })
+                edited_rows.append({
+                    "nave": nave,
+                    "line": base_line,
+                    "model": m,
+                    "compatible": 1 if checked else 0
+                })
 
     if st.button("💾 Guardar compatibilidades"):
         out = pd.DataFrame(edited_rows)
@@ -620,15 +641,21 @@ with tabs[1]:
 # =========================================================
 # 3) RESULTADOS
 # =========================================================
-def compute_line_detail(line: str, model: str) -> tuple[pd.DataFrame, str, float]:
+
+def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, float]:
     """
     Devuelve:
     - merged detail DF con capacity por proceso
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
     """
+    nave, line = line_id.split("-", 1)
+
     t = times_df[times_df["model"] == model].copy()
-    s = stations_df[stations_df["line"] == line].copy()
+    s = stations_df[
+        (stations_df["line"] == line) &
+        (stations_df["nave"] == nave)
+    ].copy()
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
@@ -638,13 +665,14 @@ def compute_line_detail(line: str, model: str) -> tuple[pd.DataFrame, str, float
     merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
     merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
 
-    # Capacidad uds/sem por proceso (con tu fórmula ya validada)
-    # capacity = hours_eff * stations * operators / cycle_time
     merged["capacity"] = 0.0
     mask = merged["cycle_time"] > 0
-    merged.loc[mask, "capacity"] = (hours_eff * merged.loc[mask, "stations"] * merged.loc[mask, "operators_per_station"]) / merged.loc[mask, "cycle_time"]
+    merged.loc[mask, "capacity"] = (
+        hours_eff
+        * merged.loc[mask, "stations"]
+        * merged.loc[mask, "operators_per_station"]
+    ) / merged.loc[mask, "cycle_time"]
 
-    # Si no hay ninguna capacidad válida (todo 0 o NaN), evitamos idxmin() (da ValueError)
     if merged["capacity"].dropna().empty:
         return merged, "", 0.0
 
@@ -678,6 +706,7 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
     return float(hours_proc.sum())
 
 
+
 with tabs[2]:
     st.subheader("Resultados de capacidad")
     st.caption(f"Horas efectivas planta: {hours_eff:.2f} h/semana")
@@ -685,13 +714,14 @@ with tabs[2]:
     summary_rows = []
     detail_by_line = {}
 
-    for line in lines:
-        model = st.session_state.line_model.get(line)
+    for line_id in lines:
+        nave, base_line = line_id.split("-", 1)
+        model = st.session_state.line_model.get(line_id)
         if not model:
             continue
-        demand_week = float(st.session_state.line_demand.get(line, 0.0))
+        demand_week = float(st.session_state.line_demand.get(line_id, 0.0))
 
-        merged, bottleneck_proc, cap_week = compute_line_detail(line, model)
+        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model)
 
         saturation = 0.0
         deficit = 0.0
@@ -702,10 +732,6 @@ with tabs[2]:
         demand_year = demand_week * weeks_equiv
         cap_year = cap_week * weeks_equiv
 
-        # Capacidad en horas: Capacidad (uds) * carga total del modelo (suma de cycle_time por procesos)
-        # (En Excel: Capacidad hrs/sem = Capacidad uds/sem * SUM(cycle_time_model))
-
-        # Demanda en horas: Demanda (uds) * carga total del modelo (suma de cycle_time por procesos)
         _tmod = times_df[times_df["model"] == model].copy()
         _tmod["cycle_time"] = pd.to_numeric(_tmod.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
         total_cycle_time_model = float(_tmod["cycle_time"].sum())
@@ -713,12 +739,13 @@ with tabs[2]:
         cap_hours_week = cap_week * total_cycle_time_model
         cap_hours_year = cap_hours_week * weeks_equiv
 
-
         dem_hours_week = demand_week * total_cycle_time_model
         dem_hours_year = dem_hours_week * weeks_equiv
 
         summary_rows.append({
-            "line": line,
+            "nave": nave,
+            "line": base_line,
+            "line_id": line_id,
             "model": model,
             "Demanda (UDS/SEM)": demand_week,
             "Capacidad (UDS/SEM)": cap_week,
@@ -733,11 +760,10 @@ with tabs[2]:
             "Capacidad (h/AÑO)": cap_hours_year,
         })
 
-        detail_by_line[line] = (model, demand_week, bottleneck_proc, merged)
+        detail_by_line[line_id] = (nave, base_line, model, demand_week, bottleneck_proc, merged)
 
     summary_df = pd.DataFrame(summary_rows)
 
-    # --- Fila TOTAL (sumatorio de demanda/capacidad en uds y horas) ---
     if not summary_df.empty:
         _sum_cols = [
             "Demanda (UDS/SEM)", "Capacidad (UDS/SEM)",
@@ -751,15 +777,16 @@ with tabs[2]:
 
         total_row = {c: float(summary_df[c].sum(skipna=True)) if c in summary_df.columns else 0.0 for c in _sum_cols}
         total_row.update({
-            "line": "TOTAL",
+            "nave": "",
+            "line": "",
+            "line_id": "TOTAL",
             "model": "",
             "Saturación (%)": float("nan"),
             "Déficit (UDS/SEM)": float("nan"),
             "bottleneck": "",
         })
 
-        # Asegurar que existen las columnas de texto aunque estén vacías en casos raros
-        for c in ["line", "model", "bottleneck"]:
+        for c in ["nave", "line", "line_id", "model", "bottleneck"]:
             if c not in summary_df.columns:
                 summary_df[c] = ""
 
@@ -788,20 +815,18 @@ with tabs[2]:
         def sat_color(val):
             try:
                 v = float(val)
-            except:
+            except Exception:
                 return ""
             return "color: red; font-weight: 700;" if v >= 100 else "color: green; font-weight: 700;"
 
         s = s.applymap(sat_color, subset=["Saturación (%)"])
         s = s.applymap(lambda _: "color: red; font-weight: 700;", subset=["bottleneck"])
 
-        # Fila TOTAL: negrita + tamaño mayor (como en Excel del ejemplo)
-        if "line" in styled.columns:
+        if "line_id" in styled.columns:
             def _style_total(row):
-                if str(row.get("line", "")) == "TOTAL":
+                if str(row.get("line_id", "")) == "TOTAL":
                     return ["font-weight: 800; font-size: 18px;"] * len(row)
                 return [""] * len(row)
-
             s = s.apply(_style_total, axis=1)
 
         return s
@@ -809,18 +834,28 @@ with tabs[2]:
     if summary_df.empty:
         st.info("No hay resultados aún. Selecciona modelos/demanda en Planificación.")
     else:
-        st.dataframe(style_summary(summary_df), use_container_width=True, hide_index=True)
+        display_cols = [
+            "nave", "line", "model",
+            "Demanda (UDS/SEM)", "Capacidad (UDS/SEM)", "Saturación (%)", "Déficit (UDS/SEM)",
+            "bottleneck",
+            "Demanda (UDS/AÑO)", "Capacidad (UDS/AÑO)",
+            "Demanda (h/SEM)", "Capacidad (h/SEM)",
+            "Demanda (h/AÑO)", "Capacidad (h/AÑO)"
+        ]
+        total_display_df = summary_df.copy()
+        total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
+        st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("## 🔎 Detalle fino por línea y subproceso")
         st.caption("Desglose real por subproceso. El cuello de botella es el subproceso con menor capacidad.")
 
-        for line, (model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
+        for line_id, (nave, base_line, model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
             cap_week = 0.0
             if merged is not None and not merged.empty:
                 cap_week = float(merged["capacity"].min())
 
-            header = f"{line} — Modelo: {model} | Capacidad máx: {cap_week:.2f} uds/sem | Cuello: {bottleneck_proc} | Demanda: {demand_week:.2f} uds/sem"
+            header = f"{nave}-{base_line} — Modelo: {model} | Capacidad máx: {cap_week:.2f} uds/sem | Cuello: {bottleneck_proc} | Demanda: {demand_week:.2f} uds/sem"
             with st.expander(header, expanded=False):
                 if merged is None or merged.empty:
                     st.warning("No hay datos suficientes (revisa estaciones o tiempos).")
@@ -834,143 +869,66 @@ with tabs[2]:
                         return [""] * len(row)
 
                     st.dataframe(
-                        show.style
-                            .format({"capacity": "{:.3f}"})
-                            .apply(hl_bottleneck, axis=1),
+                        show.style.format({"capacity": "{:.3f}"}).apply(hl_bottleneck, axis=1),
                         use_container_width=True,
                         hide_index=True
                     )
 
-
-# =========================================================
-# 4) CAPACIDAD SEGÚN MIX (FASE 1)
-# =========================================================
-    import plotly.express as px
     import plotly.graph_objects as go
 
     st.divider()
     st.markdown("## 📊 Representación gráfica de Demanda vs Capacidad")
 
     if not summary_df.empty:
-
-        # Incluimos TOTAL y lo ponemos a la derecha
         df_plot = summary_df.copy()
+        df_plot = df_plot[df_plot["line_id"] != "TOTAL"].copy()
 
-        # Orden: líneas (según stations_df) + TOTAL al final
-        present = set(df_plot["line"].astype(str).tolist())
-        line_order = [l for l in lines if str(l) in present]
-        if "TOTAL" in present:
+        line_order = [l for l in lines if l in set(df_plot["line_id"].astype(str).tolist())]
+        if "TOTAL" in set(summary_df["line_id"].astype(str).tolist()):
             line_order.append("TOTAL")
 
-        df_plot["line"] = pd.Categorical(df_plot["line"].astype(str), categories=line_order, ordered=True)
-        df_plot = df_plot.sort_values("line")
-# =========================
-        # 1️⃣ SEMANAL – UNIDADES
-        # =========================
-        st.markdown("### 🔹 Demanda vs Capacidad – UDS/SEM")
+        df_plot["line_id"] = pd.Categorical(df_plot["line_id"].astype(str), categories=line_order, ordered=True)
+        df_plot = df_plot.sort_values("line_id")
 
+        st.markdown("### 🔹 Demanda vs Capacidad – UDS/SEM")
         fig1 = go.Figure()
-        fig1.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Demanda (UDS/SEM)"],
-            name="Demanda",
-            marker_color="#A6192E"
-        )
-        fig1.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Capacidad (UDS/SEM)"],
-            name="Capacidad",
-            marker_color="green"
-        )
+        fig1.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (UDS/SEM)"], name="Demanda", marker_color="#A6192E")
+        fig1.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (UDS/SEM)"], name="Capacidad", marker_color="green")
         fig1.update_layout(barmode="group")
         st.plotly_chart(fig1, use_container_width=True, key="fig1")
 
-        # =========================
-        # 2️⃣ SEMANAL – HORAS (CLAVE)
-        # =========================
         st.markdown("### 🔴 Demanda vs Capacidad – h/SEM (CRÍTICO)")
-
         fig2 = go.Figure()
-        fig2.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Demanda (h/SEM)"],
-            name="Demanda",
-            marker_color="#A6192E"
-        )
-        fig2.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Capacidad (h/SEM)"],
-            name="Capacidad",
-            marker_color="green"
-        )
+        fig2.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (h/SEM)"], name="Demanda", marker_color="#A6192E")
+        fig2.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (h/SEM)"], name="Capacidad", marker_color="green")
         fig2.update_layout(barmode="group")
         st.plotly_chart(fig2, use_container_width=True, key="fig2")
 
-        # =========================
-        # 3️⃣ ANUAL – UNIDADES
-        # =========================
         st.markdown("### 🔹 Demanda vs Capacidad – UDS/AÑO")
-
         fig3 = go.Figure()
-        fig3.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Demanda (UDS/AÑO)"],
-            name="Demanda",
-            marker_color="#A6192E"
-        )
-        fig3.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Capacidad (UDS/AÑO)"],
-            name="Capacidad",
-            marker_color="green"
-        )
+        fig3.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (UDS/AÑO)"], name="Demanda", marker_color="#A6192E")
+        fig3.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (UDS/AÑO)"], name="Capacidad", marker_color="green")
         fig3.update_layout(barmode="group")
         st.plotly_chart(fig3, use_container_width=True, key="fig3")
 
-        # =========================
-        # 4️⃣ ANUAL – HORAS (CLAVE)
-        # =========================
         st.markdown("### 🔴 Demanda vs Capacidad – h/AÑO (CRÍTICO)")
-
         fig4 = go.Figure()
-        fig4.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Demanda (h/AÑO)"],
-            name="Demanda",
-            marker_color="#A6192E"
-        )
-        fig4.add_bar(
-            x=df_plot["line"],
-            y=df_plot["Capacidad (h/AÑO)"],
-            name="Capacidad",
-            marker_color="green"
-        )
+        fig4.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (h/AÑO)"], name="Demanda", marker_color="#A6192E")
+        fig4.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (h/AÑO)"], name="Capacidad", marker_color="green")
         fig4.update_layout(barmode="group")
         st.plotly_chart(fig4, use_container_width=True, key="fig4")
 
-        # =========================
-        # 5️⃣ VISIÓN GLOBAL TOTAL (HORAS SEMANALES)
-        # =========================
         st.markdown("## 🧠 Visión global planta – h/SEM")
+        total_demand_h_sem = float(summary_df.loc[summary_df["line_id"] != "TOTAL", "Demanda (h/SEM)"].sum())
+        total_capacity_h_sem = float(summary_df.loc[summary_df["line_id"] != "TOTAL", "Capacidad (h/SEM)"].sum())
 
-        total_row = summary_df[summary_df["line"] == "TOTAL"]
+        fig_total = go.Figure()
+        fig_total.add_bar(x=["TOTAL"], y=[total_demand_h_sem], name="Demanda Total", marker_color="#A6192E")
+        fig_total.add_bar(x=["TOTAL"], y=[total_capacity_h_sem], name="Capacidad Total", marker_color="green")
+        fig_total.update_layout(barmode="group")
+        st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
 
-        if not total_row.empty:
-            fig_total = go.Figure()
-            fig_total.add_bar(
-                x=["TOTAL"],
-                y=total_row["Demanda (h/SEM)"],
-                name="Demanda Total",
-                marker_color="#A6192E"
-            )
-            fig_total.add_bar(
-                x=["TOTAL"],
-                y=total_row["Capacidad (h/SEM)"],
-                name="Capacidad Total",
-                marker_color="green"
-            )
-            fig_total.update_layout(barmode="group")
-            st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
+
 with tabs[3]:
     st.subheader("Capacidad según mix")
     st.info(
@@ -979,36 +937,30 @@ with tabs[3]:
         "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
     )
 
-    # Compatibilidades activas (mismos criterios que en Planificación)
     compat_active = compat_df[(compat_df.get("compatible", 0) == 1) & (compat_df["model"].isin(active_models))].copy()
     allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
-    # Carga total por modelo (SUM(cycle_time) = HH/ud total del modelo)
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
     cycle_by_model = _t.groupby("model")["cycle_time"].sum().to_dict()
 
     line_stats_rows = []
-
-    # Guardamos capacidades por (línea, modelo) para reutilizar en NIVEL 3 (Fase 2)
-    capH_line_model = {}  # horas/semana estructurales por línea y modelo
-    capU_line_model = {}  # uds/semana por línea y modelo (no imprescindible, pero útil)
-
+    capH_line_model = {}
+    capU_line_model = {}
     max_h_week_by_line = {}
-    for line in lines:
-        models_allowed = allowed_by_line.get(line, [])
+
+    for line_id in lines:
+        nave, base_line = line_id.split("-", 1)
+        models_allowed = allowed_by_line.get(base_line, [])
         if not models_allowed:
             continue
 
         capU_vals = []
         capH_vals = []
-        capU_year_vals = []
-        capH_year_vals = []
-        model_for_capU = []
         model_for_capH = []
 
         for m in models_allowed:
-            merged, _bn, cap_week = compute_line_detail(line, m)
+            merged, _bn, cap_week = compute_line_detail(line_id, m)
             cap_week = float(cap_week) if cap_week else 0.0
             if cap_week <= 0:
                 continue
@@ -1016,16 +968,11 @@ with tabs[3]:
             w_m = float(cycle_by_model.get(m, 0.0))
             cap_h_week = cap_week * w_m
 
-            # Guardar para Nivel 3
-            capH_line_model[(line, m)] = float(cap_h_week)
-            capU_line_model[(line, m)] = float(cap_week)
-
+            capH_line_model[(line_id, m)] = float(cap_h_week)
+            capU_line_model[(line_id, m)] = float(cap_week)
 
             capU_vals.append(cap_week)
             capH_vals.append(cap_h_week)
-            capU_year_vals.append(cap_week * weeks_equiv)
-            capH_year_vals.append(cap_h_week * weeks_equiv)
-            model_for_capU.append(m)
             model_for_capH.append(m)
 
         if not capU_vals:
@@ -1033,7 +980,6 @@ with tabs[3]:
 
         import numpy as _np
 
-        # Max / Min / Avg por línea (solo con capacidades > 0)
         max_u = float(_np.max(capU_vals))
         min_u = float(_np.min(capU_vals))
         avg_u = float(_np.mean(capU_vals))
@@ -1041,16 +987,17 @@ with tabs[3]:
         max_h = float(_np.max(capH_vals))
         min_h = float(_np.min(capH_vals))
         avg_h = float(_np.mean(capH_vals))
-        max_h_week_by_line[line] = max_h
+        max_h_week_by_line[line_id] = max_h
 
-        # Modelos que dan max/min (en horas, que es lo crítico)
         idx_max_h = int(_np.argmax(capH_vals))
         idx_min_h = int(_np.argmin(capH_vals))
         model_max_h = model_for_capH[idx_max_h] if capH_vals else ""
         model_min_h = model_for_capH[idx_min_h] if capH_vals else ""
 
         line_stats_rows.append({
-            "line": line,
+            "nave": nave,
+            "line": base_line,
+            "line_id": line_id,
             "Modelo Máx (h/SEM)": model_max_h,
             "Modelo Mín (h/SEM)": model_min_h,
             "Max UDS/SEM": max_u,
@@ -1072,9 +1019,6 @@ with tabs[3]:
     else:
         line_stats_df = pd.DataFrame(line_stats_rows)
 
-        # ----------------------------
-        # NIVEL 1 — GLOBAL PLANTA
-        # ----------------------------
         plant_max_u_sem = float(line_stats_df["Max UDS/SEM"].sum())
         plant_avg_u_sem = float(line_stats_df["Prom UDS/SEM"].sum())
         plant_min_u_sem = float(line_stats_df["Min UDS/SEM"].sum())
@@ -1084,54 +1028,25 @@ with tabs[3]:
         plant_min_h_sem = float(line_stats_df["Min h/SEM"].sum())
 
         plant_rows = [
-            {
-                "Escenario": "Máximo",
-                "UDS/SEM": plant_max_u_sem,
-                "UDS/AÑO": plant_max_u_sem * weeks_equiv,
-                "h/SEM": plant_max_h_sem,
-                "h/AÑO": plant_max_h_sem * weeks_equiv,
-            },
-            {
-                "Escenario": "Promedio",
-                "UDS/SEM": plant_avg_u_sem,
-                "UDS/AÑO": plant_avg_u_sem * weeks_equiv,
-                "h/SEM": plant_avg_h_sem,
-                "h/AÑO": plant_avg_h_sem * weeks_equiv,
-            },
-            {
-                "Escenario": "Mínimo",
-                "UDS/SEM": plant_min_u_sem,
-                "UDS/AÑO": plant_min_u_sem * weeks_equiv,
-                "h/SEM": plant_min_h_sem,
-                "h/AÑO": plant_min_h_sem * weeks_equiv,
-            },
+            {"Escenario": "Máximo", "UDS/SEM": plant_max_u_sem, "UDS/AÑO": plant_max_u_sem * weeks_equiv, "h/SEM": plant_max_h_sem, "h/AÑO": plant_max_h_sem * weeks_equiv},
+            {"Escenario": "Promedio", "UDS/SEM": plant_avg_u_sem, "UDS/AÑO": plant_avg_u_sem * weeks_equiv, "h/SEM": plant_avg_h_sem, "h/AÑO": plant_avg_h_sem * weeks_equiv},
+            {"Escenario": "Mínimo", "UDS/SEM": plant_min_u_sem, "UDS/AÑO": plant_min_u_sem * weeks_equiv, "h/SEM": plant_min_h_sem, "h/AÑO": plant_min_h_sem * weeks_equiv},
         ]
         plant_df = pd.DataFrame(plant_rows)
 
         st.markdown("### Nivel 1 — Global planta (rango estructural)")
         st.dataframe(
-            plant_df.style.format({
-                "UDS/SEM": "{:.1f}",
-                "UDS/AÑO": "{:.1f}",
-                "h/SEM": "{:.1f}",
-                "h/AÑO": "{:.1f}",
-            }),
+            plant_df.style.format({"UDS/SEM": "{:.1f}", "UDS/AÑO": "{:.1f}", "h/SEM": "{:.1f}", "h/AÑO": "{:.1f}"}),
             use_container_width=True,
             hide_index=True
         )
 
         st.divider()
 
-        # ----------------------------
-        # NIVEL 2 — POR LÍNEA
-        # ----------------------------
         st.markdown("### Nivel 2 — Por línea (rango estructural)")
-
-        # Orden columnas (legible)
         col_order = [
-            "line",
-            "Modelo Máx (h/SEM)",
-            "Modelo Mín (h/SEM)",
+            "nave", "line",
+            "Modelo Máx (h/SEM)", "Modelo Mín (h/SEM)",
             "Max UDS/SEM", "Prom UDS/SEM", "Min UDS/SEM",
             "Max UDS/AÑO", "Prom UDS/AÑO", "Min UDS/AÑO",
             "Max h/SEM", "Prom h/SEM", "Min h/SEM",
@@ -1153,61 +1068,45 @@ with tabs[3]:
             use_container_width=True,
             hide_index=True
         )
-        # -------------------------
-        # Nivel 3 — Simulador de ocupación estructural por modelo (FASE 2)
-        # -------------------------
+
         st.markdown("## Nivel 3 — Simulador de ocupación estructural por modelo")
         st.caption(
             "Este simulador **NO** cambia la planificación real. Solo sirve para explorar, en términos de **horas estructurales (h/sem)**, "
             "cuánto 'peso' podría llegar a ocupar cada modelo dentro del **techo estructural** de la planta."
         )
 
-        # =========================================================
-        # DEFINICIONES (FASE 2)
-        # 1) Techo estructural planta (H_max_plant) = suma de máximos por línea en h/sem (ya calculado en Nivel 1)
-        #    -> reutilizamos max_h_week_by_line (del Nivel 2) ya computado arriba.
-        # 2) Para cada modelo m: MaxH_m = suma de cap_h_sem(line, model) en todas las líneas compatibles
-        #    -> reutilizamos capH_line_model[(line, model)] (horas/sem) ya rellenado durante el Nivel 2.
-        # 3) Share_m_max = MaxH_m / H_max_plant
-        # =========================================================
-
         H_max_plant = float(sum(max_h_week_by_line.values())) if max_h_week_by_line else 0.0
         st.markdown(f"**Techo estructural planta (H_max_plant):** {H_max_plant:.2f} h/sem")
 
-        # Construir MaxH_m por modelo (solo con líneas con capacidad > 0)
         maxH_by_model = {}
         for m in cycle_by_model.keys():
             total_h = 0.0
-            for l in lines:
-                h = float(capH_line_model.get((l, m), 0.0) or 0.0)
+            for line_id in lines:
+                h = float(capH_line_model.get((line_id, m), 0.0) or 0.0)
                 if h > 0:
                     total_h += h
             if total_h > 0:
                 maxH_by_model[m] = total_h
 
-        # Modelos válidos (capacidad > 0) + shares máximos
         valid_models = sorted(maxH_by_model.keys())
         share_max_by_model = {m: (maxH_by_model[m] / H_max_plant) if H_max_plant > 0 else 0.0 for m in valid_models}
 
         if not valid_models or H_max_plant <= 0:
             st.info("No hay modelos válidos (capacidad estructural > 0) para construir el simulador.")
         else:
-            # Layout compacto: izquierda (modelos), derecha (agregado planta)
             left, right = st.columns([3.2, 1.4], gap="large")
 
-            # ---------- Agregado (derecha): termómetro/columna apilada ----------
             with right:
                 st.markdown("### Agregado planta")
                 total_selected_pct = 0.0
 
-                # Colores (sin dependencias nuevas)
                 try:
                     import plotly.express as px
                     palette = px.colors.qualitative.Plotly
                 except Exception:
                     palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
 
-                segments = []  # (model, pct, color)
+                segments = []
                 for i, m in enumerate(valid_models):
                     max_pct = float(share_max_by_model.get(m, 0.0) * 100.0)
                     if max_pct <= 0:
@@ -1222,7 +1121,6 @@ with tabs[3]:
 
                 import plotly.graph_objects as go
 
-                # Velocímetro (ocupación estructural agregada)
                 range_max = max(120.0, float(total_selected_pct) * 1.10)
 
                 fig = go.Figure(go.Indicator(
@@ -1242,19 +1140,10 @@ with tabs[3]:
                 fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
 
                 st.plotly_chart(fig, use_container_width=True, key="chart_velocimetro")
-                # --- Barra apilada por modelo (composición estructural seleccionada) ---
                 if segments:
                     fig_stack = go.Figure()
-
                     for m, pct, color in segments:
-                        fig_stack.add_bar(
-                            y=["Planta"],
-                            x=[pct],
-                            name=m,
-                            orientation="h",
-                            marker=dict(color=color),
-                        )
-
+                        fig_stack.add_bar(y=["Planta"], x=[pct], name=m, orientation="h", marker=dict(color=color))
                     fig_stack.update_layout(
                         barmode="stack",
                         height=120,
@@ -1263,23 +1152,19 @@ with tabs[3]:
                         yaxis=dict(showticklabels=False),
                         legend=dict(orientation="h"),
                     )
-
                     st.plotly_chart(fig_stack, use_container_width=True, key="chart_stack")
-
 
                 total_h_week = H_max_plant * (total_selected_pct / 100.0)
                 total_h_year = total_h_week * float(weeks_equiv)
-
                 H_max_plant_year = H_max_plant * float(weeks_equiv)
-                st.write(f"**Horas máximas/año (estructura):** {H_max_plant_year:.2f}")
 
+                st.write(f"**Horas máximas/año (estructura):** {H_max_plant_year:.2f}")
                 if exceso > 0:
                     st.error(f"Exceso estructural: {exceso:.2f}%")
                 st.write(f"**Ocupación agregada:** {total_selected_pct:.2f}%")
                 st.write(f"**Horas/sem (equivalentes):** {total_h_week:.2f}")
                 st.write(f"**Horas/año (equivalentes):** {total_h_year:.2f}")
 
-            # ---------- Modelos (izquierda): grid de tarjetas compactas ----------
             with left:
                 st.markdown("### Por modelo")
                 grid_cols = 2
@@ -1309,11 +1194,10 @@ with tabs[3]:
                                 help="Este % es una ocupación estructural teórica (no planificación real).",
                             )
 
-                            # Derivadas: horas y unidades equivalentes (en base al cycle_time total del modelo)
                             sel_h_week = H_max_plant * (sel_pct / 100.0)
                             sel_h_year = sel_h_week * float(weeks_equiv)
 
-                            w_m = float(cycle_by_model.get(m, 0.0) or 0.0)  # h/ud
+                            w_m = float(cycle_by_model.get(m, 0.0) or 0.0)
                             sel_u_week = (sel_h_week / w_m) if w_m > 0 else 0.0
                             sel_u_year = sel_u_week * float(weeks_equiv)
 
