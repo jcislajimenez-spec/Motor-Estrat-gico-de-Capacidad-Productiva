@@ -121,7 +121,10 @@ def compute_line_capacity(
     s["process"] = _norm_str(s["process"]).replace(PROCESS_ALIASES)
 
     # Filtrado por modelo y línea
-    t = t[t["model"].astype(str).str.strip().str.upper() == model][["process", "cycle_time"]].copy()
+     t = t[
+        (t["model"].astype(str).str.strip().str.upper() == model) &
+        (t["cycle_time"] > 0)
+    ][["process", "cycle_time"]].copy()
     s = s[s["line"].astype(str).str.strip().str.upper() == line][["process", "stations", "operators_per_station"]].copy()
 
     # Asegurar numéricos
@@ -152,7 +155,6 @@ def compute_line_capacity(
     # Operarios por proceso (si no existe -> 1)
     merged["operators"] = _to_num(merged["operators_per_station"]).fillna(1).astype(float)
 
-    merged = merged[merged["cycle_time"] > 0]
 
     # ✅ Fórmula Excel (tal cual)
     merged["capacity"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["cycle_time"]
