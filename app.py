@@ -408,13 +408,673 @@ line_ids_nave = sorted(
 # =========================================================
 # TABS
 # =========================================================
-tabs = st.tabs(["📊 Planificación", "⚙️ Configuración (Power User)", "📈 Resultados", "🧭 Capacidad según mix"])
+tabs = st.tabs(["🌐 Global", "📊 Planificación", "⚙️ Configuración (Power User)", "📈 Resultados", "🧭 Capacidad según mix"])
+
+# =========================================================
+# 0) GLOBAL - VISIÓN MULTIPLANTA
+# =========================================================
+
+with tabs[0]:
+    st.subheader("🌐 Visión Global Multiplanta")
+    st.info("Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.")
+    
+    # --- Cargar TODOS los datos de TODAS las plantas ---
+    @st.cache_data(ttl=10)
+    def load_all_plants_data():
+        """Carga datos de todas las plantas para el análisis global."""
+        all_plants = load_table("plants")
+        all_settings = load_table("settings")
+        all_models = load_table("models")
+        all_times = load_table("models_process_times")
+        all_stations = load_table("lines_process_stations")
+        all_compat = load_table("compatibility")
+        
+        return {
+            "plants": all_plants,
+            "settings": all_settings,
+            "models": all_models,
+            "times": all_times,
+            "stations": all_stations,
+            "compat": all_compat,
+        }
+    
+    all_data = load_all_plants_data()
+    
+    # --- Función para calcular capacidad estructural por planta ---
+    def compute_plant_structural_capacity(p_id: int, p_name: str, all_data: dict) -> dict:
+        """Calcula capacidad estructural (max/prom/min) para una planta."""
+        
+        # Obtener settings de la planta
+        p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
+        if p_settings.empty:
+            p_hours_week = 43.0
+            p_shifts = 1
+            p_availability = 1.0
+            p_efficiency = 1.0
+            p_days_year = 250
+            p_days_week = 5
+        else:
+            row = p_settings.iloc[0]
+            p_hours_week = float(row.get("hours_week", 43.0))
+            p_shifts = int(row.get("shifts", 1))
+            p_availability = float(row.get("availability", 1.0))
+            p_efficiency = float(row.get("efficiency", 1.0))
+            p_days_year = int(row.get("days_open_year", 250))
+            p_days_week = int(row.get("days_open_week", 5))
+        
+        p_hours_eff = p_hours_week * p_shifts * p_availability * p_efficiency
+        p_weeks_equiv = p_days_year / max(p_days_week, 1)
+        
+        # Filtrar datos por planta
+        p_models = all_data["models"][all_data["models"]["plant_id"] == p_id].copy()
+        p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
+        p_stations = all_data["stations"][all_data["stations"]["plant_id"] == p_id].copy()
+        p_compat = all_data["compat"][all_data["compat"]["plant_id"] == p_id].copy()
+        
+        if p_models.empty or p_stations.empty:
+            return {
+                "plant_id": p_id,
+                "plant_name": p_name,
+                "hours_eff": p_hours_eff,
+                "weeks_equiv": p_weeks_equiv,
+                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+                "lines_count": 0,
+                "line_stats": [],
+            }
+        
+        # Normalización
+        p_models["model"] = p_models["model"].astype(str).str.strip()
+        p_times["model"] = p_times["model"].astype(str).str.strip()
+        p_stations["line"] = p_stations["line"].astype(str).str.strip()
+        p_compat["line"] = p_compat["line"].astype(str).str.strip()
+        p_compat["model"] = p_compat["model"].astype(str).str.strip()
+        
+        p_models = ensure_int(p_models, ["active"])
+        p_compat = ensure_int(p_compat, ["compatible"])
+        
+        active_models_p = p_models.loc[p_models["active"] == 1, "model"].tolist()
+        
+        if not active_models_p:
+            return {
+                "plant_id": p_id,
+                "plant_name": p_name,
+                "hours_eff": p_hours_eff,
+                "weeks_equiv": p_weeks_equiv,
+                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+                "lines_count": 0,
+                "line_stats": [],
+            }
+        
+        # Compatibilidades activas
+        compat_active_p = p_compat[(p_compat["compatible"] == 1) & (p_compat["model"].isin(active_models_p))].copy()
+        allowed_by_line_p = compat_active_p.groupby("line")["model"].apply(list).to_dict()
+        
+        # Cycle times por modelo
+        _t = p_times.copy()
+        _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
+        cycle_by_model_p = _t.groupby("model")["cycle_time"].sum().to_dict()
+        
+        # Line IDs
+        line_ids_p = sorted(p_stations["line_id"].astype(str).str.strip().unique().tolist())
+        
+        line_stats_rows = []
+        
+        for line_id in line_ids_p:
+            parts = line_id.split("-", 1)
+            if len(parts) == 2:
+                nave, base_line = parts
+            else:
+                nave = "N1"
+                base_line = parts[0]
+            
+            models_allowed = allowed_by_line_p.get(base_line, [])
+            if not models_allowed:
+                continue
+            
+            capU_vals = []
+            capH_vals = []
+            
+            for m in models_allowed:
+                # Calcular capacidad para esta línea y modelo
+                t = p_times[p_times["model"] == m].copy()
+                s = p_stations[p_stations["line_id"] == line_id].copy()
+                
+                merged = pd.merge(s, t, on="process", how="inner")
+                
+                if merged.empty:
+                    continue
+                
+                merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
+                merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
+                merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
+                
+                merged["capacity"] = 0.0
+                mask = merged["cycle_time"] > 0
+                merged.loc[mask, "capacity"] = (
+                    p_hours_eff
+                    * merged.loc[mask, "stations"]
+                    * merged.loc[mask, "operators_per_station"]
+                ) / merged.loc[mask, "cycle_time"]
+                
+                if merged["capacity"].dropna().empty or merged["capacity"].min() <= 0:
+                    continue
+                
+                cap_week = float(merged["capacity"].min())
+                w_m = float(cycle_by_model_p.get(m, 0.0))
+                cap_h_week = cap_week * w_m
+                
+                capU_vals.append(cap_week)
+                capH_vals.append(cap_h_week)
+            
+            if not capU_vals:
+                continue
+            
+            line_stats_rows.append({
+                "line_id": line_id,
+                "nave": nave,
+                "line": base_line,
+                "max_u": float(np.max(capU_vals)),
+                "prom_u": float(np.mean(capU_vals)),
+                "min_u": float(np.min(capU_vals)),
+                "max_h": float(np.max(capH_vals)),
+                "prom_h": float(np.mean(capH_vals)),
+                "min_h": float(np.min(capH_vals)),
+            })
+        
+        if not line_stats_rows:
+            return {
+                "plant_id": p_id,
+                "plant_name": p_name,
+                "hours_eff": p_hours_eff,
+                "weeks_equiv": p_weeks_equiv,
+                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+                "lines_count": 0,
+                "line_stats": [],
+            }
+        
+        # Agregar por planta
+        max_u_sem = sum(r["max_u"] for r in line_stats_rows)
+        prom_u_sem = sum(r["prom_u"] for r in line_stats_rows)
+        min_u_sem = sum(r["min_u"] for r in line_stats_rows)
+        
+        max_h_sem = sum(r["max_h"] for r in line_stats_rows)
+        prom_h_sem = sum(r["prom_h"] for r in line_stats_rows)
+        min_h_sem = sum(r["min_h"] for r in line_stats_rows)
+        
+        return {
+            "plant_id": p_id,
+            "plant_name": p_name,
+            "hours_eff": p_hours_eff,
+            "weeks_equiv": p_weeks_equiv,
+            "max_u_sem": max_u_sem,
+            "prom_u_sem": prom_u_sem,
+            "min_u_sem": min_u_sem,
+            "max_u_year": max_u_sem * p_weeks_equiv,
+            "prom_u_year": prom_u_sem * p_weeks_equiv,
+            "min_u_year": min_u_sem * p_weeks_equiv,
+            "max_h_sem": max_h_sem,
+            "prom_h_sem": prom_h_sem,
+            "min_h_sem": min_h_sem,
+            "max_h_year": max_h_sem * p_weeks_equiv,
+            "prom_h_year": prom_h_sem * p_weeks_equiv,
+            "min_h_year": min_h_sem * p_weeks_equiv,
+            "lines_count": len(line_stats_rows),
+            "line_stats": line_stats_rows,
+        }
+    
+    # --- Calcular capacidad para TODAS las plantas ---
+    global_results = []
+    for _, plant_row in all_data["plants"].iterrows():
+        p_id = int(plant_row["id"])
+        p_name = str(plant_row["name"])
+        result = compute_plant_structural_capacity(p_id, p_name, all_data)
+        global_results.append(result)
+    
+    # =====================================================
+    # 1️⃣ SELECTOR DE ESCENARIO
+    # =====================================================
+    st.markdown("### 📊 Selector de Escenario")
+    
+    col_esc1, col_esc2 = st.columns([1, 3])
+    with col_esc1:
+        escenario = st.radio(
+            "Escenario de capacidad:",
+            ["Máximo", "Promedio", "Mínimo"],
+            index=1,  # Promedio por defecto
+            horizontal=True,
+            key="global_escenario"
+        )
+    
+    # Mapear escenario a columnas
+    esc_map = {
+        "Máximo": ("max_u_sem", "max_u_year", "max_h_sem", "max_h_year"),
+        "Promedio": ("prom_u_sem", "prom_u_year", "prom_h_sem", "prom_h_year"),
+        "Mínimo": ("min_u_sem", "min_u_year", "min_h_sem", "min_h_year"),
+    }
+    u_sem_col, u_year_col, h_sem_col, h_year_col = esc_map[escenario]
+    
+    st.divider()
+    
+    # =====================================================
+    # 2️⃣ RESUMEN GLOBAL DE CAPACIDAD
+    # =====================================================
+    st.markdown("### 📈 Resumen Global de Capacidad")
+    st.caption(f"Escenario: **{escenario}**")
+    
+    # Construir DataFrame de resumen
+    resumen_rows = []
+    for r in global_results:
+        resumen_rows.append({
+            "PLANTA": r["plant_name"],
+            "LÍNEAS": r["lines_count"],
+            "CAP. LÍNEA (uds/sem)": r[u_sem_col],
+            "CAP. LÍNEA (uds/año)": r[u_year_col],
+            "CAPACIDAD (h/sem)": r[h_sem_col],
+            "CAPACIDAD (h/año)": r[h_year_col],
+        })
+    
+    resumen_df = pd.DataFrame(resumen_rows)
+    
+    # Añadir fila TOTAL
+    total_row = {
+        "PLANTA": "TOTAL",
+        "LÍNEAS": int(resumen_df["LÍNEAS"].sum()),
+        "CAP. LÍNEA (uds/sem)": resumen_df["CAP. LÍNEA (uds/sem)"].sum(),
+        "CAP. LÍNEA (uds/año)": resumen_df["CAP. LÍNEA (uds/año)"].sum(),
+        "CAPACIDAD (h/sem)": resumen_df["CAPACIDAD (h/sem)"].sum(),
+        "CAPACIDAD (h/año)": resumen_df["CAPACIDAD (h/año)"].sum(),
+    }
+    resumen_df = pd.concat([resumen_df, pd.DataFrame([total_row])], ignore_index=True)
+    
+    # Estilo para la tabla
+    def style_resumen(df):
+        def highlight_total(row):
+            if row["PLANTA"] == "TOTAL":
+                return ["font-weight: bold; background-color: #f0f0f0;"] * len(row)
+            return [""] * len(row)
+        return df.style.apply(highlight_total, axis=1).format({
+            "CAP. LÍNEA (uds/sem)": "{:.1f}",
+            "CAP. LÍNEA (uds/año)": "{:.1f}",
+            "CAPACIDAD (h/sem)": "{:.1f}",
+            "CAPACIDAD (h/año)": "{:.1f}",
+        })
+    
+    st.dataframe(style_resumen(resumen_df), use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    # =====================================================
+    # 3️⃣ DISPONIBILIDAD Y % USO
+    # =====================================================
+    st.markdown("### ⚡ Capacidad vs Disponibilidad")
+    st.caption("Introduce la disponibilidad anual (horas) para cada planta.")
+    
+    # Inicializar disponibilidad en session_state
+    if "global_disponibilidad" not in st.session_state:
+        st.session_state.global_disponibilidad = {}
+    
+    # Crear inputs de disponibilidad
+    disp_cols = st.columns(min(len(global_results), 4))
+    for i, r in enumerate(global_results):
+        col_idx = i % len(disp_cols)
+        with disp_cols[col_idx]:
+            default_disp = st.session_state.global_disponibilidad.get(r["plant_name"], r["max_h_year"] * 1.2)
+            disp_value = st.number_input(
+                f"Disp. {r['plant_name']} (h/año)",
+                min_value=0.0,
+                value=float(default_disp),
+                step=1000.0,
+                key=f"disp_{r['plant_name']}"
+            )
+            st.session_state.global_disponibilidad[r["plant_name"]] = disp_value
+    
+    # Tabla Capacidad vs Disponibilidad
+    cap_disp_rows = []
+    for r in global_results:
+        cap_h_year = r[h_year_col]
+        disp_h_year = st.session_state.global_disponibilidad.get(r["plant_name"], 0.0)
+        pct_uso = (cap_h_year / disp_h_year * 100) if disp_h_year > 0 else 0.0
+        
+        cap_disp_rows.append({
+            "PLANTA": r["plant_name"],
+            "Capacidad (h/año)": cap_h_year,
+            "Disponibilidad (h/año)": disp_h_year,
+            "% USO CAPACIDAD": pct_uso,
+        })
+    
+    cap_disp_df = pd.DataFrame(cap_disp_rows)
+    
+    # Añadir total
+    total_cap = cap_disp_df["Capacidad (h/año)"].sum()
+    total_disp = cap_disp_df["Disponibilidad (h/año)"].sum()
+    total_pct = (total_cap / total_disp * 100) if total_disp > 0 else 0.0
+    
+    cap_disp_df = pd.concat([cap_disp_df, pd.DataFrame([{
+        "PLANTA": "TOTAL",
+        "Capacidad (h/año)": total_cap,
+        "Disponibilidad (h/año)": total_disp,
+        "% USO CAPACIDAD": total_pct,
+    }])], ignore_index=True)
+    
+    def style_cap_disp(df):
+        def color_pct(val):
+            try:
+                v = float(val)
+                if v >= 100:
+                    return "color: red; font-weight: bold;"
+                elif v >= 80:
+                    return "color: orange; font-weight: bold;"
+                else:
+                    return "color: green; font-weight: bold;"
+            except:
+                return ""
+        
+        def highlight_total(row):
+            if row["PLANTA"] == "TOTAL":
+                return ["font-weight: bold; background-color: #f0f0f0;"] * len(row)
+            return [""] * len(row)
+        
+        return df.style.apply(highlight_total, axis=1).map(
+            color_pct, subset=["% USO CAPACIDAD"]
+        ).format({
+            "Capacidad (h/año)": "{:,.1f}",
+            "Disponibilidad (h/año)": "{:,.1f}",
+            "% USO CAPACIDAD": "{:.1f}%",
+        })
+    
+    st.dataframe(style_cap_disp(cap_disp_df), use_container_width=True, hide_index=True)
+    
+    # Gráfico de barras
+    fig_cap_disp = go.Figure()
+    plants_no_total = [r["PLANTA"] for r in cap_disp_rows]
+    caps = [r["Capacidad (h/año)"] for r in cap_disp_rows]
+    disps = [r["Disponibilidad (h/año)"] for r in cap_disp_rows]
+    
+    fig_cap_disp.add_bar(x=plants_no_total, y=caps, name="Capacidad", marker_color="#A6192E")
+    fig_cap_disp.add_bar(x=plants_no_total, y=disps, name="Disponibilidad", marker_color="#2E75B6")
+    fig_cap_disp.update_layout(
+        barmode="group",
+        title="Capacidad vs Disponibilidad por Planta (h/año)",
+        height=400,
+    )
+    st.plotly_chart(fig_cap_disp, use_container_width=True, key="chart_cap_disp_global")
+    
+    st.divider()
+    
+    # =====================================================
+    # 4️⃣ RESUMEN POR MODELO
+    # =====================================================
+    st.markdown("### 🔧 Capacidad por Modelo")
+    
+    # Obtener todos los modelos activos de todas las plantas
+    all_active_models = set()
+    for _, plant_row in all_data["plants"].iterrows():
+        p_id = int(plant_row["id"])
+        p_models = all_data["models"][all_data["models"]["plant_id"] == p_id]
+        p_models = ensure_int(p_models.copy(), ["active"])
+        active_m = p_models.loc[p_models["active"] == 1, "model"].astype(str).str.strip().tolist()
+        all_active_models.update(active_m)
+    
+    all_active_models = sorted(list(all_active_models))
+    
+    if all_active_models:
+        selected_model = st.selectbox(
+            "Seleccionar modelo:",
+            ["Todos los modelos"] + all_active_models,
+            key="global_model_filter"
+        )
+        
+        # Función para calcular capacidad por modelo y planta
+        def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict) -> dict:
+            """Calcula capacidad de un modelo específico en una planta."""
+            p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
+            if p_settings.empty:
+                p_hours_eff = 43.0
+                p_weeks_equiv = 50.0
+            else:
+                row = p_settings.iloc[0]
+                p_hours_week = float(row.get("hours_week", 43.0))
+                p_shifts = int(row.get("shifts", 1))
+                p_availability = float(row.get("availability", 1.0))
+                p_efficiency = float(row.get("efficiency", 1.0))
+                p_days_year = int(row.get("days_open_year", 250))
+                p_days_week = int(row.get("days_open_week", 5))
+                p_hours_eff = p_hours_week * p_shifts * p_availability * p_efficiency
+                p_weeks_equiv = p_days_year / max(p_days_week, 1)
+            
+            p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
+            p_stations = all_data["stations"][all_data["stations"]["plant_id"] == p_id].copy()
+            p_compat = all_data["compat"][all_data["compat"]["plant_id"] == p_id].copy()
+            
+            p_times["model"] = p_times["model"].astype(str).str.strip()
+            p_compat["model"] = p_compat["model"].astype(str).str.strip()
+            p_compat["line"] = p_compat["line"].astype(str).str.strip()
+            p_compat = ensure_int(p_compat, ["compatible"])
+            
+            # Líneas compatibles con este modelo
+            compat_lines = p_compat[(p_compat["model"] == model_name) & (p_compat["compatible"] == 1)]["line"].tolist()
+            
+            if not compat_lines:
+                return {"cap_u_sem": 0.0, "cap_h_sem": 0.0}
+            
+            # Cycle time del modelo
+            model_times = p_times[p_times["model"] == model_name].copy()
+            model_times["cycle_time"] = pd.to_numeric(model_times["cycle_time"], errors="coerce").fillna(0.0)
+            total_cycle = float(model_times["cycle_time"].sum())
+            
+            line_ids = p_stations["line_id"].astype(str).str.strip().unique().tolist()
+            
+            total_cap_u = 0.0
+            total_cap_h = 0.0
+            
+            for line_id in line_ids:
+                parts = line_id.split("-", 1)
+                base_line = parts[1] if len(parts) == 2 else parts[0]
+                
+                if base_line not in compat_lines:
+                    continue
+                
+                t = model_times.copy()
+                s = p_stations[p_stations["line_id"] == line_id].copy()
+                
+                merged = pd.merge(s, t, on="process", how="inner")
+                
+                if merged.empty:
+                    continue
+                
+                merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
+                merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
+                merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
+                
+                merged["capacity"] = 0.0
+                mask = merged["cycle_time"] > 0
+                merged.loc[mask, "capacity"] = (
+                    p_hours_eff
+                    * merged.loc[mask, "stations"]
+                    * merged.loc[mask, "operators_per_station"]
+                ) / merged.loc[mask, "cycle_time"]
+                
+                if merged["capacity"].dropna().empty or merged["capacity"].min() <= 0:
+                    continue
+                
+                cap_u = float(merged["capacity"].min())
+                cap_h = cap_u * total_cycle
+                
+                total_cap_u += cap_u
+                total_cap_h += cap_h
+            
+            return {
+                "cap_u_sem": total_cap_u,
+                "cap_h_sem": total_cap_h,
+                "weeks_equiv": p_weeks_equiv,
+            }
+        
+        if selected_model != "Todos los modelos":
+            # Mostrar capacidad del modelo seleccionado en todas las plantas
+            model_rows = []
+            for _, plant_row in all_data["plants"].iterrows():
+                p_id = int(plant_row["id"])
+                p_name = str(plant_row["name"])
+                
+                cap_data = compute_model_capacity_by_plant(selected_model, p_id, all_data)
+                
+                model_rows.append({
+                    "PLANTA": p_name,
+                    "Capacidad (uds/sem)": cap_data["cap_u_sem"],
+                    "Capacidad (uds/año)": cap_data["cap_u_sem"] * cap_data.get("weeks_equiv", 50),
+                    "Capacidad (h/sem)": cap_data["cap_h_sem"],
+                    "Capacidad (h/año)": cap_data["cap_h_sem"] * cap_data.get("weeks_equiv", 50),
+                })
+            
+            model_df = pd.DataFrame(model_rows)
+            
+            # Añadir total
+            model_df = pd.concat([model_df, pd.DataFrame([{
+                "PLANTA": "TOTAL",
+                "Capacidad (uds/sem)": model_df["Capacidad (uds/sem)"].sum(),
+                "Capacidad (uds/año)": model_df["Capacidad (uds/año)"].sum(),
+                "Capacidad (h/sem)": model_df["Capacidad (h/sem)"].sum(),
+                "Capacidad (h/año)": model_df["Capacidad (h/año)"].sum(),
+            }])], ignore_index=True)
+            
+            st.markdown(f"**Modelo seleccionado:** {selected_model}")
+            st.dataframe(
+                model_df.style.format({
+                    "Capacidad (uds/sem)": "{:.1f}",
+                    "Capacidad (uds/año)": "{:.1f}",
+                    "Capacidad (h/sem)": "{:.1f}",
+                    "Capacidad (h/año)": "{:.1f}",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("Selecciona un modelo específico para ver su capacidad en todas las plantas.")
+    else:
+        st.warning("No hay modelos activos en ninguna planta.")
+    
+    st.divider()
+    
+    # =====================================================
+    # 5️⃣ PANEL DE MODIFICACIONES
+    # =====================================================
+    col_left, col_right = st.columns([2, 1])
+    
+    with col_right:
+        st.markdown("### 🔧 Modificaciones Necesarias")
+        st.caption("Registro de mejoras planificadas")
+        
+        # Inicializar modificaciones en session_state
+        if "global_modificaciones" not in st.session_state:
+            st.session_state.global_modificaciones = [
+                {"nombre": "Optimización de flujo en Línea 1", "horas": 120, "planta": "ORTUELLA"},
+                {"nombre": "Nuevas estaciones de testeo", "horas": 45, "planta": "CHENNAI"},
+            ]
+        
+        # Mostrar modificaciones existentes
+        for i, mod in enumerate(st.session_state.global_modificaciones):
+            with st.expander(f"📌 {mod['nombre']}", expanded=False):
+                st.write(f"**Planta:** {mod['planta']}")
+                st.write(f"**Horas estimadas:** {mod['horas']} h")
+                if st.button("🗑️ Eliminar", key=f"del_mod_{i}"):
+                    st.session_state.global_modificaciones.pop(i)
+                    st.rerun()
+        
+        # Añadir nueva modificación
+        with st.expander("➕ Añadir modificación", expanded=False):
+            new_mod_nombre = st.text_input("Nombre de la modificación", key="new_mod_nombre")
+            new_mod_planta = st.selectbox(
+                "Planta",
+                [p["name"] for _, p in all_data["plants"].iterrows()],
+                key="new_mod_planta"
+            )
+            new_mod_horas = st.number_input("Horas estimadas", min_value=0, value=10, key="new_mod_horas")
+            
+            if st.button("Añadir", key="btn_add_mod"):
+                if new_mod_nombre.strip():
+                    st.session_state.global_modificaciones.append({
+                        "nombre": new_mod_nombre.strip(),
+                        "planta": new_mod_planta,
+                        "horas": new_mod_horas,
+                    })
+                    st.rerun()
+        
+        # Resumen de hitos
+        st.markdown("---")
+        st.markdown("### 📊 Resumen de Hitos")
+        total_mods = len(st.session_state.global_modificaciones)
+        total_horas_mods = sum(m["horas"] for m in st.session_state.global_modificaciones)
+        
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            st.metric("Nº Hitos", total_mods)
+        with col_h2:
+            st.metric("Horas Totales", f"{total_horas_mods} h")
+    
+    with col_left:
+        # =====================================================
+        # 6️⃣ % USO LÍNEAS POR PLANTA
+        # =====================================================
+        st.markdown("### 📊 Distribución de Capacidad por Planta")
+        
+        # Gráfico de tarta
+        plant_names_chart = [r["plant_name"] for r in global_results if r[h_year_col] > 0]
+        plant_caps_chart = [r[h_year_col] for r in global_results if r[h_year_col] > 0]
+        
+        if plant_caps_chart:
+            fig_pie = go.Figure(go.Pie(
+                labels=plant_names_chart,
+                values=plant_caps_chart,
+                hole=0.4,
+                textinfo="label+percent",
+                marker=dict(colors=px.colors.qualitative.Set2),
+            ))
+            fig_pie.update_layout(
+                title=f"Distribución de Capacidad ({escenario}) - h/año",
+                height=400,
+            )
+            st.plotly_chart(fig_pie, use_container_width=True, key="chart_pie_global")
+        
+        # Tabla de % uso líneas
+        st.markdown("### 📋 Uso de Líneas por Planta")
+        
+        uso_lineas_rows = []
+        total_lineas = sum(r["lines_count"] for r in global_results)
+        
+        for r in global_results:
+            pct_lineas = (r["lines_count"] / total_lineas * 100) if total_lineas > 0 else 0
+            uso_lineas_rows.append({
+                "PLANTA": r["plant_name"],
+                "Nº Líneas": r["lines_count"],
+                "% del Total": pct_lineas,
+                "Cap. Media/Línea (h/sem)": r[h_sem_col] / r["lines_count"] if r["lines_count"] > 0 else 0,
+            })
+        
+        uso_lineas_df = pd.DataFrame(uso_lineas_rows)
+        st.dataframe(
+            uso_lineas_df.style.format({
+                "% del Total": "{:.1f}%",
+                "Cap. Media/Línea (h/sem)": "{:.1f}",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
 
 # =========================================================
 # 1) PLANIFICACIÓN
 # =========================================================
 
-with tabs[0]:
+with tabs[1]:
     st.subheader("Selección de modelo por línea")
 
     # Compatibilidad por línea base (sin nave)
@@ -487,7 +1147,7 @@ with tabs[0]:
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
 # =========================================================
-with tabs[1]:
+with tabs[2]:
     st.subheader("Configuración (power user)")
     st.caption("Aquí se mantienen modelos, tiempos, estaciones y compatibilidades. Usuario normal NO debería tocar esto.")
 
@@ -727,7 +1387,7 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
 
 
 
-with tabs[2]:
+with tabs[3]:
     st.subheader("Resultados de capacidad")
     st.caption(f"Horas efectivas planta: {hours_eff:.2f} h/semana")
 
@@ -967,7 +1627,7 @@ with tabs[2]:
         st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
 
 
-with tabs[3]:
+with tabs[4]:
     st.subheader("Capacidad según mix")
     st.info(
         "La planta produce **horas configurables**.\n"
