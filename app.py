@@ -605,7 +605,7 @@ with tabs[1]:
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
 
-    for line_id in line_ids_nave:
+    for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
 
@@ -664,13 +664,12 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
     """
-    nave, line = line_id.split("-", 1)
 
     t = times_df[times_df["model"] == model].copy()
     s = stations_df[
-        (stations_df["line"] == line) &
-        (stations_df["nave"] == nave)
+        stations_df["line_id"] == line_id
     ].copy()
+
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
@@ -729,7 +728,15 @@ with tabs[2]:
     summary_rows = []
     detail_by_line = {}
 
-    for line_id in line_ids_nave:
+    all_line_ids = sorted(
+        stations_df["line_id"]
+        .astype(str)
+        .str.strip()
+        .unique()
+       .tolist()
+    )
+
+    for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
 
@@ -848,7 +855,7 @@ with tabs[2]:
         if "line_id" in styled.columns:
             def _style_total(row):
                 if str(row.get("line_id", "")) == "TOTAL":
-                    return ["font-weight: 800; font-size: 18px;"] * len(row)
+                    return ["font-weight: bold; font-size: 18px; background-color: #f2f2f2;"] * len(row)
                 return [""] * len(row)
             s = s.apply(_style_total, axis=1)
 
@@ -906,7 +913,8 @@ with tabs[2]:
         df_plot = summary_df.copy()
         df_plot = df_plot[df_plot["line_id"] != "TOTAL"].copy()
 
-        line_order = [l for l in lines if l in set(df_plot["line_id"].astype(str).tolist())]
+        line_order = sorted(df_plot["line_id"].astype(str).unique().tolist())
+
         if "TOTAL" in set(summary_df["line_id"].astype(str).tolist()):
             line_order.append("TOTAL")
 
@@ -1112,7 +1120,7 @@ with tabs[3]:
         maxH_by_model = {}
         for m in cycle_by_model.keys():
             total_h = 0.0
-            for line_id in lines:
+            for line_id in line_ids_nave:
                 h = float(capH_line_model.get((line_id, m), 0.0) or 0.0)
                 if h > 0:
                     total_h += h
