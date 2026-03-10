@@ -4,6 +4,9 @@ import streamlit as st
 import pandas as pd
 from PIL import Image
 import psycopg2
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
 
 def resource_path(relative_path: str) -> str:
     """Devuelve la ruta absoluta a un recurso.
@@ -430,7 +433,7 @@ with tabs[0]:
         st.markdown("### Selección")
         for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
             st.markdown(f"#### NAVE {nave}")
-            line_ids_nave = sorted(
+            nave_line_ids = sorted(
                 stations_df.loc[stations_df["nave"] == nave, "line_id"]
                 .astype(str)
                 .str.strip()
@@ -438,7 +441,7 @@ with tabs[0]:
                 .tolist()
             )
 
-            for line_id in line_ids_nave:
+            for line_id in nave_line_ids:
                 _nave, base_line = line_id.split("-", 1)
                 allowed = allowed_by_line.get(base_line, [])
                 if not allowed:
@@ -461,14 +464,14 @@ with tabs[0]:
         st.markdown("### Demanda (UDS/SEM)")
         for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
             st.markdown(f"#### NAVE {nave}")
-            line_ids_nave = sorted(
+            nave_line_ids = sorted(
                 stations_df.loc[stations_df["nave"] == nave, "line_id"]
                 .astype(str)
                 .str.strip()
                 .unique()
                 .tolist()
             )
-            for line_id in line_ids_nave:
+            for line_id in nave_line_ids:
                 model = st.session_state.line_model.get(line_id)
                 if not model:
                     continue
@@ -712,7 +715,10 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
         return 0.0
 
     m = merged.copy()
-    m["cycle_time"] = pd.to_numeric(m.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
+    if "cycle_time" in m.columns:
+        m["cycle_time"] = pd.to_numeric(m["cycle_time"], errors="coerce").fillna(0.0)
+    else:
+        m["cycle_time"] = 0.0
 
     hours_proc = output_units * m["cycle_time"]
     hours_proc = pd.to_numeric(hours_proc, errors="coerce").fillna(0.0)
@@ -763,7 +769,10 @@ with tabs[2]:
         cap_year = cap_week * weeks_equiv
 
         _tmod = times_df[times_df["model"] == model].copy()
-        _tmod["cycle_time"] = pd.to_numeric(_tmod.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
+        if "cycle_time" in _tmod.columns:
+            _tmod["cycle_time"] = pd.to_numeric(_tmod["cycle_time"], errors="coerce").fillna(0.0)
+        else:
+            _tmod["cycle_time"] = 0.0
         total_cycle_time_model = float(_tmod["cycle_time"].sum())
 
         cap_hours_week = cap_week * total_cycle_time_model
@@ -849,8 +858,8 @@ with tabs[2]:
                 return ""
             return "color: red; font-weight: 700;" if v >= 100 else "color: green; font-weight: 700;"
 
-        s = s.applymap(sat_color, subset=["Saturación (%)"])
-        s = s.applymap(lambda _: "color: red; font-weight: 700;", subset=["bottleneck"])
+        s = s.map(sat_color, subset=["Saturación (%)"])
+        s = s.map(lambda _: "color: red; font-weight: 700;", subset=["bottleneck"])
 
         if "line_id" in styled.columns:
             def _style_total(row):
@@ -903,8 +912,6 @@ with tabs[2]:
                         use_container_width=True,
                         hide_index=True
                     )
-
-    import plotly.graph_objects as go
 
     st.divider()
     st.markdown("## 📊 Representación gráfica de Demanda vs Capacidad")
@@ -968,11 +975,11 @@ with tabs[3]:
         "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
     )
 
-    compat_active = compat_df[(compat_df.get("compatible", 0) == 1) & (compat_df["model"].isin(active_models))].copy()
+    compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
     allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
     _t = times_df.copy()
-    _t["cycle_time"] = pd.to_numeric(_t.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
+    _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
     cycle_by_model = _t.groupby("model")["cycle_time"].sum().to_dict()
 
     line_stats_rows = []
@@ -1017,19 +1024,17 @@ with tabs[3]:
         if not capU_vals:
             continue
 
-        import numpy as _np
+        max_u = float(np.max(capU_vals))
+        min_u = float(np.min(capU_vals))
+        avg_u = float(np.mean(capU_vals))
 
-        max_u = float(_np.max(capU_vals))
-        min_u = float(_np.min(capU_vals))
-        avg_u = float(_np.mean(capU_vals))
-
-        max_h = float(_np.max(capH_vals))
-        min_h = float(_np.min(capH_vals))
-        avg_h = float(_np.mean(capH_vals))
+        max_h = float(np.max(capH_vals))
+        min_h = float(np.min(capH_vals))
+        avg_h = float(np.mean(capH_vals))
         max_h_week_by_line[line_id] = max_h
 
-        idx_max_h = int(_np.argmax(capH_vals))
-        idx_min_h = int(_np.argmin(capH_vals))
+        idx_max_h = int(np.argmax(capH_vals))
+        idx_min_h = int(np.argmin(capH_vals))
         model_max_h = model_for_capH[idx_max_h] if capH_vals else ""
         model_min_h = model_for_capH[idx_min_h] if capH_vals else ""
 
@@ -1139,11 +1144,7 @@ with tabs[3]:
                 st.markdown("### Agregado planta")
                 total_selected_pct = 0.0
 
-                try:
-                    import plotly.express as px
-                    palette = px.colors.qualitative.Plotly
-                except Exception:
-                    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+                palette = px.colors.qualitative.Plotly
 
                 segments = []
                 for i, m in enumerate(valid_models):
@@ -1157,8 +1158,6 @@ with tabs[3]:
                     total_selected_pct += sel_pct
 
                 exceso = max(0.0, total_selected_pct - 100.0)
-
-                import plotly.graph_objects as go
 
                 range_max = max(120.0, float(total_selected_pct) * 1.10)
 
@@ -1243,7 +1242,6 @@ with tabs[3]:
                             max_u_week = (maxH / w_m) if w_m > 0 else 0.0
                             max_u_year = max_u_week * float(weeks_equiv)
 
-                            import plotly.graph_objects as go
                             fig_d = go.Figure(go.Pie(
                                 labels=["Seleccionado", "Resto hasta máx"],
                                 values=[sel_pct, max(0.0, max_pct - sel_pct)],
