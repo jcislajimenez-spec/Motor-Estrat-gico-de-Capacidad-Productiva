@@ -374,9 +374,12 @@ stations_df = load_table("lines_process_stations")
 stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
 
 compat_df = load_table("compatibility")
+
 compat_df = compat_df[
     (compat_df["plant_id"] == plant_id)
 ].copy()
+
+compat_df["line_id"] = compat_df["line"]
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
@@ -416,7 +419,7 @@ with tabs[0]:
 
     # Compatibilidad por línea base (sin nave)
     compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
+    allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
     # Session state para selections
     if "line_model" not in st.session_state:
@@ -439,13 +442,17 @@ with tabs[0]:
             )
 
             for line_id in line_ids_nave:
-                _nave, base_line = line_id.split("-", 1)
+
+                parts = line_id.split("-",1)
+                nave = parts[0]
+                base_line = parts[1] if len(parts) > 1 else parts[0]
+
                 allowed = allowed_by_line.get(line_id, [])
                 if not allowed:
                     st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                     continue
 
-                default_model = st.session_state.line_model.get(line_id, allowed[0])
+                default_model = st.session_state.line_model.get(line_id, allowed[0] if allowed else None)
                 if default_model not in allowed:
                     default_model = allowed[0]
 
@@ -608,7 +615,9 @@ with tabs[1]:
 
     for line_id in all_line_ids:
 
-        nave, base_line = line_id.split("-", 1)
+        parts = line_id.split("-",1)
+        nave = parts[0]
+        base_line = parts[1] if len(parts) > 1 else parts[0]
 
         st.markdown(f"### Línea {line_id}")
         with st.expander(f"Línea {line_id}", expanded=True):
@@ -733,7 +742,9 @@ with tabs[2]:
 
     for line_id in line_ids_nave:
 
-        nave, base_line = line_id.split("-", 1)
+        parts = line_id.split("-",1)
+        nave = parts[0]
+        base_line = parts[1] if len(parts) > 1 else parts[0]
 
         model = st.session_state.line_model.get(line_id)
         if not model:
@@ -957,8 +968,8 @@ with tabs[3]:
         "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
     )
 
-    compat_active = compat_df[(compat_df.get("compatible", 0) == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
+    compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
+    allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t.get("cycle_time", 0.0), errors="coerce").fillna(0.0)
@@ -971,7 +982,9 @@ with tabs[3]:
 
     for line_id in line_ids_nave:
 
-        nave, base_line = line_id.split("-", 1)
+        parts = line_id.split("-",1)
+        nave = parts[0]
+        base_line = parts[1] if len(parts) > 1 else parts[0]
 
         models_allowed = allowed_by_line.get(line_id, [])
         if not models_allowed:
