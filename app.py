@@ -103,7 +103,7 @@ thead tr th {
 DATA_DIR = resource_path("data")
 
 # =========================================================
-# CSV IO (robusto para Windows/acentos).
+# CSV IO (robusto para Windows/acentos)
 # =========================================================
 @st.cache_data
 def load_csv(name: str) -> pd.DataFrame:
@@ -374,15 +374,9 @@ stations_df = load_table("lines_process_stations")
 stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
 
 compat_df = load_table("compatibility")
-
 compat_df = compat_df[
     (compat_df["plant_id"] == plant_id)
 ].copy()
-
-compat_df["line"] = compat_df["line"].astype(str).str.strip()
-compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
-
-compat_df["line_id"] = compat_df["nave"] + "-" + compat_df["line"]
 
 # Normalización mínima
 models_df["model"] = models_df["model"].astype(str).str.strip()
@@ -445,17 +439,13 @@ with tabs[0]:
             )
 
             for line_id in line_ids_nave:
-
-                parts = line_id.split("-",1)
-                nave = parts[0]
-                base_line = parts[1] if len(parts) > 1 else parts[0]
-
-                allowed = allowed_by_line.get(line_id, [])
+                _nave, base_line = line_id.split("-", 1)
+                allowed = allowed_by_line.get(base_line, [])
                 if not allowed:
                     st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                     continue
 
-                default_model = st.session_state.line_model.get(line_id, allowed[0] if allowed else None)
+                default_model = st.session_state.line_model.get(line_id, allowed[0])
                 if default_model not in allowed:
                     default_model = allowed[0]
 
@@ -615,12 +605,15 @@ with tabs[1]:
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
 
+    for line_id in line_ids_nave:
 
-    for line_id in all_line_ids:
+        parts = line_id.split("-", 1)
 
-        parts = line_id.split("-",1)
-        nave = parts[0]
-        base_line = parts[1] if len(parts) > 1 else parts[0]
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
 
         st.markdown(f"### Línea {line_id}")
         with st.expander(f"Línea {line_id}", expanded=True):
@@ -671,12 +664,13 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
     """
+    nave, line = line_id.split("-", 1)
 
     t = times_df[times_df["model"] == model].copy()
     s = stations_df[
-        stations_df["line_id"] == line_id
+        (stations_df["line"] == line) &
+        (stations_df["nave"] == nave)
     ].copy()
-
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
@@ -735,19 +729,15 @@ with tabs[2]:
     summary_rows = []
     detail_by_line = {}
 
-    all_line_ids = sorted(
-        stations_df["line_id"]
-        .astype(str)
-        .str.strip()
-        .unique()
-       .tolist()
-    )
-
     for line_id in line_ids_nave:
 
-        parts = line_id.split("-",1)
-        nave = parts[0]
-        base_line = parts[1] if len(parts) > 1 else parts[0]
+        parts = line_id.split("-", 1)
+
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
 
         model = st.session_state.line_model.get(line_id)
         if not model:
@@ -858,7 +848,7 @@ with tabs[2]:
         if "line_id" in styled.columns:
             def _style_total(row):
                 if str(row.get("line_id", "")) == "TOTAL":
-                    return ["font-weight: bold; font-size: 18px; background-color: #f2f2f2;"] * len(row)
+                    return ["font-weight: 800; font-size: 18px;"] * len(row)
                 return [""] * len(row)
             s = s.apply(_style_total, axis=1)
 
@@ -916,8 +906,7 @@ with tabs[2]:
         df_plot = summary_df.copy()
         df_plot = df_plot[df_plot["line_id"] != "TOTAL"].copy()
 
-        line_order = sorted(df_plot["line_id"].astype(str).unique().tolist())
-
+        line_order = [l for l in lines if l in set(df_plot["line_id"].astype(str).tolist())]
         if "TOTAL" in set(summary_df["line_id"].astype(str).tolist()):
             line_order.append("TOTAL")
 
@@ -971,7 +960,7 @@ with tabs[3]:
         "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
     )
 
-    compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
+    compat_active = compat_df[(compat_df.get("compatible", 0) == 1) & (compat_df["model"].isin(active_models))].copy()
     allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
 
     _t = times_df.copy()
@@ -985,11 +974,15 @@ with tabs[3]:
 
     for line_id in line_ids_nave:
 
-        parts = line_id.split("-",1)
-        nave = parts[0]
-        base_line = parts[1] if len(parts) > 1 else parts[0]
+        parts = line_id.split("-", 1)
 
-        models_allowed = allowed_by_line.get(line_id, [])
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
+
+        models_allowed = allowed_by_line.get(base_line, [])
         if not models_allowed:
             continue
 
@@ -1119,7 +1112,7 @@ with tabs[3]:
         maxH_by_model = {}
         for m in cycle_by_model.keys():
             total_h = 0.0
-            for line_id in line_ids_nave:
+            for line_id in lines:
                 h = float(capH_line_model.get((line_id, m), 0.0) or 0.0)
                 if h > 0:
                     total_h += h
