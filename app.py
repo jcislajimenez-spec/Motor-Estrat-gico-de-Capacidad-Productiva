@@ -494,6 +494,8 @@ with tabs[0]:
         p_stations["line"] = p_stations["line"].astype(str).str.strip()
         p_compat["line"] = p_compat["line"].astype(str).str.strip()
         p_compat["model"] = p_compat["model"].astype(str).str.strip()
+        p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
+        p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
         
         p_models = ensure_int(p_models, ["active"])
         p_compat = ensure_int(p_compat, ["compatible"])
@@ -516,7 +518,7 @@ with tabs[0]:
         
         # Compatibilidades activas
         compat_active_p = p_compat[(p_compat["compatible"] == 1) & (p_compat["model"].isin(active_models_p))].copy()
-        allowed_by_line_p = compat_active_p.groupby("line")["model"].apply(list).to_dict()
+        allowed_by_line_p = compat_active_p.groupby("line_id")["model"].apply(list).to_dict()
         
         # Cycle times por modelo
         _t = p_times.copy()
@@ -536,7 +538,7 @@ with tabs[0]:
                 nave = "N1"
                 base_line = parts[0]
             
-            models_allowed = allowed_by_line_p.get(base_line, [])
+            models_allowed = allowed_by_line_p.get(line_id, [])
             if not models_allowed:
                 continue
             
@@ -565,7 +567,7 @@ with tabs[0]:
                     * merged.loc[mask, "operators_per_station"]
                 ) / merged.loc[mask, "cycle_time"]
                 
-                productive = merged[merged["cycle_time"] > 0]
+                productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
                 if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
                     continue
                 
@@ -862,12 +864,14 @@ with tabs[0]:
             p_times["model"] = p_times["model"].astype(str).str.strip()
             p_compat["model"] = p_compat["model"].astype(str).str.strip()
             p_compat["line"] = p_compat["line"].astype(str).str.strip()
+            p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
+            p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
             p_compat = ensure_int(p_compat, ["compatible"])
             
-            # Líneas compatibles con este modelo
-            compat_lines = p_compat[(p_compat["model"] == model_name) & (p_compat["compatible"] == 1)]["line"].tolist()
+            # Líneas compatibles con este modelo (por line_id)
+            compat_line_ids = p_compat[(p_compat["model"] == model_name) & (p_compat["compatible"] == 1)]["line_id"].tolist()
             
-            if not compat_lines:
+            if not compat_line_ids:
                 return {"cap_u_sem": 0.0, "cap_h_sem": 0.0}
             
             # Cycle time del modelo
@@ -881,10 +885,7 @@ with tabs[0]:
             total_cap_h = 0.0
             
             for line_id in line_ids:
-                parts = line_id.split("-", 1)
-                base_line = parts[1] if len(parts) == 2 else parts[0]
-                
-                if base_line not in compat_lines:
+                if line_id not in compat_line_ids:
                     continue
                 
                 t = model_times.copy()
@@ -907,7 +908,7 @@ with tabs[0]:
                     * merged.loc[mask, "operators_per_station"]
                 ) / merged.loc[mask, "cycle_time"]
                 
-                productive = merged[merged["cycle_time"] > 0]
+                productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
                 if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
                     continue
                 
@@ -1082,9 +1083,9 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Selección de modelo por línea")
 
-    # Compatibilidad por línea base (sin nave)
+    # Compatibilidad por line_id (nave + línea) para evitar mezclar naves
     compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
+    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
     # Session state para selections
     if "line_model" not in st.session_state:
@@ -1108,7 +1109,7 @@ with tabs[1]:
 
             for line_id in nave_line_ids:
                 _nave, base_line = line_id.split("-", 1)
-                allowed = allowed_by_line.get(base_line, [])
+                allowed = allowed_by_line.get(line_id, [])
                 if not allowed:
                     st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                     continue
@@ -1246,9 +1247,12 @@ with tabs[2]:
         out = edited_stations.copy()
         out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
+        out["nave"] = out["nave"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
+        # Reconstruir line_id para mantener coherencia
+        out["line_id"] = out["nave"] + "-" + out["line"]
         out["plant_id"] = plant_id
         save_table(out, "lines_process_stations")
 
@@ -1355,9 +1359,10 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
         * merged.loc[mask, "operators_per_station"]
     ) / merged.loc[mask, "cycle_time"]
 
-    # Solo considerar procesos con cycle_time > 0 para el cuello de botella
-    # (procesos con cycle_time = 0 significan "no aplica" y no deben limitar la capacidad)
-    productive = merged[merged["cycle_time"] > 0].copy()
+    # Solo considerar procesos productivos para el cuello de botella:
+    # - cycle_time > 0 (cycle_time = 0 significa "no aplica")
+    # - stations > 0 (stations vacías/0 significa que el proceso no está configurado en la línea)
+    productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)].copy()
 
     if productive.empty or productive["capacity"].dropna().empty:
         return merged, "", 0.0
@@ -1561,7 +1566,7 @@ with tabs[3]:
         for line_id, (nave, base_line, model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
             cap_week = 0.0
             if merged is not None and not merged.empty:
-                productive_m = merged[merged["cycle_time"] > 0]
+                productive_m = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
                 if not productive_m.empty:
                     cap_week = float(productive_m["capacity"].min())
 
@@ -1647,7 +1652,7 @@ with tabs[4]:
     )
 
     compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line")["model"].apply(list).to_dict()
+    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
@@ -1668,7 +1673,7 @@ with tabs[4]:
             nave = "N1"
             base_line = parts[0]
 
-        models_allowed = allowed_by_line.get(base_line, [])
+        models_allowed = allowed_by_line.get(line_id, [])
         if not models_allowed:
             continue
 

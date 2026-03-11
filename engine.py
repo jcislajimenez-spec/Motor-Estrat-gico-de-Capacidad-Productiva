@@ -150,12 +150,6 @@ def compute_line_capacity(
     s["stations"] = _to_num(s["stations"])
     s["operators_per_station"] = _to_num(s["operators_per_station"])
 
-    print("DEBUG TIMES")
-    print(t)
-
-    print("DEBUG STATIONS")
-    print(s)
-
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
