@@ -57,6 +57,8 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
         compat["line"] = _norm_str(compat["line"])
     if "model" in compat.columns:
         compat["model"] = _norm_str(compat["model"])
+    if "nave" in compat.columns:
+        compat["nave"] = _norm_str(compat["nave"])
     if "compatible" in compat.columns:
         compat["compatible"] = _to_num(compat["compatible"]).fillna(0).astype(int)
 
@@ -70,9 +72,25 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
 # =========================
 # Compatibilidades
 # =========================
-def compatible_models_for_line(compat_df: pd.DataFrame, line: str) -> List[str]:
+def compatible_models_for_line(
+    compat_df: pd.DataFrame,
+    line: str,
+    plant_id: int = None,
+    nave: str = None,
+) -> List[str]:
+    """
+    Devuelve modelos compatibles para una línea.
+    ✅ FIX: Filtra por plant_id + nave + line (clave completa),
+    no solo por line.
+    """
     line = str(line).strip().upper()
-    sub = compat_df[(compat_df["line"] == line) & (compat_df["compatible"].astype(int) == 1)]
+    mask = (compat_df["line"] == line) & (compat_df["compatible"].astype(int) == 1)
+    if plant_id is not None:
+        mask = mask & (compat_df["plant_id"] == plant_id)
+    if nave is not None:
+        nave = str(nave).strip().upper()
+        mask = mask & (compat_df["nave"].astype(str).str.strip().str.upper() == nave)
+    sub = compat_df[mask]
     return sorted(sub["model"].unique().tolist())
 
 
@@ -121,7 +139,7 @@ def compute_line_capacity(
     s["process"] = _norm_str(s["process"]).replace(PROCESS_ALIASES)
 
     # Filtrado por modelo y línea
-     t = t[
+    t = t[
         (t["model"].astype(str).str.strip().str.upper() == model) &
         (t["cycle_time"] > 0)
     ][["process", "cycle_time"]].copy()
@@ -154,7 +172,22 @@ def compute_line_capacity(
 
     # Operarios por proceso (si no existe -> 1)
     merged["operators"] = _to_num(merged["operators_per_station"]).fillna(1).astype(float)
+    merged["stations"] = _to_num(merged["stations"])
 
+    # ✅ FIX: Filtrar procesos sin estaciones o con datos inválidos antes de calcular
+    merged = merged[merged["stations"].notna() & (merged["stations"] > 0)].copy()
+
+    if merged.empty:
+        return {
+            "line": line,
+            "model": model,
+            "hours_effective": hours_eff,
+            "capacity_total": 0.0,
+            "bottleneck": None,
+            "capacity_per_process": {},
+            "debug": [],
+            "note": "No hay procesos con estaciones válidas para esta línea/modelo.",
+        }
 
     # ✅ Fórmula Excel (tal cual)
     merged["capacity"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["cycle_time"]

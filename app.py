@@ -387,6 +387,9 @@ times_df["model"] = times_df["model"].astype(str).str.strip()
 stations_df["line"] = stations_df["line"].astype(str).str.strip()
 compat_df["line"] = compat_df["line"].astype(str).str.strip()
 compat_df["model"] = compat_df["model"].astype(str).str.strip()
+compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
+# Construir line_id en compat_df para poder filtrar por nave+línea
+compat_df["line_id"] = compat_df["nave"] + "-" + compat_df["line"]
 
 models_df = ensure_int(models_df, ["active"])
 compat_df = ensure_int(compat_df, ["compatible"])
@@ -562,10 +565,11 @@ with tabs[0]:
                     * merged.loc[mask, "operators_per_station"]
                 ) / merged.loc[mask, "cycle_time"]
                 
-                if merged["capacity"].dropna().empty or merged["capacity"].min() <= 0:
+                productive = merged[merged["cycle_time"] > 0]
+                if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
                     continue
                 
-                cap_week = float(merged["capacity"].min())
+                cap_week = float(productive["capacity"].min())
                 w_m = float(cycle_by_model_p.get(m, 0.0))
                 cap_h_week = cap_week * w_m
                 
@@ -903,10 +907,11 @@ with tabs[0]:
                     * merged.loc[mask, "operators_per_station"]
                 ) / merged.loc[mask, "cycle_time"]
                 
-                if merged["capacity"].dropna().empty or merged["capacity"].min() <= 0:
+                productive = merged[merged["cycle_time"] > 0]
+                if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
                     continue
                 
-                cap_u = float(merged["capacity"].min())
+                cap_u = float(productive["capacity"].min())
                 cap_h = cap_u * total_cycle
                 
                 total_cap_u += cap_u
@@ -1350,10 +1355,14 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
         * merged.loc[mask, "operators_per_station"]
     ) / merged.loc[mask, "cycle_time"]
 
-    if merged["capacity"].dropna().empty:
+    # Solo considerar procesos con cycle_time > 0 para el cuello de botella
+    # (procesos con cycle_time = 0 significan "no aplica" y no deben limitar la capacidad)
+    productive = merged[merged["cycle_time"] > 0].copy()
+
+    if productive.empty or productive["capacity"].dropna().empty:
         return merged, "", 0.0
 
-    bottleneck_row = merged.loc[merged["capacity"].idxmin()]
+    bottleneck_row = productive.loc[productive["capacity"].idxmin()]
     bottleneck_proc = str(bottleneck_row["process"])
     cap_week = float(bottleneck_row["capacity"])
 
@@ -1552,7 +1561,9 @@ with tabs[3]:
         for line_id, (nave, base_line, model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
             cap_week = 0.0
             if merged is not None and not merged.empty:
-                cap_week = float(merged["capacity"].min())
+                productive_m = merged[merged["cycle_time"] > 0]
+                if not productive_m.empty:
+                    cap_week = float(productive_m["capacity"].min())
 
             header = f"{nave}-{base_line} — Modelo: {model} | Capacidad máx: {cap_week:.2f} uds/sem | Cuello: {bottleneck_proc} | Demanda: {demand_week:.2f} uds/sem"
             with st.expander(header, expanded=False):
