@@ -34,13 +34,6 @@ if DATABASE_URL:
 def get_connection():
     return psycopg2.connect(os.environ["DATABASE_URL"])
 
-# --- Helper cacheado para consultas SQL ---
-@st.cache_data
-def run_query(query: str):
-    if conn is None:
-        return pd.DataFrame()
-    return pd.read_sql(query, conn)
-
 
 ASSETS_DIR = resource_path("assets")
 # --- Cargar logo ---
@@ -189,6 +182,9 @@ def save_table(df: pd.DataFrame, table: str) -> None:
     with c.cursor() as cur:
         if "plant_id" in cols:
             plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
+            # Seguridad: asegurar que solo guardamos datos de la planta correcta
+            df = df[df["plant_id"] == plant_value].copy()
+            values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
             cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
         else:
             cur.execute(f'TRUNCATE TABLE "{table}"')
@@ -371,8 +367,6 @@ models_df = models_df[models_df["plant_id"] == plant_id].copy()
 times_df = load_table("models_process_times")
 times_df = times_df[times_df["plant_id"] == plant_id].copy()
 
-naves_df = load_table("lines_process_stations")
-
 stations_df = load_table("lines_process_stations")
 stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
 
@@ -444,8 +438,9 @@ with tabs[0]:
     all_data = load_all_plants_data()
     
     # --- Función para calcular capacidad estructural por planta ---
-    def compute_plant_structural_capacity(p_id: int, p_name: str, all_data: dict) -> dict:
-        """Calcula capacidad estructural (max/prom/min) para una planta."""
+    def compute_plant_structural_capacity(p_id: int, p_name: str, all_data: dict, shifts_override: int = None) -> dict:
+        """Calcula capacidad estructural (max/prom/min) para una planta.
+        Si shifts_override tiene valor, fuerza ese número de turnos (solo para vista Global)."""
         
         # Obtener settings de la planta
         p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
@@ -465,7 +460,9 @@ with tabs[0]:
             p_days_year = int(row.get("days_open_year", 250))
             p_days_week = int(row.get("days_open_week", 5))
         
-        p_hours_eff = p_hours_week * p_shifts * p_availability * p_efficiency
+        # Si hay override de turnos (selector global), usarlo en lugar de p_shifts
+        effective_shifts = shifts_override if shifts_override else p_shifts
+        p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
         p_weeks_equiv = p_days_year / max(p_days_week, 1)
         
         # Filtrar datos por planta
@@ -525,6 +522,18 @@ with tabs[0]:
         _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
         cycle_by_model_p = _t.groupby("model")["cycle_time"].sum().to_dict()
         
+        # ✅ OPTIMIZACIÓN: Pre-convertir tipos numéricos una sola vez
+        p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
+        p_stations["stations"] = pd.to_numeric(p_stations["stations"], errors="coerce").fillna(0)
+        p_stations["operators_per_station"] = pd.to_numeric(p_stations["operators_per_station"], errors="coerce").fillna(0)
+        
+        # ✅ OPTIMIZACIÓN: Pre-indexar tiempos por modelo (evita filtrar N veces)
+        times_by_model = {m: grp[["process", "cycle_time"]] for m, grp in p_times.groupby("model")}
+        
+        # ✅ OPTIMIZACIÓN: Pre-indexar estaciones por line_id (evita filtrar M veces)
+        stations_by_line = {lid: grp[["process", "stations", "operators_per_station"]] 
+                           for lid, grp in p_stations.groupby("line_id")}
+        
         # Line IDs
         line_ids_p = sorted(p_stations["line_id"].astype(str).str.strip().unique().tolist())
         
@@ -545,38 +554,41 @@ with tabs[0]:
             capU_vals = []
             capH_vals = []
             
+            # ✅ OPTIMIZACIÓN: Obtener estaciones de la línea una sola vez (no por modelo)
+            s = stations_by_line.get(line_id)
+            if s is None or s.empty:
+                continue
+            
             for m in models_allowed:
-                # Calcular capacidad para esta línea y modelo
-                t = p_times[p_times["model"] == m].copy()
-                s = p_stations[p_stations["line_id"] == line_id].copy()
+                # ✅ OPTIMIZACIÓN: Obtener tiempos del modelo desde dict precalculado
+                t = times_by_model.get(m)
+                if t is None or t.empty:
+                    continue
                 
                 merged = pd.merge(s, t, on="process", how="inner")
                 
                 if merged.empty:
                     continue
                 
-                merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
-                merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
-                merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
-                
-                merged["capacity"] = 0.0
-                mask = merged["cycle_time"] > 0
-                merged.loc[mask, "capacity"] = (
-                    p_hours_eff
-                    * merged.loc[mask, "stations"]
-                    * merged.loc[mask, "operators_per_station"]
-                ) / merged.loc[mask, "cycle_time"]
-                
                 productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
-                if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
+                if productive.empty:
                     continue
                 
-                cap_week = float(productive["capacity"].min())
-                w_m = float(cycle_by_model_p.get(m, 0.0))
-                cap_h_week = cap_week * w_m
+                # Cálculo directo sin crear columna intermedia
+                cap_values = (
+                    p_hours_eff
+                    * productive["stations"]
+                    * productive["operators_per_station"]
+                ) / productive["cycle_time"]
                 
-                capU_vals.append(cap_week)
-                capH_vals.append(cap_h_week)
+                cap_min = float(cap_values.min())
+                if cap_min <= 0:
+                    continue
+                
+                w_m = float(cycle_by_model_p.get(m, 0.0))
+                
+                capU_vals.append(cap_min)
+                capH_vals.append(cap_min * w_m)
             
             if not capU_vals:
                 continue
@@ -638,19 +650,10 @@ with tabs[0]:
         }
     
     # --- Calcular capacidad para TODAS las plantas ---
-    global_results = []
-    for _, plant_row in all_data["plants"].iterrows():
-        p_id = int(plant_row["id"])
-        p_name = str(plant_row["name"])
-        result = compute_plant_structural_capacity(p_id, p_name, all_data)
-        global_results.append(result)
-    
-    # =====================================================
-    # 1️⃣ SELECTOR DE ESCENARIO
-    # =====================================================
+    # Selector global de turnos (solo afecta a esta pestaña)
     st.markdown("### 📊 Selector de Escenario")
     
-    col_esc1, col_esc2 = st.columns([1, 3])
+    col_esc1, col_esc2, col_esc3 = st.columns([1, 1, 2])
     with col_esc1:
         escenario = st.radio(
             "Escenario de capacidad:",
@@ -659,6 +662,25 @@ with tabs[0]:
             horizontal=True,
             key="global_escenario"
         )
+    with col_esc2:
+        turnos_option = st.radio(
+            "Turnos (simulación global):",
+            ["Config. actual", "1 turno", "2 turnos", "3 turnos"],
+            index=0,
+            horizontal=True,
+            key="global_turnos"
+        )
+    
+    # Mapear selección de turnos a valor numérico (None = usar config de cada planta)
+    _turnos_map = {"Config. actual": None, "1 turno": 1, "2 turnos": 2, "3 turnos": 3}
+    shifts_override = _turnos_map[turnos_option]
+    
+    global_results = []
+    for _, plant_row in all_data["plants"].iterrows():
+        p_id = int(plant_row["id"])
+        p_name = str(plant_row["name"])
+        result = compute_plant_structural_capacity(p_id, p_name, all_data, shifts_override=shifts_override)
+        global_results.append(result)
     
     # Mapear escenario a columnas
     esc_map = {
@@ -668,13 +690,16 @@ with tabs[0]:
     }
     u_sem_col, u_year_col, h_sem_col, h_year_col = esc_map[escenario]
     
+    if shifts_override:
+        st.caption(f"⚠️ Simulación: todas las plantas con **{shifts_override} turno(s)**")
+    
     st.divider()
     
     # =====================================================
     # 2️⃣ RESUMEN GLOBAL DE CAPACIDAD
     # =====================================================
     st.markdown("### 📈 Resumen Global de Capacidad")
-    st.caption(f"Escenario: **{escenario}**")
+    st.caption(f"Escenario: **{escenario}**" + (f" | Turnos: **{shifts_override}**" if shifts_override else ""))
     
     # Construir DataFrame de resumen
     resumen_rows = []
@@ -840,7 +865,7 @@ with tabs[0]:
         )
         
         # Función para calcular capacidad por modelo y planta
-        def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict) -> dict:
+        def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, shifts_override: int = None) -> dict:
             """Calcula capacidad de un modelo específico en una planta."""
             p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
             if p_settings.empty:
@@ -854,7 +879,8 @@ with tabs[0]:
                 p_efficiency = float(row.get("efficiency", 1.0))
                 p_days_year = int(row.get("days_open_year", 250))
                 p_days_week = int(row.get("days_open_week", 5))
-                p_hours_eff = p_hours_week * p_shifts * p_availability * p_efficiency
+                effective_shifts = shifts_override if shifts_override else p_shifts
+                p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
                 p_weeks_equiv = p_days_year / max(p_days_week, 1)
             
             p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
@@ -931,7 +957,7 @@ with tabs[0]:
                 p_id = int(plant_row["id"])
                 p_name = str(plant_row["name"])
                 
-                cap_data = compute_model_capacity_by_plant(selected_model, p_id, all_data)
+                cap_data = compute_model_capacity_by_plant(selected_model, p_id, all_data, shifts_override=shifts_override)
                 
                 model_rows.append({
                     "PLANTA": p_name,
@@ -1535,12 +1561,12 @@ with tabs[3]:
         s = s.map(sat_color, subset=["Saturación (%)"])
         s = s.map(lambda _: "color: red; font-weight: 700;", subset=["bottleneck"])
 
-        if "line_id" in styled.columns:
-            def _style_total(row):
-                if str(row.get("line_id", "")) == "TOTAL":
-                    return ["font-weight: bold; font-size: 18px; background-color: #f2f2f2;"] * len(row)
-                return [""] * len(row)
-            s = s.apply(_style_total, axis=1)
+        # Detectar fila TOTAL por columna 'line' (ya que display_cols no incluye line_id)
+        def _style_total(row):
+            if str(row.get("line", "")) == "TOTAL":
+                return ["font-weight: bold; font-size: 16px; background-color: #f0f0f0;"] * len(row)
+            return [""] * len(row)
+        s = s.apply(_style_total, axis=1)
 
         return s
 
