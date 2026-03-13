@@ -1228,7 +1228,7 @@ with tabs[2]:
                 "cycle_time",
                 help="Horas por unidad (HH/ud) en ese proceso.",
                 min_value=0.0,
-                step=0.1,
+                step=0.01,
                 format="%.2f"
             )
         }
@@ -1940,6 +1940,20 @@ with tabs[4]:
                             w_m = float(cycle_by_model.get(m, 0.0) or 0.0)
                             sel_u_week = (sel_h_week / w_m) if w_m > 0 else 0.0
                             sel_u_year = sel_u_week * float(weeks_equiv)
+
+                            # Uso del potenciómetro (% del recorrido del slider)
+                            pct_of_slider = (sel_pct / max_pct * 100.0) if max_pct > 0 else 0.0
+                            st.caption(f"🎚️ Uso del potenciómetro: **{pct_of_slider:.0f}%**")
+
+                            # Equivalencias dinámicas
+                            st.markdown(
+                                f"<div style='background:#f8f9fa;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:8px;'>"
+                                f"<b>Equivalente aproximado</b><br>"
+                                f"Uds/sem: <b>{sel_u_week:.2f}</b> · Uds/año: <b>{sel_u_year:.2f}</b><br>"
+                                f"h/sem: <b>{sel_h_week:.2f}</b> · h/año: <b>{sel_h_year:.2f}</b>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
 
                             max_u_week = (maxH / w_m) if w_m > 0 else 0.0
                             max_u_year = max_u_week * float(weeks_equiv)
