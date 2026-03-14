@@ -524,11 +524,18 @@ with tabs[0]:
         
         # ✅ OPTIMIZACIÓN: Pre-convertir tipos numéricos una sola vez
         p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
+        for _tc in ("machine_time", "labor_time"):
+            if _tc in p_times.columns:
+                p_times[_tc] = pd.to_numeric(p_times[_tc], errors="coerce")
+                p_times[_tc] = p_times[_tc].where(p_times[_tc].notna() & (p_times[_tc] > 0), p_times["cycle_time"])
+            else:
+                p_times[_tc] = p_times["cycle_time"]
         p_stations["stations"] = pd.to_numeric(p_stations["stations"], errors="coerce").fillna(0)
         p_stations["operators_per_station"] = pd.to_numeric(p_stations["operators_per_station"], errors="coerce").fillna(0)
         
         # ✅ OPTIMIZACIÓN: Pre-indexar tiempos por modelo (evita filtrar N veces)
-        times_by_model = {m: grp[["process", "cycle_time"]] for m, grp in p_times.groupby("model")}
+        _time_cols = ["process", "cycle_time", "machine_time", "labor_time"]
+        times_by_model = {m: grp[_time_cols] for m, grp in p_times.groupby("model")}
         
         # ✅ OPTIMIZACIÓN: Pre-indexar estaciones por line_id (evita filtrar M veces)
         stations_by_line = {lid: grp[["process", "stations", "operators_per_station"]] 
@@ -574,12 +581,12 @@ with tabs[0]:
                 if productive.empty:
                     continue
                 
-                # Cálculo directo sin crear columna intermedia
-                cap_values = (
-                    p_hours_eff
-                    * productive["stations"]
-                    * productive["operators_per_station"]
-                ) / productive["cycle_time"]
+                # Cálculo dual: min(cap_machine, cap_labor)
+                cap_machine = (p_hours_eff * productive["stations"]) / productive["machine_time"]
+                cap_labor = (
+                    p_hours_eff * productive["stations"] * productive["operators_per_station"]
+                ) / productive["labor_time"]
+                cap_values = pd.concat([cap_machine, cap_labor], axis=1).min(axis=1)
                 
                 cap_min = float(cap_values.min())
                 if cap_min <= 0:
@@ -925,20 +932,25 @@ with tabs[0]:
                 merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
                 merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
                 merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
-                
-                merged["capacity"] = 0.0
-                mask = merged["cycle_time"] > 0
-                merged.loc[mask, "capacity"] = (
-                    p_hours_eff
-                    * merged.loc[mask, "stations"]
-                    * merged.loc[mask, "operators_per_station"]
-                ) / merged.loc[mask, "cycle_time"]
+                for _tc in ("machine_time", "labor_time"):
+                    if _tc in merged.columns:
+                        merged[_tc] = pd.to_numeric(merged[_tc], errors="coerce")
+                        merged[_tc] = merged[_tc].where(merged[_tc].notna() & (merged[_tc] > 0), merged["cycle_time"])
+                    else:
+                        merged[_tc] = merged["cycle_time"]
                 
                 productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
-                if productive.empty or productive["capacity"].dropna().empty or productive["capacity"].min() <= 0:
+                if productive.empty:
                     continue
                 
-                cap_u = float(productive["capacity"].min())
+                cap_machine = (p_hours_eff * productive["stations"]) / productive["machine_time"]
+                cap_labor = (p_hours_eff * productive["stations"] * productive["operators_per_station"]) / productive["labor_time"]
+                cap_final = pd.concat([cap_machine, cap_labor], axis=1).min(axis=1)
+                
+                if cap_final.empty or cap_final.min() <= 0:
+                    continue
+                
+                cap_u = float(cap_final.min())
                 cap_h = cap_u * total_cycle
                 
                 total_cap_u += cap_u
@@ -1219,6 +1231,15 @@ with tabs[2]:
     # --- B) Tiempos por modelo y proceso
     st.markdown("## Tiempos por modelo y proceso (models_process_times.csv)")
 
+    st.info(
+        "**Machine time** = tiempo total que la estación está ocupada por la unidad "
+        "(incluye carga, pruebas automáticas, test térmico, descarga si bloquea la estación).\n\n"
+        "**Labor time** = tiempo efectivo de trabajo humano en ese proceso.\n\n"
+        "En procesos **manuales**: machine_time = labor_time. "
+        "En procesos **automáticos**: machine_time > labor_time.\n\n"
+        "Si se dejan vacíos, se usa cycle_time como valor por defecto."
+    )
+
     edited_times = st.data_editor(
         times_df,
         use_container_width=True,
@@ -1226,11 +1247,25 @@ with tabs[2]:
         column_config={
             "cycle_time": st.column_config.NumberColumn(
                 "cycle_time",
-                help="Horas por unidad (HH/ud) en ese proceso.",
+                help="Tiempo de ciclo legacy (HH/ud). Se mantiene por compatibilidad.",
                 min_value=0.0,
                 step=0.01,
                 format="%.2f"
-            )
+            ),
+            "machine_time": st.column_config.NumberColumn(
+                "machine_time",
+                help="Tiempo de ocupación de estación (HH/ud). Si vacío, usa cycle_time.",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f"
+            ),
+            "labor_time": st.column_config.NumberColumn(
+                "labor_time",
+                help="Tiempo de trabajo humano (HH/ud). Si vacío, usa cycle_time.",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f"
+            ),
         }
     )
 
@@ -1240,6 +1275,19 @@ with tabs[2]:
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
+
+        # machine_time y labor_time: si vacíos o 0, rellenar con cycle_time
+        if "machine_time" in out.columns:
+            out["machine_time"] = pd.to_numeric(out["machine_time"], errors="coerce")
+            out.loc[out["machine_time"].isna() | (out["machine_time"] <= 0), "machine_time"] = out["cycle_time"]
+        else:
+            out["machine_time"] = out["cycle_time"]
+
+        if "labor_time" in out.columns:
+            out["labor_time"] = pd.to_numeric(out["labor_time"], errors="coerce")
+            out.loc[out["labor_time"].isna() | (out["labor_time"] <= 0), "labor_time"] = out["cycle_time"]
+        else:
+            out["labor_time"] = out["cycle_time"]
 
         # evitar duplicados modelo-proceso
         out = out.drop_duplicates(subset=["model", "process"])
@@ -1355,6 +1403,37 @@ with tabs[2]:
 # 3) RESULTADOS
 # =========================================================
 
+def _apply_dual_capacity(merged: pd.DataFrame, h_eff: float) -> pd.DataFrame:
+    """Aplica cálculo dual machine_time/labor_time a un DataFrame merged.
+    Retrocompatible: si no existen las columnas, usa cycle_time."""
+    m = merged.copy()
+    m["cycle_time"] = pd.to_numeric(m["cycle_time"], errors="coerce").fillna(0.0)
+    m["stations"] = pd.to_numeric(m["stations"], errors="coerce").fillna(0)
+    m["operators_per_station"] = pd.to_numeric(m["operators_per_station"], errors="coerce").fillna(0)
+
+    # Fallback: si machine_time/labor_time no existen o son inválidos → cycle_time
+    for col in ("machine_time", "labor_time"):
+        if col in m.columns:
+            m[col] = pd.to_numeric(m[col], errors="coerce")
+            m[col] = m[col].where(m[col].notna() & (m[col] > 0), m["cycle_time"])
+        else:
+            m[col] = m["cycle_time"]
+
+    m["capacity"] = 0.0
+    mask = (m["cycle_time"] > 0) & (m["stations"] > 0)
+
+    # cap_machine = (h_eff * stations) / machine_time
+    m.loc[mask, "cap_machine"] = (h_eff * m.loc[mask, "stations"]) / m.loc[mask, "machine_time"]
+    # cap_labor = (h_eff * stations * operators) / labor_time
+    m.loc[mask, "cap_labor"] = (
+        h_eff * m.loc[mask, "stations"] * m.loc[mask, "operators_per_station"]
+    ) / m.loc[mask, "labor_time"]
+    # capacity = min(machine, labor)
+    m.loc[mask, "capacity"] = m.loc[mask, ["cap_machine", "cap_labor"]].min(axis=1)
+
+    return m
+
+
 def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, float]:
     """
     Devuelve:
@@ -1373,21 +1452,9 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     if merged.empty:
         return merged, "", 0.0
 
-    merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
-    merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0)
-    merged["cycle_time"] = pd.to_numeric(merged["cycle_time"], errors="coerce").fillna(0.0)
-
-    merged["capacity"] = 0.0
-    mask = merged["cycle_time"] > 0
-    merged.loc[mask, "capacity"] = (
-        hours_eff
-        * merged.loc[mask, "stations"]
-        * merged.loc[mask, "operators_per_station"]
-    ) / merged.loc[mask, "cycle_time"]
+    merged = _apply_dual_capacity(merged, hours_eff)
 
     # Solo considerar procesos productivos para el cuello de botella:
-    # - cycle_time > 0 (cycle_time = 0 significa "no aplica")
-    # - stations > 0 (stations vacías/0 significa que el proceso no está configurado en la línea)
     productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)].copy()
 
     if productive.empty or productive["capacity"].dropna().empty:
@@ -1601,7 +1668,17 @@ with tabs[3]:
                 if merged is None or merged.empty:
                     st.warning("No hay datos suficientes (revisa estaciones o tiempos).")
                 else:
-                    show = merged[["process", "stations", "operators_per_station", "cycle_time", "capacity"]].copy()
+                    _detail_cols = ["process", "stations", "operators_per_station", "cycle_time"]
+                    if "machine_time" in merged.columns:
+                        _detail_cols.append("machine_time")
+                    if "labor_time" in merged.columns:
+                        _detail_cols.append("labor_time")
+                    if "cap_machine" in merged.columns:
+                        _detail_cols.append("cap_machine")
+                    if "cap_labor" in merged.columns:
+                        _detail_cols.append("cap_labor")
+                    _detail_cols.append("capacity")
+                    show = merged[[c for c in _detail_cols if c in merged.columns]].copy()
                     show["capacity"] = pd.to_numeric(show["capacity"], errors="coerce").fillna(0.0)
 
                     def hl_bottleneck(row):
