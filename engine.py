@@ -45,6 +45,10 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
         times["process"] = _norm_str(times["process"])
     if "cycle_time" in times.columns:
         times["cycle_time"] = _to_num(times["cycle_time"])
+    if "machine_time" in times.columns:
+        times["machine_time"] = _to_num(times["machine_time"])
+    if "labor_time" in times.columns:
+        times["labor_time"] = _to_num(times["labor_time"])
 
     if "line" in stations.columns:
         stations["line"] = _norm_str(stations["line"])
@@ -139,10 +143,17 @@ def compute_line_capacity(
     s["process"] = _norm_str(s["process"]).replace(PROCESS_ALIASES)
 
     # Filtrado por modelo y línea
+    # Columnas de tiempo disponibles (retrocompatible)
+    time_cols = ["process", "cycle_time"]
+    if "machine_time" in t.columns:
+        time_cols.append("machine_time")
+    if "labor_time" in t.columns:
+        time_cols.append("labor_time")
+
     t = t[
         (t["model"].astype(str).str.strip().str.upper() == model) &
         (t["cycle_time"] > 0)
-    ][["process", "cycle_time"]].copy()
+    ][time_cols].copy()
     s = s[s["line"].astype(str).str.strip().str.upper() == line][["process", "stations", "operators_per_station"]].copy()
 
     # Asegurar numéricos
@@ -183,14 +194,46 @@ def compute_line_capacity(
             "note": "No hay procesos con estaciones válidas para esta línea/modelo.",
         }
 
-    # ✅ Fórmula Excel (tal cual)
-    merged["capacity"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["cycle_time"]
+    # =========================================================
+    # Cálculo de capacidad: machine_time + labor_time
+    # =========================================================
+    # Retrocompatibilidad: si machine_time o labor_time no existen,
+    # están vacíos o son 0, se usa cycle_time como fallback.
+
+    if "machine_time" in merged.columns:
+        merged["machine_time"] = _to_num(merged["machine_time"])
+    else:
+        merged["machine_time"] = pd.Series(dtype=float)
+
+    if "labor_time" in merged.columns:
+        merged["labor_time"] = _to_num(merged["labor_time"])
+    else:
+        merged["labor_time"] = pd.Series(dtype=float)
+
+    # Fallback a cycle_time cuando machine_time o labor_time no son válidos
+    merged["machine_time"] = merged["machine_time"].where(
+        merged["machine_time"].notna() & (merged["machine_time"] > 0),
+        merged["cycle_time"]
+    )
+    merged["labor_time"] = merged["labor_time"].where(
+        merged["labor_time"].notna() & (merged["labor_time"] > 0),
+        merged["cycle_time"]
+    )
+
+    # Capacidad por máquina: (horas_eff * estaciones) / machine_time
+    merged["cap_machine"] = (hours_eff * merged["stations"]) / merged["machine_time"]
+
+    # Capacidad por operarios: (horas_eff * estaciones * operarios) / labor_time
+    merged["cap_labor"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["labor_time"]
+
+    # Capacidad final del proceso = mínimo entre máquina y mano de obra
+    merged["capacity"] = merged[["cap_machine", "cap_labor"]].min(axis=1)
 
     cap_per_process = dict(zip(merged["process"].tolist(), merged["capacity"].tolist()))
     bottleneck_process = min(cap_per_process, key=cap_per_process.get)
     cap_total = float(cap_per_process[bottleneck_process])
 
-    # Debug útil (para que veas exactamente qué está usando)
+    # Debug con campos extendidos
     debug_rows = []
     for _, r in merged.iterrows():
         debug_rows.append({
@@ -198,7 +241,11 @@ def compute_line_capacity(
             "stations": float(r["stations"]),
             "operators": float(r["operators"]),
             "cycle_time": float(r["cycle_time"]),
+            "machine_time": float(r["machine_time"]),
+            "labor_time": float(r["labor_time"]),
             "hours_eff": float(hours_eff),
+            "cap_machine": float(r["cap_machine"]),
+            "cap_labor": float(r["cap_labor"]),
             "capacity": float(r["capacity"]),
         })
 
