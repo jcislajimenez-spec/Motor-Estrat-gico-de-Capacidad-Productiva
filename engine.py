@@ -195,57 +195,53 @@ def compute_line_capacity(
         }
 
     # =========================================================
-    # Cálculo de capacidad: machine_time + labor_time
+    # Cálculo de capacidad: cycle_time_real
     # =========================================================
-    # Retrocompatibilidad: si machine_time o labor_time no existen,
-    # están vacíos o son 0, se usa cycle_time como fallback.
+    # cycle_time_real = max(machine_time, labor_time / operators)
+    # capacity = (hours_effective * stations) / cycle_time_real
 
+    # Preparar machine_time (si no existe o nulo → 0)
     if "machine_time" in merged.columns:
-        merged["machine_time"] = _to_num(merged["machine_time"])
+        merged["machine_time"] = _to_num(merged["machine_time"]).fillna(0.0)
     else:
-        merged["machine_time"] = pd.Series(dtype=float)
+        merged["machine_time"] = 0.0
 
+    # Preparar labor_time (si no existe o nulo → 0)
     if "labor_time" in merged.columns:
-        merged["labor_time"] = _to_num(merged["labor_time"])
+        merged["labor_time"] = _to_num(merged["labor_time"]).fillna(0.0)
     else:
-        merged["labor_time"] = pd.Series(dtype=float)
+        merged["labor_time"] = 0.0
 
-    # Fallback a cycle_time cuando machine_time o labor_time no son válidos
-    merged["machine_time"] = merged["machine_time"].where(
-        merged["machine_time"].notna() & (merged["machine_time"] > 0),
-        merged["cycle_time"]
-    )
-    merged["labor_time"] = merged["labor_time"].where(
-        merged["labor_time"].notna() & (merged["labor_time"] > 0),
-        merged["cycle_time"]
-    )
+    # Operarios efectivos (mínimo 1 para evitar división por cero)
+    merged["operators"] = merged["operators"].clip(lower=1.0)
 
-    # Capacidad por máquina: (horas_eff * estaciones) / machine_time
-    merged["cap_machine"] = (hours_eff * merged["stations"]) / merged["machine_time"]
+    # Labor por operario
+    merged["labor_per_operator"] = merged["labor_time"] / merged["operators"]
 
-    # Capacidad por operarios: (horas_eff * estaciones * operarios) / labor_time
-    merged["cap_labor"] = (hours_eff * merged["stations"] * merged["operators"]) / merged["labor_time"]
+    # Cycle time real = max(machine_time, labor_per_operator)
+    merged["cycle_time_real"] = merged[["machine_time", "labor_per_operator"]].max(axis=1)
 
-    # Capacidad final del proceso = mínimo entre máquina y mano de obra
-    merged["capacity"] = merged[["cap_machine", "cap_labor"]].min(axis=1)
+    # Capacidad = (hours_eff * stations) / cycle_time_real
+    merged["capacity"] = 0.0
+    mask = merged["cycle_time_real"] > 0
+    merged.loc[mask, "capacity"] = (hours_eff * merged.loc[mask, "stations"]) / merged.loc[mask, "cycle_time_real"]
 
     cap_per_process = dict(zip(merged["process"].tolist(), merged["capacity"].tolist()))
     bottleneck_process = min(cap_per_process, key=cap_per_process.get)
     cap_total = float(cap_per_process[bottleneck_process])
 
-    # Debug con campos extendidos
+    # Debug
     debug_rows = []
     for _, r in merged.iterrows():
         debug_rows.append({
             "process": r["process"],
             "stations": float(r["stations"]),
             "operators": float(r["operators"]),
-            "cycle_time": float(r["cycle_time"]),
             "machine_time": float(r["machine_time"]),
             "labor_time": float(r["labor_time"]),
+            "labor_per_operator": float(r["labor_per_operator"]),
+            "cycle_time_real": float(r["cycle_time_real"]),
             "hours_eff": float(hours_eff),
-            "cap_machine": float(r["cap_machine"]),
-            "cap_labor": float(r["cap_labor"]),
             "capacity": float(r["capacity"]),
         })
 
