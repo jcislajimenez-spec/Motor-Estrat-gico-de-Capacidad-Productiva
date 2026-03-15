@@ -524,12 +524,17 @@ with tabs[0]:
         
         # ✅ OPTIMIZACIÓN: Pre-convertir tipos numéricos una sola vez
         p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
-        for _tc in ("machine_time", "labor_time"):
-            if _tc in p_times.columns:
-                p_times[_tc] = pd.to_numeric(p_times[_tc], errors="coerce")
-                p_times[_tc] = p_times[_tc].where(p_times[_tc].notna() & (p_times[_tc] > 0), p_times["cycle_time"])
-            else:
-                p_times[_tc] = p_times["cycle_time"]
+
+        if "machine_time" in p_times.columns:
+            p_times["machine_time"] = pd.to_numeric(p_times["machine_time"], errors="coerce").fillna(0.0)
+        else:
+            p_times["machine_time"] = 0.0
+
+        if "labor_time" in p_times.columns:
+            p_times["labor_time"] = pd.to_numeric(p_times["labor_time"], errors="coerce").fillna(0.0)
+        else:
+            p_times["labor_time"] = 0.0
+
         p_stations["stations"] = pd.to_numeric(p_stations["stations"], errors="coerce").fillna(0)
         p_stations["operators_per_station"] = pd.to_numeric(p_stations["operators_per_station"], errors="coerce").fillna(0)
         
@@ -1245,6 +1250,7 @@ with tabs[2]:
         "La capacidad se calcula mediante:\n\n"
         "`cycle_time_real = max(machine_time, labor_time / operarios)`\n\n"
         "`capacity = (horas_efectivas × estaciones) / cycle_time_real`"
+        "\n\nEn procesos manuales puros, machine_time puede ser 0."
     )
 
     edited_times = st.data_editor(
@@ -1261,14 +1267,14 @@ with tabs[2]:
             ),
             "machine_time": st.column_config.NumberColumn(
                 "machine_time",
-                help="Tiempo de ocupación de estación (HH/ud). Si vacío, usa cycle_time.",
+                help="Tiempo automático fijo no reducible (HH/ud). Puede ser 0 en procesos manuales.",
                 min_value=0.0,
                 step=0.01,
                 format="%.2f"
             ),
             "labor_time": st.column_config.NumberColumn(
                 "labor_time",
-                help="Tiempo de trabajo humano (HH/ud). Si vacío, usa cycle_time.",
+                help="Horas-hombre secuenciales necesarias por unidad (HH/ud).",
                 min_value=0.0,
                 step=0.01,
                 format="%.2f"
@@ -1283,18 +1289,17 @@ with tabs[2]:
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
 
-        # machine_time y labor_time: si vacíos o 0, rellenar con cycle_time
+        # machine_time y labor_time: si vienen vacíos, convertir a 0.0
+        # IMPORTANTE: machine_time = 0 es válido en procesos manuales
         if "machine_time" in out.columns:
-            out["machine_time"] = pd.to_numeric(out["machine_time"], errors="coerce")
-            out.loc[out["machine_time"].isna() | (out["machine_time"] <= 0), "machine_time"] = out["cycle_time"]
+            out["machine_time"] = pd.to_numeric(out["machine_time"], errors="coerce").fillna(0.0)
         else:
-            out["machine_time"] = out["cycle_time"]
+            out["machine_time"] = 0.0
 
         if "labor_time" in out.columns:
-            out["labor_time"] = pd.to_numeric(out["labor_time"], errors="coerce")
-            out.loc[out["labor_time"].isna() | (out["labor_time"] <= 0), "labor_time"] = out["cycle_time"]
+            out["labor_time"] = pd.to_numeric(out["labor_time"], errors="coerce").fillna(0.0)
         else:
-            out["labor_time"] = out["cycle_time"]
+            out["labor_time"] = 0.0
 
         # evitar duplicados modelo-proceso
         out = out.drop_duplicates(subset=["model", "process"])
@@ -1454,7 +1459,7 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     merged = _apply_capacity(merged, hours_eff)
 
     # Solo considerar procesos productivos para el cuello de botella:
-    productive = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)].copy()
+    productive = merged[(merged["cycle_time_real"] > 0) & (merged["stations"] > 0)].copy()
 
     if productive.empty or productive["capacity"].dropna().empty:
         return merged, "", 0.0
@@ -1658,7 +1663,7 @@ with tabs[3]:
         for line_id, (nave, base_line, model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
             cap_week = 0.0
             if merged is not None and not merged.empty:
-                productive_m = merged[(merged["cycle_time"] > 0) & (merged["stations"] > 0)]
+                productive_m = merged[(merged["cycle_time_real"] > 0) & (merged["stations"] > 0)]
                 if not productive_m.empty:
                     cap_week = float(productive_m["capacity"].min())
 

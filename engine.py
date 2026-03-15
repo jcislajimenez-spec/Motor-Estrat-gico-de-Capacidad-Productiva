@@ -67,7 +67,7 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
         compat["compatible"] = _to_num(compat["compatible"]).fillna(0).astype(int)
 
     # Limpieza de filas rotas
-    times = times.dropna(subset=["model", "process", "cycle_time"])
+    times = times.dropna(subset=["model", "process"])
     stations = stations.dropna(subset=["line", "process", "stations"])
 
     return {"times": times, "stations": stations, "compat": compat}
@@ -151,9 +151,9 @@ def compute_line_capacity(
         time_cols.append("labor_time")
 
     t = t[
-        (t["model"].astype(str).str.strip().str.upper() == model) &
-        (t["cycle_time"] > 0)
+        (t["model"].astype(str).str.strip().str.upper() == model)
     ][time_cols].copy()
+
     s = s[s["line"].astype(str).str.strip().str.upper() == line][["process", "stations", "operators_per_station"]].copy()
 
     # Asegurar numéricos
@@ -213,7 +213,7 @@ def compute_line_capacity(
         merged["labor_time"] = 0.0
 
     # Operarios efectivos (mínimo 1 para evitar división por cero)
-    merged["operators"] = merged["operators"].clip(lower=1.0)
+    merged["operators"] = merged["operators"].replace(0,1).fillna(1)
 
     # Labor por operario
     merged["labor_per_operator"] = merged["labor_time"] / merged["operators"]
