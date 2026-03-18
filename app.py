@@ -1139,8 +1139,12 @@ with tabs[1]:
     # Session state para selections
     if "line_model" not in st.session_state:
         st.session_state.line_model = {}
+
     if "line_demand" not in st.session_state:
         st.session_state.line_demand = {}
+
+    if st.session_state["plant_id"] not in st.session_state.line_demand:
+        st.session_state.line_demand[st.session_state["plant_id"]] = {}
 
     colL, colR = st.columns([1.1, 1.0], gap="large")
 
@@ -1194,10 +1198,17 @@ with tabs[1]:
                     f"Demanda ({line_id} – {model})",
                     min_value=0.0,
                     value=float(st.session_state.line_demand.get(line_id, 0.0)),
+
+
+                    value=float(
+                        st.session_state.line_demand
+                        .get(st.session_state["plant_id"], {})
+                        .get(line_id, 0.0)
+                    ),
                     step=1.0,
-                    key=f"demand_{line_id}",
+                    key=f"demand_{st.session_state['plant_id']}_{line_id}",
                 )
-                st.session_state.line_demand[line_id] = d
+                st.session_state.line_demand[st.session_state["plant_id"]][line_id] = d
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
