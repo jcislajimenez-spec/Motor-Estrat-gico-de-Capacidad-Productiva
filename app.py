@@ -1140,11 +1140,14 @@ with tabs[1]:
     if "line_model" not in st.session_state:
         st.session_state.line_model = {}
 
+    if st.session_state["plant_id"] not in st.session_state.line_model:
+        st.session_state.line_model[st.session_state["plant_id"]] = {}
+
     if "line_demand" not in st.session_state:
         st.session_state.line_demand = {}
 
-    if st.session_state["plant_id"] not in st.session_state.line_demand:
-        st.session_state.line_demand[st.session_state["plant_id"]] = {}
+if st.session_state["plant_id"] not in st.session_state.line_demand:
+    st.session_state.line_demand[st.session_state["plant_id"]] = {}
 
     colL, colR = st.columns([1.1, 1.0], gap="large")
 
@@ -1167,6 +1170,9 @@ with tabs[1]:
                     st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                     continue
 
+
+
+
                 default_model = st.session_state.line_model.get(line_id, allowed[0])
                 if default_model not in allowed:
                     default_model = allowed[0]
@@ -1178,6 +1184,22 @@ with tabs[1]:
                     key=f"sel_model_{line_id}"
                 )
                 st.session_state.line_model[line_id] = m
+
+                default_model = (
+                    st.session_state.line_model
+                    .get(st.session_state["plant_id"], {})
+                    .get(line_id, allowed[0])
+                )
+                if default_model not in allowed:
+                    default_model = allowed[0]
+
+                m = st.selectbox(
+                    f"Modelo ({line_id})",
+                    options=allowed,
+                    index=allowed.index(default_model),
+                    key=f"sel_model_{st.session_state['plant_id']}_{line_id}"
+                )
+                st.session_state.line_model[st.session_state["plant_id"]][line_id] = m
 
     with colR:
         st.markdown("### Demanda (UDS/SEM)")
@@ -1197,8 +1219,6 @@ with tabs[1]:
                 d = st.number_input(
                     f"Demanda ({line_id} – {model})",
                     min_value=0.0,
-                    value=float(st.session_state.line_demand.get(line_id, 0.0)),
-
 
                     value=float(
                         st.session_state.line_demand
@@ -1538,6 +1558,20 @@ with tabs[3]:
         if not model:
             continue
         demand_week = float(st.session_state.line_demand.get(line_id, 0.0))
+
+        model = (
+            st.session_state.line_model
+            .get(st.session_state["plant_id"], {})
+            .get(line_id)
+        )
+        if not model:
+            continue
+
+        demand_week = float(
+            st.session_state.line_demand
+            .get(st.session_state["plant_id"], {})
+            .get(line_id, 0.0)
+        )
 
         merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model)
 
