@@ -1136,18 +1136,17 @@ with tabs[1]:
     compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
     allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
-    # Session state para selections
+    # Session state anidado por planta: line_model[plant_id][line_id], line_demand[plant_id][line_id]
     if "line_model" not in st.session_state:
         st.session_state.line_model = {}
-
-    if st.session_state["plant_id"] not in st.session_state.line_model:
-        st.session_state.line_model[st.session_state["plant_id"]] = {}
-
     if "line_demand" not in st.session_state:
         st.session_state.line_demand = {}
 
-if st.session_state["plant_id"] not in st.session_state.line_demand:
-    st.session_state.line_demand[st.session_state["plant_id"]] = {}
+    _pid = st.session_state["plant_id"]
+    if _pid not in st.session_state.line_model:
+        st.session_state.line_model[_pid] = {}
+    if _pid not in st.session_state.line_demand:
+        st.session_state.line_demand[_pid] = {}
 
     colL, colR = st.columns([1.1, 1.0], gap="large")
 
@@ -1164,30 +1163,14 @@ if st.session_state["plant_id"] not in st.session_state.line_demand:
             )
 
             for line_id in nave_line_ids:
-                _nave, base_line = line_id.split("-", 1)
                 allowed = allowed_by_line.get(line_id, [])
                 if not allowed:
                     st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                     continue
 
-
-
-
-                default_model = st.session_state.line_model.get(line_id, allowed[0])
-                if default_model not in allowed:
-                    default_model = allowed[0]
-
-                m = st.selectbox(
-                    f"Modelo ({line_id})",
-                    options=allowed,
-                    index=allowed.index(default_model),
-                    key=f"sel_model_{line_id}"
-                )
-                st.session_state.line_model[line_id] = m
-
                 default_model = (
                     st.session_state.line_model
-                    .get(st.session_state["plant_id"], {})
+                    .get(_pid, {})
                     .get(line_id, allowed[0])
                 )
                 if default_model not in allowed:
@@ -1197,9 +1180,9 @@ if st.session_state["plant_id"] not in st.session_state.line_demand:
                     f"Modelo ({line_id})",
                     options=allowed,
                     index=allowed.index(default_model),
-                    key=f"sel_model_{st.session_state['plant_id']}_{line_id}"
+                    key=f"sel_model_{_pid}_{line_id}"
                 )
-                st.session_state.line_model[st.session_state["plant_id"]][line_id] = m
+                st.session_state.line_model[_pid][line_id] = m
 
     with colR:
         st.markdown("### Demanda (UDS/SEM)")
@@ -1213,22 +1196,25 @@ if st.session_state["plant_id"] not in st.session_state.line_demand:
                 .tolist()
             )
             for line_id in nave_line_ids:
-                model = st.session_state.line_model.get(line_id)
+                model = (
+                    st.session_state.line_model
+                    .get(_pid, {})
+                    .get(line_id)
+                )
                 if not model:
                     continue
                 d = st.number_input(
                     f"Demanda ({line_id} – {model})",
                     min_value=0.0,
-
                     value=float(
                         st.session_state.line_demand
-                        .get(st.session_state["plant_id"], {})
+                        .get(_pid, {})
                         .get(line_id, 0.0)
                     ),
                     step=1.0,
-                    key=f"demand_{st.session_state['plant_id']}_{line_id}",
+                    key=f"demand_{_pid}_{line_id}",
                 )
-                st.session_state.line_demand[st.session_state["plant_id"]][line_id] = d
+                st.session_state.line_demand[_pid][line_id] = d
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
@@ -1553,11 +1539,6 @@ with tabs[3]:
         else:
             nave = "N1"
             base_line = parts[0]
-
-        model = st.session_state.line_model.get(line_id)
-        if not model:
-            continue
-        demand_week = float(st.session_state.line_demand.get(line_id, 0.0))
 
         model = (
             st.session_state.line_model
