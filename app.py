@@ -32,7 +32,11 @@ def get_connection():
 
 ASSETS_DIR = resource_path("assets")
 # --- Cargar logo ---
-logo = Image.open(os.path.join(ASSETS_DIR, "ingeteam_logo.jpg"))
+@st.cache_data
+def _load_logo():
+    return Image.open(os.path.join(ASSETS_DIR, "ingeteam_logo.jpg"))
+
+logo = _load_logo()
 st.sidebar.image(logo, use_container_width=True)
 
 st.markdown("""
@@ -128,7 +132,7 @@ def save_csv(df: pd.DataFrame, name: str) -> None:
 def _has_db() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=60)
 def load_table(table: str) -> pd.DataFrame:
     """
     Carga una tabla completa desde Postgres (Neon) y devuelve DataFrame.
@@ -1530,6 +1534,10 @@ with tabs[3]:
        .tolist()
     )
 
+    _tc = times_df.copy()
+    _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
+    cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
+
     for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
@@ -1565,12 +1573,7 @@ with tabs[3]:
         demand_year = demand_week * weeks_equiv
         cap_year = cap_week * weeks_equiv
 
-        _tmod = times_df[times_df["model"] == model].copy()
-        if "cycle_time" in _tmod.columns:
-            _tmod["cycle_time"] = pd.to_numeric(_tmod["cycle_time"], errors="coerce").fillna(0.0)
-        else:
-            _tmod["cycle_time"] = 0.0
-        total_cycle_time_model = float(_tmod["cycle_time"].sum())
+        total_cycle_time_model = cycle_time_by_model.get(model, 0.0)
 
         cap_hours_week = cap_week * total_cycle_time_model
         cap_hours_year = cap_hours_week * weeks_equiv
