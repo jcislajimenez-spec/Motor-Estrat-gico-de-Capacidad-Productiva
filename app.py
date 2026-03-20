@@ -1455,7 +1455,14 @@ def _apply_capacity(merged: pd.DataFrame, h_eff: float) -> pd.DataFrame:
     return m
 
 
-def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, float]:
+@st.cache_data(show_spinner=False)
+def compute_line_detail(
+    line_id: str,
+    model: str,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+    hours_eff_param: float,
+) -> tuple[pd.DataFrame, str, float]:
     """
     Devuelve:
     - merged detail DF con capacity por proceso
@@ -1463,17 +1470,15 @@ def compute_line_detail(line_id: str, model: str) -> tuple[pd.DataFrame, str, fl
     - capacity_total_week (uds/sem) (cap del cuello)
     """
 
-    t = times_df[times_df["model"] == model].copy()
-    s = stations_df[
-        stations_df["line_id"] == line_id
-    ].copy()
+    t = times_df_param[times_df_param["model"] == model].copy()
+    s = stations_df_param[stations_df_param["line_id"] == line_id].copy()
 
     merged = pd.merge(s, t, on="process", how="inner")
 
     if merged.empty:
         return merged, "", 0.0
 
-    merged = _apply_capacity(merged, hours_eff)
+    merged = _apply_capacity(merged, hours_eff_param)
 
     # Solo considerar procesos productivos para el cuello de botella:
     productive = merged[(merged["cycle_time_real"] > 0) & (merged["stations"] > 0)].copy()
@@ -1554,7 +1559,7 @@ with tabs[3]:
             .get(line_id, 0.0)
         )
 
-        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model)
+        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model, times_df, stations_df, hours_eff)
 
         saturation = 0.0
         deficit = 0.0
@@ -1815,7 +1820,7 @@ with tabs[4]:
         model_for_capH = []
 
         for m in models_allowed:
-            merged, _bn, cap_week = compute_line_detail(line_id, m)
+            merged, _bn, cap_week = compute_line_detail(line_id, m, times_df, stations_df, hours_eff)
             cap_week = float(cap_week) if cap_week else 0.0
             if cap_week <= 0:
                 continue
