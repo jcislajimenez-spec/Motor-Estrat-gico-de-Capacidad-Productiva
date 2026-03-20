@@ -26,11 +26,6 @@ st.set_page_config(
 )
 
 # --- Conexión a base de datos Neon ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
-conn = None
-if DATABASE_URL:
-    conn = psycopg2.connect(DATABASE_URL)
-
 def get_connection():
     return psycopg2.connect(os.environ["DATABASE_URL"])
 
