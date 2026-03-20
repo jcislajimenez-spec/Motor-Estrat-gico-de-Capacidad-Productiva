@@ -197,6 +197,7 @@ def save_table(df: pd.DataFrame, table: str) -> None:
     # invalidar cache de lecturas
     try:
         load_table.clear()
+        load_plant_data.clear()
     except Exception:
         pass
 
@@ -247,6 +248,223 @@ def load_plant_data(plant_id: int):
         "compat_df": compat_df,
         "active_models": active_models,
         "line_ids_nave": line_ids_nave,
+    }
+
+
+@st.cache_data
+def compute_plant_structural_capacity(
+    p_id: int,
+    p_name: str,
+    all_settings: pd.DataFrame,
+    all_models: pd.DataFrame,
+    all_times: pd.DataFrame,
+    all_stations: pd.DataFrame,
+    all_compat: pd.DataFrame,
+    shifts_override: int = None,
+) -> dict:
+    """Calcula capacidad estructural (max/prom/min) para una planta.
+    Si shifts_override tiene valor, fuerza ese número de turnos (solo para vista Global)."""
+
+    # Obtener settings de la planta
+    p_settings = all_settings[all_settings["plant_id"] == p_id]
+    if p_settings.empty:
+        p_hours_week = 43.0
+        p_shifts = 1
+        p_availability = 1.0
+        p_efficiency = 1.0
+        p_days_year = 250
+        p_days_week = 5
+    else:
+        row = p_settings.iloc[0]
+        p_hours_week = float(row.get("hours_week", 43.0))
+        p_shifts = int(row.get("shifts", 1))
+        p_availability = float(row.get("availability", 1.0))
+        p_efficiency = float(row.get("efficiency", 1.0))
+        p_days_year = int(row.get("days_open_year", 250))
+        p_days_week = int(row.get("days_open_week", 5))
+
+    # Si hay override de turnos (selector global), usarlo en lugar de p_shifts
+    effective_shifts = shifts_override if shifts_override else p_shifts
+    p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
+    p_weeks_equiv = p_days_year / max(p_days_week, 1)
+
+    # Filtrar datos por planta
+    p_models = all_models[all_models["plant_id"] == p_id].copy()
+    p_times = all_times[all_times["plant_id"] == p_id].copy()
+    p_stations = all_stations[all_stations["plant_id"] == p_id].copy()
+    p_compat = all_compat[all_compat["plant_id"] == p_id].copy()
+
+    if p_models.empty or p_stations.empty:
+        return {
+            "plant_id": p_id, "plant_name": p_name,
+            "hours_eff": p_hours_eff, "weeks_equiv": p_weeks_equiv,
+            "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+            "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+            "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+            "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+            "lines_count": 0, "line_stats": [],
+        }
+
+    # Normalización
+    p_models["model"] = p_models["model"].astype(str).str.strip()
+    p_times["model"] = p_times["model"].astype(str).str.strip()
+    p_stations["line"] = p_stations["line"].astype(str).str.strip()
+    p_compat["line"] = p_compat["line"].astype(str).str.strip()
+    p_compat["model"] = p_compat["model"].astype(str).str.strip()
+    p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
+    p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
+
+    p_models = ensure_int(p_models, ["active"])
+    p_compat = ensure_int(p_compat, ["compatible"])
+
+    active_models_p = p_models.loc[p_models["active"] == 1, "model"].tolist()
+
+    if not active_models_p:
+        return {
+            "plant_id": p_id, "plant_name": p_name,
+            "hours_eff": p_hours_eff, "weeks_equiv": p_weeks_equiv,
+            "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+            "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+            "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+            "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+            "lines_count": 0, "line_stats": [],
+        }
+
+    # Compatibilidades activas
+    compat_active_p = p_compat[(p_compat["compatible"] == 1) & (p_compat["model"].isin(active_models_p))].copy()
+    allowed_by_line_p = compat_active_p.groupby("line_id")["model"].apply(list).to_dict()
+
+    # Cycle times por modelo
+    _t = p_times.copy()
+    _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
+    cycle_by_model_p = _t.groupby("model")["cycle_time"].sum().to_dict()
+
+    # Pre-convertir tipos numéricos una sola vez
+    p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
+
+    if "machine_time" in p_times.columns:
+        p_times["machine_time"] = pd.to_numeric(p_times["machine_time"], errors="coerce").fillna(0.0)
+    else:
+        p_times["machine_time"] = 0.0
+
+    if "labor_time" in p_times.columns:
+        p_times["labor_time"] = pd.to_numeric(p_times["labor_time"], errors="coerce").fillna(0.0)
+    else:
+        p_times["labor_time"] = 0.0
+
+    p_stations["stations"] = pd.to_numeric(p_stations["stations"], errors="coerce").fillna(0)
+    p_stations["operators_per_station"] = pd.to_numeric(p_stations["operators_per_station"], errors="coerce").fillna(0)
+
+    # Pre-indexar tiempos por modelo
+    _time_cols = ["process", "cycle_time", "machine_time", "labor_time"]
+    times_by_model = {m: grp[_time_cols] for m, grp in p_times.groupby("model")}
+
+    # Pre-indexar estaciones por line_id
+    stations_by_line = {lid: grp[["process", "stations", "operators_per_station"]]
+                        for lid, grp in p_stations.groupby("line_id")}
+
+    # Line IDs
+    line_ids_p = sorted(p_stations["line_id"].astype(str).str.strip().unique().tolist())
+
+    line_stats_rows = []
+
+    for line_id in line_ids_p:
+        parts = line_id.split("-", 1)
+        if len(parts) == 2:
+            nave, base_line = parts
+        else:
+            nave = "N1"
+            base_line = parts[0]
+
+        models_allowed = allowed_by_line_p.get(line_id, [])
+        if not models_allowed:
+            continue
+
+        capU_vals = []
+        capH_vals = []
+
+        s = stations_by_line.get(line_id)
+        if s is None or s.empty:
+            continue
+
+        for m in models_allowed:
+            t = times_by_model.get(m)
+            if t is None or t.empty:
+                continue
+
+            merged = pd.merge(s, t, on="process", how="inner")
+
+            if merged.empty:
+                continue
+
+            productive = merged[(merged["stations"] > 0)].copy()
+            if productive.empty:
+                continue
+
+            ops = productive["operators_per_station"].clip(lower=1.0)
+            labor_per_op = productive["labor_time"] / ops
+            ctr = pd.concat([productive["machine_time"], labor_per_op], axis=1).max(axis=1)
+
+            valid = ctr > 0
+            if not valid.any():
+                continue
+
+            cap_values = (p_hours_eff * productive.loc[valid, "stations"]) / ctr[valid]
+
+            cap_min = float(cap_values.min())
+            if cap_min <= 0:
+                continue
+
+            w_m = float(cycle_by_model_p.get(m, 0.0))
+
+            capU_vals.append(cap_min)
+            capH_vals.append(cap_min * w_m)
+
+        if not capU_vals:
+            continue
+
+        line_stats_rows.append({
+            "line_id": line_id, "nave": nave, "line": base_line,
+            "max_u": float(np.max(capU_vals)),
+            "prom_u": float(np.mean(capU_vals)),
+            "min_u": float(np.min(capU_vals)),
+            "max_h": float(np.max(capH_vals)),
+            "prom_h": float(np.mean(capH_vals)),
+            "min_h": float(np.min(capH_vals)),
+        })
+
+    if not line_stats_rows:
+        return {
+            "plant_id": p_id, "plant_name": p_name,
+            "hours_eff": p_hours_eff, "weeks_equiv": p_weeks_equiv,
+            "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
+            "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
+            "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
+            "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
+            "lines_count": 0, "line_stats": [],
+        }
+
+    # Agregar por planta
+    max_u_sem  = sum(r["max_u"]  for r in line_stats_rows)
+    prom_u_sem = sum(r["prom_u"] for r in line_stats_rows)
+    min_u_sem  = sum(r["min_u"]  for r in line_stats_rows)
+    max_h_sem  = sum(r["max_h"]  for r in line_stats_rows)
+    prom_h_sem = sum(r["prom_h"] for r in line_stats_rows)
+    min_h_sem  = sum(r["min_h"]  for r in line_stats_rows)
+
+    return {
+        "plant_id": p_id, "plant_name": p_name,
+        "hours_eff": p_hours_eff, "weeks_equiv": p_weeks_equiv,
+        "max_u_sem": max_u_sem, "prom_u_sem": prom_u_sem, "min_u_sem": min_u_sem,
+        "max_u_year": max_u_sem * p_weeks_equiv,
+        "prom_u_year": prom_u_sem * p_weeks_equiv,
+        "min_u_year": min_u_sem * p_weeks_equiv,
+        "max_h_sem": max_h_sem, "prom_h_sem": prom_h_sem, "min_h_sem": min_h_sem,
+        "max_h_year": max_h_sem * p_weeks_equiv,
+        "prom_h_year": prom_h_sem * p_weeks_equiv,
+        "min_h_year": min_h_sem * p_weeks_equiv,
+        "lines_count": len(line_stats_rows),
+        "line_stats": line_stats_rows,
     }
 
 
@@ -414,6 +632,10 @@ line_ids_nave = _pd["line_ids_nave"]
 # Líneas disponibles (derivadas de stations_df)
 lines = sorted(stations_df["line"].unique().tolist())
 
+# Compatibilidad activa — calculada una sola vez, compartida por Tab 1 y Tab 4
+compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))]
+allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
+
 # =========================================================
 # TABS
 # =========================================================
@@ -448,235 +670,7 @@ with tabs[0]:
         }
     
     all_data = load_all_plants_data()
-    
-    # --- Función para calcular capacidad estructural por planta ---
-    def compute_plant_structural_capacity(p_id: int, p_name: str, all_data: dict, shifts_override: int = None) -> dict:
-        """Calcula capacidad estructural (max/prom/min) para una planta.
-        Si shifts_override tiene valor, fuerza ese número de turnos (solo para vista Global)."""
-        
-        # Obtener settings de la planta
-        p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
-        if p_settings.empty:
-            p_hours_week = 43.0
-            p_shifts = 1
-            p_availability = 1.0
-            p_efficiency = 1.0
-            p_days_year = 250
-            p_days_week = 5
-        else:
-            row = p_settings.iloc[0]
-            p_hours_week = float(row.get("hours_week", 43.0))
-            p_shifts = int(row.get("shifts", 1))
-            p_availability = float(row.get("availability", 1.0))
-            p_efficiency = float(row.get("efficiency", 1.0))
-            p_days_year = int(row.get("days_open_year", 250))
-            p_days_week = int(row.get("days_open_week", 5))
-        
-        # Si hay override de turnos (selector global), usarlo en lugar de p_shifts
-        effective_shifts = shifts_override if shifts_override else p_shifts
-        p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
-        p_weeks_equiv = p_days_year / max(p_days_week, 1)
-        
-        # Filtrar datos por planta
-        p_models = all_data["models"][all_data["models"]["plant_id"] == p_id].copy()
-        p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
-        p_stations = all_data["stations"][all_data["stations"]["plant_id"] == p_id].copy()
-        p_compat = all_data["compat"][all_data["compat"]["plant_id"] == p_id].copy()
-        
-        if p_models.empty or p_stations.empty:
-            return {
-                "plant_id": p_id,
-                "plant_name": p_name,
-                "hours_eff": p_hours_eff,
-                "weeks_equiv": p_weeks_equiv,
-                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
-                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
-                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
-                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
-                "lines_count": 0,
-                "line_stats": [],
-            }
-        
-        # Normalización
-        p_models["model"] = p_models["model"].astype(str).str.strip()
-        p_times["model"] = p_times["model"].astype(str).str.strip()
-        p_stations["line"] = p_stations["line"].astype(str).str.strip()
-        p_compat["line"] = p_compat["line"].astype(str).str.strip()
-        p_compat["model"] = p_compat["model"].astype(str).str.strip()
-        p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
-        p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
-        
-        p_models = ensure_int(p_models, ["active"])
-        p_compat = ensure_int(p_compat, ["compatible"])
-        
-        active_models_p = p_models.loc[p_models["active"] == 1, "model"].tolist()
-        
-        if not active_models_p:
-            return {
-                "plant_id": p_id,
-                "plant_name": p_name,
-                "hours_eff": p_hours_eff,
-                "weeks_equiv": p_weeks_equiv,
-                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
-                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
-                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
-                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
-                "lines_count": 0,
-                "line_stats": [],
-            }
-        
-        # Compatibilidades activas
-        compat_active_p = p_compat[(p_compat["compatible"] == 1) & (p_compat["model"].isin(active_models_p))].copy()
-        allowed_by_line_p = compat_active_p.groupby("line_id")["model"].apply(list).to_dict()
-        
-        # Cycle times por modelo
-        _t = p_times.copy()
-        _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
-        cycle_by_model_p = _t.groupby("model")["cycle_time"].sum().to_dict()
-        
-        # ✅ OPTIMIZACIÓN: Pre-convertir tipos numéricos una sola vez
-        p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
 
-        if "machine_time" in p_times.columns:
-            p_times["machine_time"] = pd.to_numeric(p_times["machine_time"], errors="coerce").fillna(0.0)
-        else:
-            p_times["machine_time"] = 0.0
-
-        if "labor_time" in p_times.columns:
-            p_times["labor_time"] = pd.to_numeric(p_times["labor_time"], errors="coerce").fillna(0.0)
-        else:
-            p_times["labor_time"] = 0.0
-
-        p_stations["stations"] = pd.to_numeric(p_stations["stations"], errors="coerce").fillna(0)
-        p_stations["operators_per_station"] = pd.to_numeric(p_stations["operators_per_station"], errors="coerce").fillna(0)
-        
-        # ✅ OPTIMIZACIÓN: Pre-indexar tiempos por modelo (evita filtrar N veces)
-        _time_cols = ["process", "cycle_time", "machine_time", "labor_time"]
-        times_by_model = {m: grp[_time_cols] for m, grp in p_times.groupby("model")}
-        
-        # ✅ OPTIMIZACIÓN: Pre-indexar estaciones por line_id (evita filtrar M veces)
-        stations_by_line = {lid: grp[["process", "stations", "operators_per_station"]] 
-                           for lid, grp in p_stations.groupby("line_id")}
-        
-        # Line IDs
-        line_ids_p = sorted(p_stations["line_id"].astype(str).str.strip().unique().tolist())
-        
-        line_stats_rows = []
-        
-        for line_id in line_ids_p:
-            parts = line_id.split("-", 1)
-            if len(parts) == 2:
-                nave, base_line = parts
-            else:
-                nave = "N1"
-                base_line = parts[0]
-            
-            models_allowed = allowed_by_line_p.get(line_id, [])
-            if not models_allowed:
-                continue
-            
-            capU_vals = []
-            capH_vals = []
-            
-            # ✅ OPTIMIZACIÓN: Obtener estaciones de la línea una sola vez (no por modelo)
-            s = stations_by_line.get(line_id)
-            if s is None or s.empty:
-                continue
-            
-            for m in models_allowed:
-                # ✅ OPTIMIZACIÓN: Obtener tiempos del modelo desde dict precalculado
-                t = times_by_model.get(m)
-                if t is None or t.empty:
-                    continue
-                
-                merged = pd.merge(s, t, on="process", how="inner")
-                
-                if merged.empty:
-                    continue
-                
-                productive = merged[(merged["stations"] > 0)].copy()
-                if productive.empty:
-                    continue
-                
-                # cycle_time_real = max(machine_time, labor_time / operators)
-                ops = productive["operators_per_station"].clip(lower=1.0)
-                labor_per_op = productive["labor_time"] / ops
-                ctr = pd.concat([productive["machine_time"], labor_per_op], axis=1).max(axis=1)
-                
-                valid = ctr > 0
-                if not valid.any():
-                    continue
-                
-                cap_values = (p_hours_eff * productive.loc[valid, "stations"]) / ctr[valid]
-                
-                cap_min = float(cap_values.min())
-                if cap_min <= 0:
-                    continue
-                
-                w_m = float(cycle_by_model_p.get(m, 0.0))
-                
-                capU_vals.append(cap_min)
-                capH_vals.append(cap_min * w_m)
-            
-            if not capU_vals:
-                continue
-            
-            line_stats_rows.append({
-                "line_id": line_id,
-                "nave": nave,
-                "line": base_line,
-                "max_u": float(np.max(capU_vals)),
-                "prom_u": float(np.mean(capU_vals)),
-                "min_u": float(np.min(capU_vals)),
-                "max_h": float(np.max(capH_vals)),
-                "prom_h": float(np.mean(capH_vals)),
-                "min_h": float(np.min(capH_vals)),
-            })
-        
-        if not line_stats_rows:
-            return {
-                "plant_id": p_id,
-                "plant_name": p_name,
-                "hours_eff": p_hours_eff,
-                "weeks_equiv": p_weeks_equiv,
-                "max_u_sem": 0.0, "prom_u_sem": 0.0, "min_u_sem": 0.0,
-                "max_u_year": 0.0, "prom_u_year": 0.0, "min_u_year": 0.0,
-                "max_h_sem": 0.0, "prom_h_sem": 0.0, "min_h_sem": 0.0,
-                "max_h_year": 0.0, "prom_h_year": 0.0, "min_h_year": 0.0,
-                "lines_count": 0,
-                "line_stats": [],
-            }
-        
-        # Agregar por planta
-        max_u_sem = sum(r["max_u"] for r in line_stats_rows)
-        prom_u_sem = sum(r["prom_u"] for r in line_stats_rows)
-        min_u_sem = sum(r["min_u"] for r in line_stats_rows)
-        
-        max_h_sem = sum(r["max_h"] for r in line_stats_rows)
-        prom_h_sem = sum(r["prom_h"] for r in line_stats_rows)
-        min_h_sem = sum(r["min_h"] for r in line_stats_rows)
-        
-        return {
-            "plant_id": p_id,
-            "plant_name": p_name,
-            "hours_eff": p_hours_eff,
-            "weeks_equiv": p_weeks_equiv,
-            "max_u_sem": max_u_sem,
-            "prom_u_sem": prom_u_sem,
-            "min_u_sem": min_u_sem,
-            "max_u_year": max_u_sem * p_weeks_equiv,
-            "prom_u_year": prom_u_sem * p_weeks_equiv,
-            "min_u_year": min_u_sem * p_weeks_equiv,
-            "max_h_sem": max_h_sem,
-            "prom_h_sem": prom_h_sem,
-            "min_h_sem": min_h_sem,
-            "max_h_year": max_h_sem * p_weeks_equiv,
-            "prom_h_year": prom_h_sem * p_weeks_equiv,
-            "min_h_year": min_h_sem * p_weeks_equiv,
-            "lines_count": len(line_stats_rows),
-            "line_stats": line_stats_rows,
-        }
-    
     # --- Calcular capacidad para TODAS las plantas ---
     # Selector global de turnos (solo afecta a esta pestaña)
     st.markdown("### 📊 Selector de Escenario")
@@ -707,7 +701,12 @@ with tabs[0]:
     for _, plant_row in all_data["plants"].iterrows():
         p_id = int(plant_row["id"])
         p_name = str(plant_row["name"])
-        result = compute_plant_structural_capacity(p_id, p_name, all_data, shifts_override=shifts_override)
+        result = compute_plant_structural_capacity(
+            p_id, p_name,
+            all_data["settings"], all_data["models"], all_data["times"],
+            all_data["stations"], all_data["compat"],
+            shifts_override=shifts_override,
+        )
         global_results.append(result)
     
     # Mapear escenario a columnas
@@ -1143,10 +1142,6 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Selección de modelo por línea")
-
-    # Compatibilidad por line_id (nave + línea) para evitar mezclar naves
-    compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
     # Session state anidado por planta: line_model[plant_id][line_id], line_demand[plant_id][line_id]
     if "line_model" not in st.session_state:
@@ -1799,9 +1794,6 @@ with tabs[4]:
         "La capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\n"
         "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
     )
-
-    compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].isin(active_models))].copy()
-    allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
