@@ -208,6 +208,48 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
     return out
 
+
+@st.cache_data(ttl=60)
+def load_plant_data(plant_id: int):
+    models_df = load_table("models")
+    models_df = models_df[models_df["plant_id"] == plant_id].copy()
+    models_df["model"] = models_df["model"].astype(str).str.strip()
+    models_df = ensure_int(models_df, ["active"])
+
+    times_df = load_table("models_process_times")
+    times_df = times_df[times_df["plant_id"] == plant_id].copy()
+    times_df["model"] = times_df["model"].astype(str).str.strip()
+
+    stations_df = load_table("lines_process_stations")
+    stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
+    stations_df["line"] = stations_df["line"].astype(str).str.strip()
+    stations_df["nave"] = stations_df["nave"].astype(str).str.strip()
+    stations_df["line_id"] = stations_df["nave"] + "-" + stations_df["line"]
+
+    compat_df = load_table("compatibility")
+    compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
+    compat_df["line"] = compat_df["line"].astype(str).str.strip()
+    compat_df["model"] = compat_df["model"].astype(str).str.strip()
+    compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
+    compat_df["line_id"] = compat_df["nave"] + "-" + compat_df["line"]
+    compat_df = ensure_int(compat_df, ["compatible"])
+
+    active_models = models_df.loc[models_df["active"] == 1, "model"].tolist()
+
+    line_ids_nave = sorted(
+        stations_df["line_id"].astype(str).str.strip().unique().tolist()
+    )
+
+    return {
+        "models_df": models_df,
+        "times_df": times_df,
+        "stations_df": stations_df,
+        "compat_df": compat_df,
+        "active_models": active_models,
+        "line_ids_nave": line_ids_nave,
+    }
+
+
 # =========================================================
 # SELECCIÓN DE PLANTA.
 # =========================================================
@@ -360,46 +402,17 @@ if st.sidebar.button("Guardar parámetros de esta planta"):
 # =========================================================
 # CARGA DATOS
 # =========================================================
-models_df = load_table("models")
-models_df = models_df[models_df["plant_id"] == plant_id].copy()
+_pd = load_plant_data(plant_id)
 
-times_df = load_table("models_process_times")
-times_df = times_df[times_df["plant_id"] == plant_id].copy()
-
-stations_df = load_table("lines_process_stations")
-stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
-
-compat_df = load_table("compatibility")
-compat_df = compat_df[
-    (compat_df["plant_id"] == plant_id)
-].copy()
-
-# Normalización mínima
-models_df["model"] = models_df["model"].astype(str).str.strip()
-times_df["model"] = times_df["model"].astype(str).str.strip()
-stations_df["line"] = stations_df["line"].astype(str).str.strip()
-compat_df["line"] = compat_df["line"].astype(str).str.strip()
-compat_df["model"] = compat_df["model"].astype(str).str.strip()
-compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
-# Construir line_id en compat_df para poder filtrar por nave+línea
-compat_df["line_id"] = compat_df["nave"] + "-" + compat_df["line"]
-
-models_df = ensure_int(models_df, ["active"])
-compat_df = ensure_int(compat_df, ["compatible"])
-stations_df = stations_df.copy()
-
-# Modelos activos (lista oficial de la app)
-active_models = models_df.loc[models_df["active"] == 1, "model"].tolist()
+models_df     = _pd["models_df"]
+times_df      = _pd["times_df"]
+stations_df   = _pd["stations_df"]
+compat_df     = _pd["compat_df"]
+active_models = _pd["active_models"]
+line_ids_nave = _pd["line_ids_nave"]
 
 # Líneas disponibles (derivadas de stations_df)
 lines = sorted(stations_df["line"].unique().tolist())
-line_ids_nave = sorted(
-    stations_df["line_id"]
-    .astype(str)
-    .str.strip()
-    .unique()
-    .tolist()
-)
 
 # =========================================================
 # TABS
