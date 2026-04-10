@@ -1501,6 +1501,34 @@ def _apply_capacity(merged: pd.DataFrame, h_eff: float) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+def _compute_line_base(
+    line_id: str,
+    model: str,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+) -> pd.DataFrame:
+    """Merge + normalización + cycle_time_real, sin hours_eff.
+    Caché estable ante cambios de sliders (disponibilidad, eficiencia, turnos).
+    Llamada internamente por compute_line_detail."""
+    t = times_df_param[times_df_param["model"] == model].copy()
+    s = stations_df_param[stations_df_param["line_id"] == line_id].copy()
+    merged = pd.merge(s, t, on="process", how="inner")
+    if merged.empty:
+        return merged
+    m = merged.copy()
+    m["stations"] = pd.to_numeric(m["stations"], errors="coerce").fillna(0)
+    m["operators_per_station"] = pd.to_numeric(m["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
+    for col in ("machine_time", "labor_time"):
+        if col in m.columns:
+            m[col] = pd.to_numeric(m[col], errors="coerce").fillna(0.0)
+        else:
+            m[col] = 0.0
+    m["labor_per_operator"] = m["labor_time"] / m["operators_per_station"]
+    m["cycle_time_real"] = m[["machine_time", "labor_per_operator"]].max(axis=1)
+    return m
+
+
+@st.cache_data(show_spinner=False)
 def compute_line_detail(
     line_id: str,
     model: str,
@@ -1513,20 +1541,22 @@ def compute_line_detail(
     - merged detail DF con capacity por proceso
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
+
+    El trabajo pesado (merge + normalización) lo hace _compute_line_base,
+    que cachea sin hours_eff. Solo la multiplicación final depende de hours_eff_param.
     """
+    base = _compute_line_base(line_id, model, times_df_param, stations_df_param)
 
-    t = times_df_param[times_df_param["model"] == model].copy()
-    s = stations_df_param[stations_df_param["line_id"] == line_id].copy()
+    if base.empty:
+        return base, "", 0.0
 
-    merged = pd.merge(s, t, on="process", how="inner")
-
-    if merged.empty:
-        return merged, "", 0.0
-
-    merged = _apply_capacity(merged, hours_eff_param)
+    merged = base.copy()
+    merged["capacity"] = 0.0
+    mask = (merged["cycle_time_real"] > 0) & (merged["stations"] > 0)
+    merged.loc[mask, "capacity"] = (hours_eff_param * merged.loc[mask, "stations"]) / merged.loc[mask, "cycle_time_real"]
 
     # Solo considerar procesos productivos para el cuello de botella:
-    productive = merged[(merged["cycle_time_real"] > 0) & (merged["stations"] > 0)].copy()
+    productive = merged[mask].copy()
 
     if productive.empty or productive["capacity"].dropna().empty:
         return merged, "", 0.0
