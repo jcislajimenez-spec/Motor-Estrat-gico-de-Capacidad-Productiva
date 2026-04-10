@@ -656,6 +656,21 @@ compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].i
 allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
 # =========================================================
+# Inicialización segura de session_state de planificación
+# Debe estar a nivel de módulo (fuera de cualquier tab) para que Resultados
+# y Capacidad según mix no rompan al entrar sin pasar por Planificación.
+# =========================================================
+if "line_model" not in st.session_state:
+    st.session_state.line_model = {}
+if "line_demand" not in st.session_state:
+    st.session_state.line_demand = {}
+_pid_init = st.session_state["plant_id"]
+if _pid_init not in st.session_state.line_model:
+    st.session_state.line_model[_pid_init] = {}
+if _pid_init not in st.session_state.line_demand:
+    st.session_state.line_demand[_pid_init] = {}
+
+# =========================================================
 # Capacidad por modelo y planta (cacheada a nivel de módulo)
 # =========================================================
 @st.cache_data(show_spinner=False)
