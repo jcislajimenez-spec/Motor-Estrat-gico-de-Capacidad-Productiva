@@ -526,6 +526,18 @@ st.title("Motor Estratégico de Capacidad Productiva")
 st.caption("Planificación por líneas y simulación de mix")
 
 # =========================================================
+# SIDEBAR – NAVEGACIÓN
+# =========================================================
+_PAGES = [
+    "🌐 Global",
+    "📊 Planificación",
+    "⚙️ Configuración (Power User)",
+    "📈 Resultados",
+    "🧭 Capacidad según mix",
+]
+st.sidebar.radio("Pantalla:", _PAGES, key="active_tab")
+
+# =========================================================
 # SIDEBAR – PARÁMETROS (SIEMPRE VISIBLES)
 # =========================================================
 st.sidebar.header("Parámetros de planificación")
@@ -764,15 +776,10 @@ def load_all_plants_data():
 
 
 # =========================================================
-# TABS
-# =========================================================
-tabs = st.tabs(["🌐 Global", "📊 Planificación", "⚙️ Configuración (Power User)", "📈 Resultados", "🧭 Capacidad según mix"])
-
-# =========================================================
 # 0) GLOBAL - VISIÓN MULTIPLANTA
 # =========================================================
 
-with tabs[0]:
+if st.session_state.active_tab == "🌐 Global":
     st.subheader("🌐 Visión Global Multiplanta")
     st.info("Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.")
     
@@ -1152,7 +1159,7 @@ with tabs[0]:
 # 1) PLANIFICACIÓN
 # =========================================================
 
-with tabs[1]:
+if st.session_state.active_tab == "📊 Planificación":
     st.subheader("Selección de modelo por línea")
 
     # Session state anidado por planta: line_model[plant_id][line_id], line_demand[plant_id][line_id]
@@ -1238,7 +1245,7 @@ with tabs[1]:
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
 # =========================================================
-with tabs[2]:
+if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     st.subheader("Configuración (power user)")
     st.caption("Aquí se mantienen modelos, tiempos, estaciones y compatibilidades. Usuario normal NO debería tocar esto.")
 
@@ -1558,7 +1565,7 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
 
 
 
-with tabs[3]:
+if st.session_state.active_tab == "📈 Resultados":
     st.subheader("Resultados de capacidad")
     st.caption(f"Horas efectivas planta: {hours_eff:.2f} h/semana")
 
@@ -1818,7 +1825,7 @@ with tabs[3]:
         st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
 
 
-with tabs[4]:
+if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader("Capacidad según mix")
     st.info(
         "La planta produce **horas configurables**.\n"
