@@ -1,6 +1,6 @@
-streamlit
-pandas
-numpy
-plotly
-pillow
-psycopg2-binary
+streamlit==1.54.0
+pandas==2.3.3
+numpy==2.4.2
+plotly==6.5.2
+Pillow==12.1.1
+psycopg2-binary>=2.9,<3

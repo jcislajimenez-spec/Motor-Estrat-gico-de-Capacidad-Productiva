@@ -142,17 +142,20 @@ def load_table(table: str) -> pd.DataFrame:
         return load_csv(f"{table}.csv")
 
     c = get_connection()
-    with c.cursor() as cur:
-        cur.execute(f'SELECT * FROM "{table}"')
-        cols = [d[0] for d in cur.description]
-        rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=cols)
+    try:
+        with c.cursor() as cur:
+            cur.execute(f'SELECT * FROM "{table}"')
+            cols = [d[0] for d in cur.description]
+            rows = cur.fetchall()
+        df = pd.DataFrame(rows, columns=cols)
 
-    # Limpieza suave (mismo criterio que CSV)
-    for col in df.columns:
-        if df[col].dtype == "object":
-            df[col] = df[col].astype(str).str.strip()
-    return df
+        # Limpieza suave (mismo criterio que CSV)
+        for col in df.columns:
+            if df[col].dtype == "object":
+                df[col] = df[col].astype(str).str.strip()
+        return df
+    finally:
+        c.close()
 
 def save_table(df: pd.DataFrame, table: str) -> None:
     """
@@ -168,31 +171,34 @@ def save_table(df: pd.DataFrame, table: str) -> None:
         return
 
     c = get_connection()
-    cols = list(df.columns)
-    if not cols:
-        return
+    try:
+        cols = list(df.columns)
+        if not cols:
+            return
 
-    placeholders = ",".join(["%s"] * len(cols))
-    col_list = ",".join([f'"{cname}"' for cname in cols])
+        placeholders = ",".join(["%s"] * len(cols))
+        col_list = ",".join([f'"{cname}"' for cname in cols])
 
-    # Convertimos NaN -> None para psycopg2
-    values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+        # Convertimos NaN -> None para psycopg2
+        values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
 
-    with c.cursor() as cur:
-        if "plant_id" in cols:
-            plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
-            # Seguridad: asegurar que solo guardamos datos de la planta correcta
-            df = df[df["plant_id"] == plant_value].copy()
-            values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
-            cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
-        else:
-            cur.execute(f'TRUNCATE TABLE "{table}"')
+        with c.cursor() as cur:
+            if "plant_id" in cols:
+                plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
+                # Seguridad: asegurar que solo guardamos datos de la planta correcta
+                df = df[df["plant_id"] == plant_value].copy()
+                values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+                cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
+            else:
+                cur.execute(f'TRUNCATE TABLE "{table}"')
 
-        cur.executemany(
-            f'INSERT INTO "{table}" ({col_list}) VALUES ({placeholders})',
-            values
-        )
-    c.commit()
+            cur.executemany(
+                f'INSERT INTO "{table}" ({col_list}) VALUES ({placeholders})',
+                values
+            )
+        c.commit()
+    finally:
+        c.close()
 
     # invalidar cache de lecturas
     try:
@@ -637,6 +643,103 @@ compat_active = compat_df[(compat_df["compatible"] == 1) & (compat_df["model"].i
 allowed_by_line = compat_active.groupby("line_id")["model"].apply(list).to_dict()
 
 # =========================================================
+# Capacidad por modelo y planta (cacheada a nivel de módulo)
+# =========================================================
+@st.cache_data(show_spinner=False)
+def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, shifts_override: int = None) -> dict:
+    """Calcula capacidad de un modelo específico en una planta."""
+    p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
+    if p_settings.empty:
+        p_hours_eff = 43.0
+        p_weeks_equiv = 50.0
+    else:
+        row = p_settings.iloc[0]
+        p_hours_week = float(row.get("hours_week", 43.0))
+        p_shifts = int(row.get("shifts", 1))
+        p_availability = float(row.get("availability", 1.0))
+        p_efficiency = float(row.get("efficiency", 1.0))
+        p_days_year = int(row.get("days_open_year", 250))
+        p_days_week = int(row.get("days_open_week", 5))
+        effective_shifts = shifts_override if shifts_override else p_shifts
+        p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
+        p_weeks_equiv = p_days_year / max(p_days_week, 1)
+
+    p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
+    p_stations = all_data["stations"][all_data["stations"]["plant_id"] == p_id].copy()
+    p_compat = all_data["compat"][all_data["compat"]["plant_id"] == p_id].copy()
+
+    p_times["model"] = p_times["model"].astype(str).str.strip()
+    p_compat["model"] = p_compat["model"].astype(str).str.strip()
+    p_compat["line"] = p_compat["line"].astype(str).str.strip()
+    p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
+    p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
+    p_compat = ensure_int(p_compat, ["compatible"])
+
+    # Líneas compatibles con este modelo (por line_id)
+    compat_line_ids = p_compat[(p_compat["model"] == model_name) & (p_compat["compatible"] == 1)]["line_id"].tolist()
+
+    if not compat_line_ids:
+        return {"cap_u_sem": 0.0, "cap_h_sem": 0.0}
+
+    # Cycle time del modelo
+    model_times = p_times[p_times["model"] == model_name].copy()
+    model_times["cycle_time"] = pd.to_numeric(model_times["cycle_time"], errors="coerce").fillna(0.0)
+    total_cycle = float(model_times["cycle_time"].sum())
+
+    line_ids = p_stations["line_id"].astype(str).str.strip().unique().tolist()
+
+    total_cap_u = 0.0
+    total_cap_h = 0.0
+
+    for line_id in line_ids:
+        if line_id not in compat_line_ids:
+            continue
+
+        t = model_times.copy()
+        s = p_stations[p_stations["line_id"] == line_id].copy()
+
+        merged = pd.merge(s, t, on="process", how="inner")
+
+        if merged.empty:
+            continue
+
+        merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
+        merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
+        for _tc in ("machine_time", "labor_time"):
+            if _tc in merged.columns:
+                merged[_tc] = pd.to_numeric(merged[_tc], errors="coerce").fillna(0.0)
+            else:
+                merged[_tc] = 0.0
+
+        productive = merged[merged["stations"] > 0].copy()
+        if productive.empty:
+            continue
+
+        labor_per_op = productive["labor_time"] / productive["operators_per_station"]
+        ctr = pd.concat([productive["machine_time"], labor_per_op], axis=1).max(axis=1)
+        valid = ctr > 0
+        if not valid.any():
+            continue
+
+        cap_final = (p_hours_eff * productive.loc[valid, "stations"]) / ctr[valid]
+
+        if cap_final.empty or cap_final.min() <= 0:
+            continue
+
+        cap_u = float(cap_final.min())
+        cap_h = cap_u * total_cycle
+
+        total_cap_u += cap_u
+        total_cap_h += cap_h
+
+    return {
+        "cap_u_sem": total_cap_u,
+        "cap_h_sem": total_cap_h,
+        "weeks_equiv": p_weeks_equiv,
+    }
+
+
+# =========================================================
 # TABS
 # =========================================================
 tabs = st.tabs(["🌐 Global", "📊 Planificación", "⚙️ Configuración (Power User)", "📈 Resultados", "🧭 Capacidad según mix"])
@@ -891,99 +994,6 @@ with tabs[0]:
             key="global_model_filter"
         )
         
-        # Función para calcular capacidad por modelo y planta
-        def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, shifts_override: int = None) -> dict:
-            """Calcula capacidad de un modelo específico en una planta."""
-            p_settings = all_data["settings"][all_data["settings"]["plant_id"] == p_id]
-            if p_settings.empty:
-                p_hours_eff = 43.0
-                p_weeks_equiv = 50.0
-            else:
-                row = p_settings.iloc[0]
-                p_hours_week = float(row.get("hours_week", 43.0))
-                p_shifts = int(row.get("shifts", 1))
-                p_availability = float(row.get("availability", 1.0))
-                p_efficiency = float(row.get("efficiency", 1.0))
-                p_days_year = int(row.get("days_open_year", 250))
-                p_days_week = int(row.get("days_open_week", 5))
-                effective_shifts = shifts_override if shifts_override else p_shifts
-                p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
-                p_weeks_equiv = p_days_year / max(p_days_week, 1)
-            
-            p_times = all_data["times"][all_data["times"]["plant_id"] == p_id].copy()
-            p_stations = all_data["stations"][all_data["stations"]["plant_id"] == p_id].copy()
-            p_compat = all_data["compat"][all_data["compat"]["plant_id"] == p_id].copy()
-            
-            p_times["model"] = p_times["model"].astype(str).str.strip()
-            p_compat["model"] = p_compat["model"].astype(str).str.strip()
-            p_compat["line"] = p_compat["line"].astype(str).str.strip()
-            p_compat["nave"] = p_compat["nave"].astype(str).str.strip()
-            p_compat["line_id"] = p_compat["nave"] + "-" + p_compat["line"]
-            p_compat = ensure_int(p_compat, ["compatible"])
-            
-            # Líneas compatibles con este modelo (por line_id)
-            compat_line_ids = p_compat[(p_compat["model"] == model_name) & (p_compat["compatible"] == 1)]["line_id"].tolist()
-            
-            if not compat_line_ids:
-                return {"cap_u_sem": 0.0, "cap_h_sem": 0.0}
-            
-            # Cycle time del modelo
-            model_times = p_times[p_times["model"] == model_name].copy()
-            model_times["cycle_time"] = pd.to_numeric(model_times["cycle_time"], errors="coerce").fillna(0.0)
-            total_cycle = float(model_times["cycle_time"].sum())
-            
-            line_ids = p_stations["line_id"].astype(str).str.strip().unique().tolist()
-            
-            total_cap_u = 0.0
-            total_cap_h = 0.0
-            
-            for line_id in line_ids:
-                if line_id not in compat_line_ids:
-                    continue
-                
-                t = model_times.copy()
-                s = p_stations[p_stations["line_id"] == line_id].copy()
-                
-                merged = pd.merge(s, t, on="process", how="inner")
-                
-                if merged.empty:
-                    continue
-                
-                merged["stations"] = pd.to_numeric(merged["stations"], errors="coerce").fillna(0)
-                merged["operators_per_station"] = pd.to_numeric(merged["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
-                for _tc in ("machine_time", "labor_time"):
-                    if _tc in merged.columns:
-                        merged[_tc] = pd.to_numeric(merged[_tc], errors="coerce").fillna(0.0)
-                    else:
-                        merged[_tc] = 0.0
-                
-                productive = merged[merged["stations"] > 0].copy()
-                if productive.empty:
-                    continue
-                
-                labor_per_op = productive["labor_time"] / productive["operators_per_station"]
-                ctr = pd.concat([productive["machine_time"], labor_per_op], axis=1).max(axis=1)
-                valid = ctr > 0
-                if not valid.any():
-                    continue
-                
-                cap_final = (p_hours_eff * productive.loc[valid, "stations"]) / ctr[valid]
-                
-                if cap_final.empty or cap_final.min() <= 0:
-                    continue
-                
-                cap_u = float(cap_final.min())
-                cap_h = cap_u * total_cycle
-                
-                total_cap_u += cap_u
-                total_cap_h += cap_h
-            
-            return {
-                "cap_u_sem": total_cap_u,
-                "cap_h_sem": total_cap_h,
-                "weeks_equiv": p_weeks_equiv,
-            }
-        
         if selected_model != "Todos los modelos":
             # Mostrar capacidad del modelo seleccionado en todas las plantas
             model_rows = []
@@ -1041,10 +1051,7 @@ with tabs[0]:
         
         # Inicializar modificaciones en session_state
         if "global_modificaciones" not in st.session_state:
-            st.session_state.global_modificaciones = [
-                {"nombre": "Optimización de flujo en Línea 1", "horas": 120, "planta": "ORTUELLA"},
-                {"nombre": "Nuevas estaciones de testeo", "horas": 45, "planta": "CHENNAI"},
-            ]
+            st.session_state.global_modificaciones = []
         
         # Mostrar modificaciones existentes
         for i, mod in enumerate(st.session_state.global_modificaciones):
@@ -1413,7 +1420,7 @@ with tabs[2]:
                 checked = cols[i % 3].checkbox(
                     m,
                     value=bool(cur_val),
-                    key=f"compat_{line_id}_{m}"
+                    key=f"compat_{plant_id}_{line_id}_{m}"
                 )
 
                 edited_rows.append({
