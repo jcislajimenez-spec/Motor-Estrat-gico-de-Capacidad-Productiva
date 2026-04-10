@@ -1620,6 +1620,42 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
     return float(hours_proc.sum())
 
 
+@st.cache_data(show_spinner=False)
+def _precompute_all_bases_for_tab4(
+    times_df: pd.DataFrame,
+    stations_df: pd.DataFrame,
+    line_ids_tuple: tuple,
+    allowed_by_line_tuple: tuple,
+) -> dict:
+    """Pre-computa merge+normalize para todas las combinaciones (line_id, model) de Tab 4.
+    times_df y stations_df se hashean UNA SOLA VEZ en lugar de N×M veces.
+    Sin hours_eff → caché estable ante cambios de sliders (disponibilidad, eficiencia, turnos)."""
+    allowed_dict = {k: list(v) for k, v in allowed_by_line_tuple}
+    result = {}
+    for line_id in line_ids_tuple:
+        models = allowed_dict.get(line_id, [])
+        if not models:
+            continue
+        s = stations_df[stations_df["line_id"] == line_id].copy()
+        if s.empty:
+            continue
+        s["stations"] = pd.to_numeric(s["stations"], errors="coerce").fillna(0)
+        s["operators_per_station"] = pd.to_numeric(s["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
+        for m in models:
+            t = times_df[times_df["model"] == m].copy()
+            merged = pd.merge(s, t, on="process", how="inner")
+            if merged.empty:
+                continue
+            for col in ("machine_time", "labor_time"):
+                if col in merged.columns:
+                    merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+                else:
+                    merged[col] = 0.0
+            merged["labor_per_operator"] = merged["labor_time"] / merged["operators_per_station"]
+            merged["cycle_time_real"] = merged[["machine_time", "labor_per_operator"]].max(axis=1)
+            result[(line_id, m)] = merged
+    return result
+
 
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader("Resultados de capacidad")
@@ -1905,8 +1941,14 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     capU_line_model = {}
     max_h_week_by_line = {}
 
-    # TIMING B — compute_line_detail × líneas × modelos (Tab Capacidad según mix)
-    _t0_B = time.perf_counter()
+    # Pre-computar bases UNA VEZ: times_df y stations_df hasheados 1 vez en lugar de N×M
+    _all_bases = _precompute_all_bases_for_tab4(
+        times_df,
+        stations_df,
+        tuple(sorted(line_ids_nave)),
+        tuple(sorted((k, tuple(v)) for k, v in allowed_by_line.items())),
+    )
+
     for line_id in line_ids_nave:
 
         parts = line_id.split("-", 1)
@@ -1926,8 +1968,14 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         model_for_capH = []
 
         for m in models_allowed:
-            merged, _bn, cap_week = compute_line_detail(line_id, m, times_df, stations_df, hours_eff)
-            cap_week = float(cap_week) if cap_week else 0.0
+            _base = _all_bases.get((line_id, m))
+            if _base is None or _base.empty:
+                continue
+            _prod = _base[(_base["cycle_time_real"] > 0) & (_base["stations"] > 0)]
+            if _prod.empty:
+                continue
+            _cap_vals = (hours_eff * _prod["stations"]) / _prod["cycle_time_real"]
+            cap_week = float(_cap_vals.min()) if not _cap_vals.empty and _cap_vals.min() > 0 else 0.0
             if cap_week <= 0:
                 continue
 
