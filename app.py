@@ -204,6 +204,7 @@ def save_table(df: pd.DataFrame, table: str) -> None:
     try:
         load_table.clear()
         load_plant_data.clear()
+        load_all_plants_data.clear()
     except Exception:
         pass
 
@@ -740,6 +741,29 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
 
 
 # =========================================================
+# Carga global multiplanta (cacheada a nivel de módulo)
+# =========================================================
+@st.cache_data(ttl=60)
+def load_all_plants_data():
+    """Carga datos de todas las plantas para el análisis global."""
+    all_plants = load_table("plants")
+    all_settings = load_table("settings")
+    all_models = load_table("models")
+    all_times = load_table("models_process_times")
+    all_stations = load_table("lines_process_stations")
+    all_compat = load_table("compatibility")
+
+    return {
+        "plants": all_plants,
+        "settings": all_settings,
+        "models": all_models,
+        "times": all_times,
+        "stations": all_stations,
+        "compat": all_compat,
+    }
+
+
+# =========================================================
 # TABS
 # =========================================================
 tabs = st.tabs(["🌐 Global", "📊 Planificación", "⚙️ Configuración (Power User)", "📈 Resultados", "🧭 Capacidad según mix"])
@@ -753,25 +777,6 @@ with tabs[0]:
     st.info("Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.")
     
     # --- Cargar TODOS los datos de TODAS las plantas ---
-    @st.cache_data(ttl=10)
-    def load_all_plants_data():
-        """Carga datos de todas las plantas para el análisis global."""
-        all_plants = load_table("plants")
-        all_settings = load_table("settings")
-        all_models = load_table("models")
-        all_times = load_table("models_process_times")
-        all_stations = load_table("lines_process_stations")
-        all_compat = load_table("compatibility")
-        
-        return {
-            "plants": all_plants,
-            "settings": all_settings,
-            "models": all_models,
-            "times": all_times,
-            "stations": all_stations,
-            "compat": all_compat,
-        }
-    
     all_data = load_all_plants_data()
 
     # --- Calcular capacidad para TODAS las plantas ---
@@ -1261,7 +1266,6 @@ with tabs[2]:
         out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
-        st.cache_data.clear()
         st.rerun()
 
     if st.session_state.get("models_saved"):
@@ -1335,11 +1339,24 @@ with tabs[2]:
         # evitar duplicados modelo-proceso
         out = out.drop_duplicates(subset=["model", "process"])
         out["plant_id"] = plant_id
+
+        # Validación mínima: avisar si algún proceso tiene ambos tiempos a 0
+        if "machine_time" in out.columns and "labor_time" in out.columns:
+            bad = out[(out["machine_time"] == 0.0) & (out["labor_time"] == 0.0)]
+            if not bad.empty:
+                st.session_state["times_warning"] = (
+                    f"⚠️ {len(bad)} proceso(s) con machine_time=0 y labor_time=0. "
+                    "Esos procesos tendrán capacidad calculada = 0."
+                )
+
         save_table(out, "models_process_times")
 
         st.session_state["times_saved"] = True
-        st.cache_data.clear()
         st.rerun()
+
+    if st.session_state.get("times_warning"):
+        st.warning(st.session_state["times_warning"])
+        st.session_state["times_warning"] = None
 
     if st.session_state.get("times_saved"):
         st.success("Tiempos guardados")
@@ -1371,11 +1388,23 @@ with tabs[2]:
         # Reconstruir line_id para mantener coherencia
         out["line_id"] = out["nave"] + "-" + out["line"]
         out["plant_id"] = plant_id
+
+        # Validación mínima: avisar si hay filas con stations=0
+        zero_st = out[out["stations"] == 0.0]
+        if not zero_st.empty:
+            st.session_state["stations_warning"] = (
+                f"⚠️ {len(zero_st)} fila(s) con stations=0. "
+                "Esas filas serán ignoradas en el cálculo de capacidad."
+            )
+
         save_table(out, "lines_process_stations")
 
         st.session_state["stations_saved"] = True
-        st.cache_data.clear()
         st.rerun()
+
+    if st.session_state.get("stations_warning"):
+        st.warning(st.session_state["stations_warning"])
+        st.session_state["stations_warning"] = None
 
     if st.session_state.get("stations_saved"):
         st.success("Guardado")
@@ -1435,7 +1464,6 @@ with tabs[2]:
         out["plant_id"] = plant_id
         save_table(out, "compatibility")
         st.session_state["compat_saved"] = True
-        st.cache_data.clear()
         st.rerun()
 
     if st.session_state.get("compat_saved"):
