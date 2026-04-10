@@ -1266,7 +1266,6 @@ with tabs[2]:
         out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
-        st.rerun()
 
     if st.session_state.get("models_saved"):
         st.success("Modelos guardados")
@@ -1352,7 +1351,6 @@ with tabs[2]:
         save_table(out, "models_process_times")
 
         st.session_state["times_saved"] = True
-        st.rerun()
 
     if st.session_state.get("times_warning"):
         st.warning(st.session_state["times_warning"])
@@ -1400,7 +1398,6 @@ with tabs[2]:
         save_table(out, "lines_process_stations")
 
         st.session_state["stations_saved"] = True
-        st.rerun()
 
     if st.session_state.get("stations_warning"):
         st.warning(st.session_state["stations_warning"])
@@ -1464,7 +1461,6 @@ with tabs[2]:
         out["plant_id"] = plant_id
         save_table(out, "compatibility")
         st.session_state["compat_saved"] = True
-        st.rerun()
 
     if st.session_state.get("compat_saved"):
         st.success("Compatibilidades guardadas")
