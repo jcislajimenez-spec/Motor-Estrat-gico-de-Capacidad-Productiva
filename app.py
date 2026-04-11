@@ -833,21 +833,43 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
 # =========================================================
 @st.cache_data(ttl=300)
 def load_all_plants_data():
-    """Carga datos de todas las plantas para el análisis global."""
-    all_plants = load_table("plants")
-    all_settings = load_table("settings")
-    all_models = load_table("models")
-    all_times = load_table("models_process_times")
-    all_stations = load_table("lines_process_stations")
-    all_compat = load_table("compatibility")
-
+    """Carga datos de todas las plantas en UNA conexión en lugar de 6.
+    Antes: load_table() × 6 → 6 conexiones TCP (~3 s en miss).
+    Ahora: get_connection() × 1 + 6 queries (~600 ms en miss)."""
+    if not _has_db():
+        return {
+            "plants":   load_table("plants"),
+            "settings": load_table("settings"),
+            "models":   load_table("models"),
+            "times":    load_table("models_process_times"),
+            "stations": load_table("lines_process_stations"),
+            "compat":   load_table("compatibility"),
+        }
+    _TABLES = (
+        "plants", "settings", "models",
+        "models_process_times", "lines_process_stations", "compatibility",
+    )
+    c = get_connection()
+    _dfs = {}
+    try:
+        with c.cursor() as cur:
+            for tname in _TABLES:
+                cur.execute(f'SELECT * FROM "{tname}"')
+                cols = [d[0] for d in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=cols)
+                for col in df.columns:
+                    if df[col].dtype == "object":
+                        df[col] = df[col].astype(str).str.strip()
+                _dfs[tname] = df
+    finally:
+        c.close()
     return {
-        "plants": all_plants,
-        "settings": all_settings,
-        "models": all_models,
-        "times": all_times,
-        "stations": all_stations,
-        "compat": all_compat,
+        "plants":   _dfs["plants"],
+        "settings": _dfs["settings"],
+        "models":   _dfs["models"],
+        "times":    _dfs["models_process_times"],
+        "stations": _dfs["lines_process_stations"],
+        "compat":   _dfs["compatibility"],
     }
 
 
