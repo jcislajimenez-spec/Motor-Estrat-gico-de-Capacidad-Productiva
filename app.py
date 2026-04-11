@@ -28,7 +28,7 @@ st.set_page_config(
 
 # --- Conexión a base de datos Neon ---
 def get_connection():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
 ASSETS_DIR = resource_path("assets")
