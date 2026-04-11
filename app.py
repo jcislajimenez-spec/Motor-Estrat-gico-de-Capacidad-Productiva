@@ -796,7 +796,7 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
 # =========================================================
 # Carga global multiplanta (cacheada a nivel de módulo)
 # =========================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_all_plants_data():
     """Carga datos de todas las plantas para el análisis global."""
     all_plants = load_table("plants")
