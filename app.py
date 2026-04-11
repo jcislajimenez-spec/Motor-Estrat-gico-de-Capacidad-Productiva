@@ -218,7 +218,7 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return out
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_plant_data(plant_id: int):
     models_df = load_table("models")
     models_df = models_df[models_df["plant_id"] == plant_id].copy()
