@@ -476,6 +476,27 @@ def compute_plant_structural_capacity(
     }
 
 
+@st.cache_data(show_spinner=False)
+def compute_all_plants_structural_capacity(
+    all_data: dict,
+    shifts_override: int = None,
+) -> list:
+    """Calcula capacidad estructural para TODAS las plantas en una sola llamada cacheada.
+    all_data se hashea UNA sola vez en lugar de 5 DataFrames × N plantas."""
+    results = []
+    for _, plant_row in all_data["plants"].iterrows():
+        p_id = int(plant_row["id"])
+        p_name = str(plant_row["name"])
+        result = compute_plant_structural_capacity(
+            p_id, p_name,
+            all_data["settings"], all_data["models"], all_data["times"],
+            all_data["stations"], all_data["compat"],
+            shifts_override=shifts_override,
+        )
+        results.append(result)
+    return results
+
+
 # =========================================================
 # SELECCIÓN DE PLANTA.
 # =========================================================
@@ -832,22 +853,12 @@ if st.session_state.active_tab == "🌐 Global":
     _turnos_map = {"Config. actual": None, "1 turno": 1, "2 turnos": 2, "3 turnos": 3}
     shifts_override = _turnos_map[turnos_option]
     
-    # TIMING A — compute_plant_structural_capacity (todas las plantas)
+    # TIMING A — compute_all_plants_structural_capacity (todas las plantas)
     _t0_A = time.perf_counter()
-    global_results = []
-    for _, plant_row in all_data["plants"].iterrows():
-        p_id = int(plant_row["id"])
-        p_name = str(plant_row["name"])
-        result = compute_plant_structural_capacity(
-            p_id, p_name,
-            all_data["settings"], all_data["models"], all_data["times"],
-            all_data["stations"], all_data["compat"],
-            shifts_override=shifts_override,
-        )
-        global_results.append(result)
+    global_results = compute_all_plants_structural_capacity(all_data, shifts_override)
     _ms_A = round((time.perf_counter() - _t0_A) * 1000, 1)
     with st.expander("⏱ Tiempos [staging]", expanded=False):
-        st.caption(f"compute_plant_structural_capacity × {len(global_results)} plantas: **{_ms_A} ms**")
+        st.caption(f"compute_all_plants_structural_capacity × {len(global_results)} plantas: **{_ms_A} ms**")
         st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
 
     # Mapear escenario a columnas
