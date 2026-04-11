@@ -1,5 +1,6 @@
 import os
 import sys
+import time  # TIMING — quitar tras Fase 3.2
 import streamlit as st
 import pandas as pd
 from PIL import Image
@@ -27,7 +28,7 @@ st.set_page_config(
 
 # --- Conexión a base de datos Neon ---
 def get_connection():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
 ASSETS_DIR = resource_path("assets")
@@ -217,25 +218,60 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return out
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_plant_data(plant_id: int):
-    models_df = load_table("models")
-    models_df = models_df[models_df["plant_id"] == plant_id].copy()
+    if _has_db():
+        # UNA sola conexión, 4 queries con WHERE plant_id = %s
+        # Antes: 4 conexiones independientes × ~500 ms = ~2 s en miss
+        # Ahora: 1 conexión + 4 queries = ~500 ms en miss
+        _TABLES = (
+            "models",
+            "models_process_times",
+            "lines_process_stations",
+            "compatibility",
+        )
+        c = get_connection()
+        _raw = {}
+        try:
+            with c.cursor() as cur:
+                for tname in _TABLES:
+                    cur.execute(
+                        f'SELECT * FROM "{tname}" WHERE plant_id = %s',
+                        (plant_id,),
+                    )
+                    cols = [d[0] for d in cur.description]
+                    df = pd.DataFrame(cur.fetchall(), columns=cols)
+                    for col in df.columns:
+                        if df[col].dtype == "object":
+                            df[col] = df[col].astype(str).str.strip()
+                    _raw[tname] = df
+        finally:
+            c.close()
+        models_df   = _raw["models"].copy()
+        times_df    = _raw["models_process_times"].copy()
+        stations_df = _raw["lines_process_stations"].copy()
+        compat_df   = _raw["compatibility"].copy()
+    else:
+        # Fallback CSV: comportamiento original intacto
+        models_df = load_table("models")
+        models_df = models_df[models_df["plant_id"] == plant_id].copy()
+        times_df = load_table("models_process_times")
+        times_df = times_df[times_df["plant_id"] == plant_id].copy()
+        stations_df = load_table("lines_process_stations")
+        stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
+        compat_df = load_table("compatibility")
+        compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
+
+    # Normalización — igual que antes
     models_df["model"] = models_df["model"].astype(str).str.strip()
     models_df = ensure_int(models_df, ["active"])
 
-    times_df = load_table("models_process_times")
-    times_df = times_df[times_df["plant_id"] == plant_id].copy()
     times_df["model"] = times_df["model"].astype(str).str.strip()
 
-    stations_df = load_table("lines_process_stations")
-    stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
     stations_df["line"] = stations_df["line"].astype(str).str.strip()
     stations_df["nave"] = stations_df["nave"].astype(str).str.strip()
     stations_df["line_id"] = stations_df["nave"] + "-" + stations_df["line"]
 
-    compat_df = load_table("compatibility")
-    compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
     compat_df["line"] = compat_df["line"].astype(str).str.strip()
     compat_df["model"] = compat_df["model"].astype(str).str.strip()
     compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
@@ -475,6 +511,27 @@ def compute_plant_structural_capacity(
     }
 
 
+@st.cache_data(show_spinner=False)
+def compute_all_plants_structural_capacity(
+    all_data: dict,
+    shifts_override: int = None,
+) -> list:
+    """Calcula capacidad estructural para TODAS las plantas en una sola llamada cacheada.
+    all_data se hashea UNA sola vez en lugar de 5 DataFrames × N plantas."""
+    results = []
+    for _, plant_row in all_data["plants"].iterrows():
+        p_id = int(plant_row["id"])
+        p_name = str(plant_row["name"])
+        result = compute_plant_structural_capacity(
+            p_id, p_name,
+            all_data["settings"], all_data["models"], all_data["times"],
+            all_data["stations"], all_data["compat"],
+            shifts_override=shifts_override,
+        )
+        results.append(result)
+    return results
+
+
 # =========================================================
 # SELECCIÓN DE PLANTA.
 # =========================================================
@@ -639,7 +696,11 @@ if st.sidebar.button("Guardar parámetros de esta planta"):
 # =========================================================
 # CARGA DATOS
 # =========================================================
+# TIMING D — load_plant_data (corre en cada rerun, debe ser <5 ms si cachea bien)
+_t0_D = time.perf_counter()
 _pd = load_plant_data(plant_id)
+_ms_D = round((time.perf_counter() - _t0_D) * 1000, 1)
+st.sidebar.caption(f"⏱ load_plant_data: {_ms_D} ms")
 
 models_df     = _pd["models_df"]
 times_df      = _pd["times_df"]
@@ -770,7 +831,7 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
 # =========================================================
 # Carga global multiplanta (cacheada a nivel de módulo)
 # =========================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_all_plants_data():
     """Carga datos de todas las plantas para el análisis global."""
     all_plants = load_table("plants")
@@ -827,18 +888,14 @@ if st.session_state.active_tab == "🌐 Global":
     _turnos_map = {"Config. actual": None, "1 turno": 1, "2 turnos": 2, "3 turnos": 3}
     shifts_override = _turnos_map[turnos_option]
     
-    global_results = []
-    for _, plant_row in all_data["plants"].iterrows():
-        p_id = int(plant_row["id"])
-        p_name = str(plant_row["name"])
-        result = compute_plant_structural_capacity(
-            p_id, p_name,
-            all_data["settings"], all_data["models"], all_data["times"],
-            all_data["stations"], all_data["compat"],
-            shifts_override=shifts_override,
-        )
-        global_results.append(result)
-    
+    # TIMING A — compute_all_plants_structural_capacity (todas las plantas)
+    _t0_A = time.perf_counter()
+    global_results = compute_all_plants_structural_capacity(all_data, shifts_override)
+    _ms_A = round((time.perf_counter() - _t0_A) * 1000, 1)
+    with st.expander("⏱ Tiempos [staging]", expanded=False):
+        st.caption(f"compute_all_plants_structural_capacity × {len(global_results)} plantas: **{_ms_A} ms**")
+        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
+
     # Mapear escenario a columnas
     esc_map = {
         "Máximo": ("max_u_sem", "max_u_year", "max_h_sem", "max_h_year"),
@@ -1516,6 +1573,34 @@ def _apply_capacity(merged: pd.DataFrame, h_eff: float) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+def _compute_line_base(
+    line_id: str,
+    model: str,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+) -> pd.DataFrame:
+    """Merge + normalización + cycle_time_real, sin hours_eff.
+    Caché estable ante cambios de sliders (disponibilidad, eficiencia, turnos).
+    Llamada internamente por compute_line_detail."""
+    t = times_df_param[times_df_param["model"] == model].copy()
+    s = stations_df_param[stations_df_param["line_id"] == line_id].copy()
+    merged = pd.merge(s, t, on="process", how="inner")
+    if merged.empty:
+        return merged
+    m = merged.copy()
+    m["stations"] = pd.to_numeric(m["stations"], errors="coerce").fillna(0)
+    m["operators_per_station"] = pd.to_numeric(m["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
+    for col in ("machine_time", "labor_time"):
+        if col in m.columns:
+            m[col] = pd.to_numeric(m[col], errors="coerce").fillna(0.0)
+        else:
+            m[col] = 0.0
+    m["labor_per_operator"] = m["labor_time"] / m["operators_per_station"]
+    m["cycle_time_real"] = m[["machine_time", "labor_per_operator"]].max(axis=1)
+    return m
+
+
+@st.cache_data(show_spinner=False)
 def compute_line_detail(
     line_id: str,
     model: str,
@@ -1528,20 +1613,22 @@ def compute_line_detail(
     - merged detail DF con capacity por proceso
     - bottleneck process (min capacity)
     - capacity_total_week (uds/sem) (cap del cuello)
+
+    El trabajo pesado (merge + normalización) lo hace _compute_line_base,
+    que cachea sin hours_eff. Solo la multiplicación final depende de hours_eff_param.
     """
+    base = _compute_line_base(line_id, model, times_df_param, stations_df_param)
 
-    t = times_df_param[times_df_param["model"] == model].copy()
-    s = stations_df_param[stations_df_param["line_id"] == line_id].copy()
+    if base.empty:
+        return base, "", 0.0
 
-    merged = pd.merge(s, t, on="process", how="inner")
-
-    if merged.empty:
-        return merged, "", 0.0
-
-    merged = _apply_capacity(merged, hours_eff_param)
+    merged = base.copy()
+    merged["capacity"] = 0.0
+    mask = (merged["cycle_time_real"] > 0) & (merged["stations"] > 0)
+    merged.loc[mask, "capacity"] = (hours_eff_param * merged.loc[mask, "stations"]) / merged.loc[mask, "cycle_time_real"]
 
     # Solo considerar procesos productivos para el cuello de botella:
-    productive = merged[(merged["cycle_time_real"] > 0) & (merged["stations"] > 0)].copy()
+    productive = merged[mask].copy()
 
     if productive.empty or productive["capacity"].dropna().empty:
         return merged, "", 0.0
@@ -1579,6 +1666,42 @@ def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> floa
     return float(hours_proc.sum())
 
 
+@st.cache_data(show_spinner=False)
+def _precompute_all_bases_for_tab4(
+    times_df: pd.DataFrame,
+    stations_df: pd.DataFrame,
+    line_ids_tuple: tuple,
+    allowed_by_line_tuple: tuple,
+) -> dict:
+    """Pre-computa merge+normalize para todas las combinaciones (line_id, model) de Tab 4.
+    times_df y stations_df se hashean UNA SOLA VEZ en lugar de N×M veces.
+    Sin hours_eff → caché estable ante cambios de sliders (disponibilidad, eficiencia, turnos)."""
+    allowed_dict = {k: list(v) for k, v in allowed_by_line_tuple}
+    result = {}
+    for line_id in line_ids_tuple:
+        models = allowed_dict.get(line_id, [])
+        if not models:
+            continue
+        s = stations_df[stations_df["line_id"] == line_id].copy()
+        if s.empty:
+            continue
+        s["stations"] = pd.to_numeric(s["stations"], errors="coerce").fillna(0)
+        s["operators_per_station"] = pd.to_numeric(s["operators_per_station"], errors="coerce").fillna(0).clip(lower=1.0)
+        for m in models:
+            t = times_df[times_df["model"] == m].copy()
+            merged = pd.merge(s, t, on="process", how="inner")
+            if merged.empty:
+                continue
+            for col in ("machine_time", "labor_time"):
+                if col in merged.columns:
+                    merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+                else:
+                    merged[col] = 0.0
+            merged["labor_per_operator"] = merged["labor_time"] / merged["operators_per_station"]
+            merged["cycle_time_real"] = merged[["machine_time", "labor_per_operator"]].max(axis=1)
+            result[(line_id, m)] = merged
+    return result
+
 
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader("Resultados de capacidad")
@@ -1599,6 +1722,8 @@ if st.session_state.active_tab == "📈 Resultados":
     _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
     cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
 
+    # TIMING C — compute_line_detail × líneas asignadas (Tab Resultados)
+    _t0_C = time.perf_counter()
     for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
@@ -1662,6 +1787,7 @@ if st.session_state.active_tab == "📈 Resultados":
 
         detail_by_line[line_id] = (nave, base_line, model, demand_week, bottleneck_proc, merged)
 
+    _ms_C = round((time.perf_counter() - _t0_C) * 1000, 1)
     summary_df = pd.DataFrame(summary_rows)
 
     if not summary_df.empty:
@@ -1839,6 +1965,10 @@ if st.session_state.active_tab == "📈 Resultados":
         fig_total.update_layout(barmode="group")
         st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
 
+    with st.expander("⏱ Tiempos [staging]", expanded=False):
+        st.caption(f"Loop compute_line_detail (Tab Resultados, líneas asignadas): **{_ms_C} ms**")
+        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
+
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader("Capacidad según mix")
@@ -1856,6 +1986,17 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     capH_line_model = {}
     capU_line_model = {}
     max_h_week_by_line = {}
+
+    # TIMING B — precompute + loop Tab 4 (Capacidad según mix)
+    _t0_B = time.perf_counter()
+
+    # Pre-computar bases UNA VEZ: times_df y stations_df hasheados 1 vez en lugar de N×M
+    _all_bases = _precompute_all_bases_for_tab4(
+        times_df,
+        stations_df,
+        tuple(sorted(line_ids_nave)),
+        tuple(sorted((k, tuple(v)) for k, v in allowed_by_line.items())),
+    )
 
     for line_id in line_ids_nave:
 
@@ -1876,8 +2017,14 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         model_for_capH = []
 
         for m in models_allowed:
-            merged, _bn, cap_week = compute_line_detail(line_id, m, times_df, stations_df, hours_eff)
-            cap_week = float(cap_week) if cap_week else 0.0
+            _base = _all_bases.get((line_id, m))
+            if _base is None or _base.empty:
+                continue
+            _prod = _base[(_base["cycle_time_real"] > 0) & (_base["stations"] > 0)]
+            if _prod.empty:
+                continue
+            _cap_vals = (hours_eff * _prod["stations"]) / _prod["cycle_time_real"]
+            cap_week = float(_cap_vals.min()) if not _cap_vals.empty and _cap_vals.min() > 0 else 0.0
             if cap_week <= 0:
                 continue
 
@@ -1927,6 +2074,11 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             "Prom h/AÑO": avg_h * weeks_equiv,
             "Min h/AÑO": min_h * weeks_equiv,
         })
+
+    _ms_B = round((time.perf_counter() - _t0_B) * 1000, 1)
+    with st.expander("⏱ Tiempos [staging]", expanded=False):
+        st.caption(f"Loop compute_line_detail (Tab Capacidad según mix, N×M): **{_ms_B} ms**")
+        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
 
     if not line_stats_rows:
         st.warning("No hay combinaciones válidas para calcular el rango. Revisa compatibilidades, estaciones y/o tiempos.")
