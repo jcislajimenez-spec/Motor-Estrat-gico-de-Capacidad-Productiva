@@ -1941,6 +1941,9 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     capU_line_model = {}
     max_h_week_by_line = {}
 
+    # TIMING B — precompute + loop Tab 4 (Capacidad según mix)
+    _t0_B = time.perf_counter()
+
     # Pre-computar bases UNA VEZ: times_df y stations_df hasheados 1 vez en lugar de N×M
     _all_bases = _precompute_all_bases_for_tab4(
         times_df,
