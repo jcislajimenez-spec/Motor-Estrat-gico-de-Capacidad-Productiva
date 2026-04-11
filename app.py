@@ -220,23 +220,58 @@ def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_plant_data(plant_id: int):
-    models_df = load_table("models")
-    models_df = models_df[models_df["plant_id"] == plant_id].copy()
+    if _has_db():
+        # UNA sola conexión, 4 queries con WHERE plant_id = %s
+        # Antes: 4 conexiones independientes × ~500 ms = ~2 s en miss
+        # Ahora: 1 conexión + 4 queries = ~500 ms en miss
+        _TABLES = (
+            "models",
+            "models_process_times",
+            "lines_process_stations",
+            "compatibility",
+        )
+        c = get_connection()
+        _raw = {}
+        try:
+            with c.cursor() as cur:
+                for tname in _TABLES:
+                    cur.execute(
+                        f'SELECT * FROM "{tname}" WHERE plant_id = %s',
+                        (plant_id,),
+                    )
+                    cols = [d[0] for d in cur.description]
+                    df = pd.DataFrame(cur.fetchall(), columns=cols)
+                    for col in df.columns:
+                        if df[col].dtype == "object":
+                            df[col] = df[col].astype(str).str.strip()
+                    _raw[tname] = df
+        finally:
+            c.close()
+        models_df   = _raw["models"].copy()
+        times_df    = _raw["models_process_times"].copy()
+        stations_df = _raw["lines_process_stations"].copy()
+        compat_df   = _raw["compatibility"].copy()
+    else:
+        # Fallback CSV: comportamiento original intacto
+        models_df = load_table("models")
+        models_df = models_df[models_df["plant_id"] == plant_id].copy()
+        times_df = load_table("models_process_times")
+        times_df = times_df[times_df["plant_id"] == plant_id].copy()
+        stations_df = load_table("lines_process_stations")
+        stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
+        compat_df = load_table("compatibility")
+        compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
+
+    # Normalización — igual que antes
     models_df["model"] = models_df["model"].astype(str).str.strip()
     models_df = ensure_int(models_df, ["active"])
 
-    times_df = load_table("models_process_times")
-    times_df = times_df[times_df["plant_id"] == plant_id].copy()
     times_df["model"] = times_df["model"].astype(str).str.strip()
 
-    stations_df = load_table("lines_process_stations")
-    stations_df = stations_df[stations_df["plant_id"] == plant_id].copy()
     stations_df["line"] = stations_df["line"].astype(str).str.strip()
     stations_df["nave"] = stations_df["nave"].astype(str).str.strip()
     stations_df["line_id"] = stations_df["nave"] + "-" + stations_df["line"]
 
-    compat_df = load_table("compatibility")
-    compat_df = compat_df[compat_df["plant_id"] == plant_id].copy()
     compat_df["line"] = compat_df["line"].astype(str).str.strip()
     compat_df["model"] = compat_df["model"].astype(str).str.strip()
     compat_df["nave"] = compat_df["nave"].astype(str).str.strip()
