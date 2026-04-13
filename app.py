@@ -1567,9 +1567,244 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.success("Compatibilidades guardadas")
         st.session_state["compat_saved"] = False
 
+    # --- E) Bancos de prueba (fase 1 informativa) ----------------------------
+    st.divider()
+    st.markdown("## Bancos de prueba (D&A — fase 1 informativa)")
+    st.caption(
+        "Configuración de bancos disponibles por planta y asignación de tipo de prueba "
+        "a cada valor D&A. **Esta asignación es una simplificación operativa de esta fase**: "
+        "dentro de una misma familia puede haber equipos con prueba LV y equipos con prueba MV. "
+        "Solo aplica a los valores D&A: SL, SD, LL, LD, XD, XL."
+    )
+
+    # E1) Bancos disponibles por tipo
+    st.markdown("### Bancos disponibles por tipo")
+    _bcfg_ed = load_table("test_bench_config")
+    if "plant_id" in _bcfg_ed.columns:
+        _bcfg_ed = _bcfg_ed[
+            pd.to_numeric(_bcfg_ed["plant_id"], errors="coerce") == plant_id
+        ].copy()
+    else:
+        _bcfg_ed = pd.DataFrame(columns=["bench_type", "quantity", "hours_per_unit_override"])
+
+    _bcfg_show = _bcfg_ed[
+        [c for c in ["bench_type", "quantity", "hours_per_unit_override"] if c in _bcfg_ed.columns]
+    ].copy()
+
+    edited_bench_cfg = st.data_editor(
+        _bcfg_show,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "bench_type": st.column_config.TextColumn(
+                "Tipo de banco", help="LV, MV o XL_MV"
+            ),
+            "quantity": st.column_config.NumberColumn(
+                "Cantidad de bancos", min_value=0, step=1, format="%d"
+            ),
+            "hours_per_unit_override": st.column_config.NumberColumn(
+                "Tiempo manual h/ud (solo si PARA no existe)",
+                min_value=0.0, step=0.01, format="%.2f",
+                help="Dejar vacío para usar automáticamente el proceso PARA del motor."
+            ),
+        },
+    )
+
+    if st.button("💾 Guardar bancos"):
+        _out = edited_bench_cfg.copy()
+        _out["plant_id"] = plant_id
+        save_table(_out, "test_bench_config")
+        st.session_state["bench_cfg_saved"] = True
+    if st.session_state.get("bench_cfg_saved"):
+        st.success("Configuración de bancos guardada")
+        st.session_state["bench_cfg_saved"] = False
+
+    # E2) Asignación valor D&A → tipo de banco
+    st.markdown("### Asignación valor D&A → tipo de banco")
+    st.caption(
+        "Usa los valores exactos de D&A tal como existen hoy en el motor "
+        "(SL, SD, LL, LD, XD, XL). En esta fase no se baja al nivel de modelo real. "
+        "La asignación es una simplificación operativa: una misma familia puede tener "
+        "equipos LV y equipos MV que esta fase no distingue todavía."
+    )
+
+    _bmap_ed = load_table("da_bench_type")
+    if "plant_id" in _bmap_ed.columns:
+        _bmap_ed = _bmap_ed[
+            pd.to_numeric(_bmap_ed["plant_id"], errors="coerce") == plant_id
+        ].copy()
+    else:
+        _bmap_ed = pd.DataFrame(columns=["da_value", "bench_type"])
+
+    _bmap_show = _bmap_ed[
+        [c for c in ["da_value", "bench_type"] if c in _bmap_ed.columns]
+    ].copy()
+
+    edited_bench_map = st.data_editor(
+        _bmap_show,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "da_value": st.column_config.TextColumn(
+                "Valor D&A en el motor", help="SL, SD, LL, LD, XD o XL"
+            ),
+            "bench_type": st.column_config.TextColumn(
+                "Banco aplicable", help="LV, MV o XL_MV"
+            ),
+        },
+    )
+
+    if st.button("💾 Guardar asignación D&A"):
+        _out = edited_bench_map.copy()
+        _out["plant_id"] = plant_id
+        save_table(_out, "da_bench_type")
+        st.session_state["bench_map_saved"] = True
+    if st.session_state.get("bench_map_saved"):
+        st.success("Asignación D&A guardada")
+        st.session_state["bench_map_saved"] = False
+
 # =========================================================
 # 3) RESULTADOS
 # =========================================================
+
+# =========================================================
+# BANCOS DE PRUEBA — fase 1 informativa
+# =========================================================
+
+# Valores D&A actuales en el motor. En esta fase no distinguimos
+# entre modelo real y familia: usamos estos valores tal como existen.
+_DA_VALUES = {"SL", "SD", "LL", "LD", "XD", "XL"}
+
+
+def compute_bench_analysis(
+    line_id: str,
+    da_value: str,
+    demand_week: float,
+    bench_cfg: "pd.DataFrame",
+    bench_map: "pd.DataFrame",
+    times_df_b: "pd.DataFrame",
+    stations_df_b: "pd.DataFrame",
+    hours_eff: float,
+) -> dict:
+    """
+    Capa informativa de bancos de prueba — fase 1.
+
+    Calcula si los bancos de prueba disponibles podrían limitar la capacidad
+    de una línea D&A. NO modifica ningún valor oficial del motor (capacidad,
+    saturación, déficit, cuello de botella).
+
+    La asignación tipo-de-prueba por valor D&A es una SIMPLIFICACIÓN OPERATIVA:
+    dentro de una misma familia puede haber equipos LV y MV que esta fase
+    no distingue todavía.
+
+    Devuelve un dict con:
+        da_value       — valor tal como existe en el motor
+        test_type      — tipo de prueba (LV / MV / No aplica)
+        bench_type     — banco aplicable (LV / MV / XL_MV / No aplica)
+        bench_capacity — UDS/SEM máximas que soportan los bancos (0 si no aplica)
+        observation    — texto del aviso para el usuario
+    """
+    # 1. ¿Es D&A?
+    if da_value not in _DA_VALUES:
+        return {
+            "da_value": da_value,
+            "test_type": "No aplica",
+            "bench_type": "No aplica",
+            "bench_capacity": 0.0,
+            "observation": "No aplica",
+        }
+
+    # 2. ¿Tiene asignación de banco?
+    row_map = bench_map[bench_map["da_value"] == da_value]
+    if row_map.empty:
+        return {
+            "da_value": da_value,
+            "test_type": "—",
+            "bench_type": "—",
+            "bench_capacity": 0.0,
+            "observation": "Datos insuficientes: sin asignación de banco",
+        }
+    bench_type = str(row_map.iloc[0]["bench_type"]).strip()
+
+    # bench_type == test_type salvo XL_MV, que es banco específico pero prueba MV
+    test_type = "MV" if bench_type == "XL_MV" else bench_type
+
+    # 3. ¿Cuántos bancos hay?
+    row_cfg = bench_cfg[bench_cfg["bench_type"] == bench_type]
+    if row_cfg.empty:
+        return {
+            "da_value": da_value,
+            "test_type": test_type,
+            "bench_type": bench_type,
+            "bench_capacity": 0.0,
+            "observation": "Datos insuficientes: sin configuración de bancos para este tipo",
+        }
+    quantity = int(pd.to_numeric(row_cfg.iloc[0]["quantity"], errors="coerce") or 0)
+    override_raw = row_cfg.iloc[0].get("hours_per_unit_override", None)
+
+    # 4. Tiempo PARA — misma lógica que el motor:
+    #    cycle_time_real = max(machine_time, labor_time / operators_per_station)
+    t_row = times_df_b[
+        (times_df_b["model"] == da_value) & (times_df_b["process"] == "PARA")
+    ]
+    s_row = stations_df_b[
+        (stations_df_b["line_id"] == line_id) & (stations_df_b["process"] == "PARA")
+    ]
+
+    tiempo_para = None
+    if not t_row.empty and not s_row.empty:
+        machine_t = float(pd.to_numeric(t_row.iloc[0].get("machine_time", 0), errors="coerce") or 0)
+        labor_t   = float(pd.to_numeric(t_row.iloc[0].get("labor_time",   0), errors="coerce") or 0)
+        operators = float(pd.to_numeric(s_row.iloc[0].get("operators_per_station", 0), errors="coerce") or 0)
+
+        # Protección técnica (no regla de negocio): si operators_per_station es
+        # nulo, 0 o inválido, se usa 1 como valor de seguridad para evitar
+        # división por cero en esta capa informativa. No implica que 1 sea el
+        # valor real de la planta.
+        if operators <= 0:
+            operators = 1.0
+
+        labor_per_op = labor_t / operators
+        calc = max(machine_t, labor_per_op)
+        if calc > 0:
+            tiempo_para = calc
+
+    # 5. Fallback al override manual (solo si PARA no pudo calcularse)
+    if tiempo_para is None:
+        if override_raw is not None:
+            try:
+                v = float(override_raw)
+                if v > 0:
+                    tiempo_para = v
+            except (TypeError, ValueError):
+                pass
+
+    if tiempo_para is None or tiempo_para <= 0:
+        return {
+            "da_value": da_value,
+            "test_type": test_type,
+            "bench_type": bench_type,
+            "bench_capacity": 0.0,
+            "observation": "Datos insuficientes: sin tiempo PARA calculable",
+        }
+
+    # 6. Capacidad máxima por bancos
+    bench_capacity = (hours_eff * quantity) / tiempo_para
+
+    # 7. Observación
+    if bench_capacity > demand_week:
+        observation = "El banco no limita"
+    else:
+        observation = f"⚠️ Atención: los bancos {bench_type} podrían limitar"
+
+    return {
+        "da_value":       da_value,
+        "test_type":      test_type,
+        "bench_type":     bench_type,
+        "bench_capacity": round(bench_capacity, 2),
+        "observation":    observation,
+    }
+
 
 def _apply_capacity(merged: pd.DataFrame, h_eff: float) -> pd.DataFrame:
     """Calcula capacidad usando cycle_time_real = max(machine_time, labor_time/operators).
@@ -1990,6 +2225,70 @@ if st.session_state.active_tab == "📈 Resultados":
     with st.expander("⏱ Tiempos [staging]", expanded=False):
         st.caption(f"Loop compute_line_detail (Tab Resultados, líneas asignadas): **{_ms_C} ms**")
         st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
+
+    # -----------------------------------------------------------------
+    # SECCIÓN: Análisis de bancos de prueba (fase 1 informativa)
+    # No modifica ningún valor oficial del motor.
+    # -----------------------------------------------------------------
+    st.divider()
+    st.markdown("## 🏭 Análisis de bancos de prueba")
+    st.info(
+        "**La información de bancos de prueba es una referencia adicional para detectar "
+        "posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\n"
+        "En D&A, esta fase usa una asignación simplificada por familia: dentro de una misma "
+        "familia puede haber equipos LV y MV que esta fase no distingue todavía."
+    )
+
+    _bench_cfg_r = load_table("test_bench_config")
+    _bench_map_r = load_table("da_bench_type")
+
+    # Filtrar por planta activa
+    if "plant_id" in _bench_cfg_r.columns:
+        _bench_cfg_r = _bench_cfg_r[
+            pd.to_numeric(_bench_cfg_r["plant_id"], errors="coerce") == plant_id
+        ].copy()
+    else:
+        _bench_cfg_r = pd.DataFrame()
+
+    if "plant_id" in _bench_map_r.columns:
+        _bench_map_r = _bench_map_r[
+            pd.to_numeric(_bench_map_r["plant_id"], errors="coerce") == plant_id
+        ].copy()
+    else:
+        _bench_map_r = pd.DataFrame()
+
+    if _bench_cfg_r.empty or _bench_map_r.empty:
+        st.warning(
+            "Configuración de bancos no disponible para esta planta. "
+            "Rellena las tablas en ⚙️ Configuración → Bancos de prueba."
+        )
+    elif detail_by_line:
+        _bench_rows = []
+        for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
+            _res = compute_bench_analysis(
+                line_id=_lid,
+                da_value=_model,
+                demand_week=_dem_w,
+                bench_cfg=_bench_cfg_r,
+                bench_map=_bench_map_r,
+                times_df_b=times_df,
+                stations_df_b=stations_df,
+                hours_eff=hours_eff,
+            )
+            _bench_rows.append({
+                "Línea":                                    f"{_nave}-{_bline}",
+                "Valor D&A":                               _res["da_value"],
+                "Tipo de prueba":                          _res["test_type"],
+                "Banco aplicable":                         _res["bench_type"],
+                "Capacidad máxima por bancos (UDS/SEM)":   _res["bench_capacity"] if _res["bench_capacity"] > 0 else "—",
+                "Demanda (UDS/SEM)":                       round(_dem_w, 2),
+                "Observación":                             _res["observation"],
+            })
+
+        _bench_df = pd.DataFrame(_bench_rows)
+        st.dataframe(_bench_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Sin líneas planificadas. Selecciona modelos y demanda en Planificación.")
 
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
