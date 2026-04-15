@@ -1260,6 +1260,10 @@ if st.session_state.active_tab == "🌐 Global":
 # 1) PLANIFICACIÓN
 # =========================================================
 
+# Valores D&A actuales en el motor. Definida aquí (nivel de módulo) para que
+# esté disponible tanto en Planificación como en la función compute_bench_analysis.
+_DA_VALUES = {"SL", "SD", "LL", "LD", "XD", "XL"}
+
 if st.session_state.active_tab == "📊 Planificación":
     st.subheader("Selección de modelo por línea")
 
@@ -1725,11 +1729,6 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
 # =========================================================
 # BANCOS DE PRUEBA — fase 1 informativa
 # =========================================================
-
-# Valores D&A actuales en el motor. En esta fase no distinguimos
-# entre modelo real y familia: usamos estos valores tal como existen.
-_DA_VALUES = {"SL", "SD", "LL", "LD", "XD", "XL"}
-
 
 def compute_bench_analysis(
     line_id: str,
