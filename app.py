@@ -2135,6 +2135,177 @@ if st.session_state.active_tab == "📈 Resultados":
         total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
         st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
 
+        # -----------------------------------------------------------------
+        # SECCIÓN: Análisis de bancos de prueba (fase 1 informativa)
+        # No modifica ningún valor oficial del motor.
+        # -----------------------------------------------------------------
+        st.divider()
+        st.markdown("## 🏭 Análisis de bancos de prueba")
+        st.info(
+            "**La información de bancos de prueba es una referencia adicional para detectar "
+            "posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\n"
+            "En D&A, esta fase usa una asignación simplificada por familia: dentro de una misma "
+            "familia puede haber equipos LV y MV que esta fase no distingue todavía."
+        )
+
+        _bench_cfg_r = load_table("test_bench_config")
+        _bench_map_r = load_table("da_bench_type")
+
+        if "plant_id" in _bench_cfg_r.columns:
+            _bench_cfg_r = _bench_cfg_r[
+                pd.to_numeric(_bench_cfg_r["plant_id"], errors="coerce") == plant_id
+            ].copy()
+        else:
+            _bench_cfg_r = pd.DataFrame()
+
+        if "plant_id" in _bench_map_r.columns:
+            _bench_map_r = _bench_map_r[
+                pd.to_numeric(_bench_map_r["plant_id"], errors="coerce") == plant_id
+            ].copy()
+        else:
+            _bench_map_r = pd.DataFrame()
+
+        if _bench_cfg_r.empty or _bench_map_r.empty:
+            st.warning(
+                "Configuración de bancos no disponible para esta planta. "
+                "Rellena las tablas en ⚙️ Configuración → Bancos de prueba."
+            )
+        elif detail_by_line:
+            _bench_rows = []
+            for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
+                _res = compute_bench_analysis(
+                    line_id=_lid,
+                    da_value=_model,
+                    demand_week=_dem_w,
+                    bench_cfg=_bench_cfg_r,
+                    bench_map=_bench_map_r,
+                    times_df_b=times_df,
+                    stations_df_b=stations_df,
+                    hours_eff=hours_eff,
+                )
+                # Solo mostramos líneas D&A que entran en este análisis
+                if _res["bench_type"] == "No aplica":
+                    continue
+                _bench_rows.append({
+                    "Línea":                                   f"{_nave}-{_bline}",
+                    "Valor D&A":                              _res["da_value"],
+                    "Tipo de prueba":                         _res["test_type"],
+                    "Banco aplicable":                        _res["bench_type"],
+                    "Capacidad máxima por bancos (UDS/SEM)":  _res["bench_capacity"] if _res["bench_capacity"] > 0 else "—",
+                    "Demanda (UDS/SEM)":                      round(_dem_w, 2),
+                    "Observación":                            _res["observation"],
+                })
+
+            if _bench_rows:
+                _bench_df = pd.DataFrame(_bench_rows)
+                st.dataframe(_bench_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay líneas D&A activas con bancos configurados para esta planta.")
+
+            # -----------------------------------------------------------------
+            # RESUMEN AGREGADO POR TIPO DE BANCO
+            # -----------------------------------------------------------------
+            st.markdown("---")
+            st.markdown("### Resumen agregado por tipo de banco")
+            st.markdown(
+                "La tabla anterior analiza cada línea D&A **por separado**, mostrando si los bancos "
+                "disponibles podrían limitarla de forma individual. Sin embargo, en la práctica varias "
+                "líneas pueden compartir el mismo conjunto de bancos, y lo que determina si hay un "
+                "problema real es el consumo **conjunto**.\n\n"
+                "Este resumen agrega todas las líneas que usan el mismo tipo de banco y compara las "
+                "horas totales disponibles con las horas totales que la demanda actual requeriría:\n\n"
+                "- **Horas disponibles/sem**: horas efectivas de la planta × número de bancos de ese tipo.\n"
+                "- **Horas demandadas/sem**: suma de (demanda de cada línea × tiempo de prueba PARA de esa "
+                "línea). Indica cuántas horas de banco se necesitarían para cubrir la demanda planificada.\n"
+                "- **Demanda total (UDS/SEM)**: suma de unidades semanales de todas las líneas que usan ese banco.\n"
+                "- **Capacidad máxima (UDS/SEM)**: capacidad equivalente del conjunto de bancos con la mezcla "
+                "actual de familias. Este valor usa el tiempo medio ponderado real de las líneas activas, "
+                "por lo que puede cambiar si varía la combinación de familias planificadas.\n"
+                "- **Saturación (%)**: nivel de ocupación del conjunto de bancos. Indica qué porcentaje de "
+                "las horas disponibles consume la demanda actual.\n\n"
+                "Este bloque es informativo y **no modifica la lógica oficial del motor** "
+                "(capacidad, saturación, déficit ni cuello de botella)."
+            )
+
+            # Recolectar datos numéricos por banco — solo líneas D&A con tiempo_para válido
+            _agg_input: dict[str, dict] = {}
+            for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
+                _r = compute_bench_analysis(
+                    line_id=_lid,
+                    da_value=_model,
+                    demand_week=_dem_w,
+                    bench_cfg=_bench_cfg_r,
+                    bench_map=_bench_map_r,
+                    times_df_b=times_df,
+                    stations_df_b=stations_df,
+                    hours_eff=hours_eff,
+                )
+                _bt = _r["bench_type"]
+                _tp = _r["tiempo_para"]
+                if _bt in ("No aplica", "—") or _tp <= 0:
+                    continue
+                if _bt not in _agg_input:
+                    _agg_input[_bt] = {"demanda_total": 0.0, "horas_demandadas": 0.0}
+                _agg_input[_bt]["demanda_total"]   += _dem_w
+                _agg_input[_bt]["horas_demandadas"] += _dem_w * _tp
+
+            _agg_rows = []
+            for _bt, _vals in _agg_input.items():
+                _cfg_row = _bench_cfg_r[_bench_cfg_r["bench_type"] == _bt]
+                if _cfg_row.empty:
+                    continue
+                _qty = int(pd.to_numeric(_cfg_row.iloc[0]["quantity"], errors="coerce") or 0)
+                _horas_disp = hours_eff * _qty
+                _dem_total  = _vals["demanda_total"]
+                _horas_dem  = _vals["horas_demandadas"]
+
+                if _horas_dem > 0 and _dem_total > 0:
+                    _cap_max = (_horas_disp * _dem_total) / _horas_dem
+                else:
+                    _cap_max = 0.0
+
+                _sat = (_horas_dem / _horas_disp * 100) if _horas_disp > 0 else 0.0
+
+                if _sat <= 85.0:
+                    _estado = "✅ OK"
+                elif _sat <= 100.0:
+                    _estado = "⚠️ Cerca del límite"
+                else:
+                    _estado = "🔴 Saturado"
+
+                _agg_rows.append({
+                    "Tipo de banco":              _bt,
+                    "Horas disponibles/sem":      round(_horas_disp, 2),
+                    "Horas demandadas/sem":        round(_horas_dem,  2),
+                    "Capacidad máxima (UDS/SEM)":  round(_cap_max,    2),
+                    "Demanda total (UDS/SEM)":     round(_dem_total,  2),
+                    "Saturación (%)":              round(_sat,        1),
+                    "Estado":                      _estado,
+                })
+
+            if _agg_rows:
+                _agg_df = pd.DataFrame(_agg_rows)
+
+                def _style_estado(row):
+                    if "Saturado" in str(row.get("Estado", "")):
+                        return ["background-color: #ffe6e6; font-weight: 700;"] * len(row)
+                    if "Cerca" in str(row.get("Estado", "")):
+                        return ["background-color: #fff8e1;"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(
+                    _agg_df.style.apply(_style_estado, axis=1),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info(
+                    "No hay líneas D&A con datos suficientes para calcular el resumen agregado. "
+                    "Comprueba que el proceso PARA existe en tiempos y estaciones."
+                )
+        else:
+            st.info("Sin líneas planificadas. Selecciona modelos y demanda en Planificación.")
+
         st.divider()
         st.markdown("## 🔎 Detalle fino por línea y subproceso")
         st.caption("Desglose real por subproceso. El cuello de botella es el subproceso con menor capacidad.")
@@ -2231,180 +2402,6 @@ if st.session_state.active_tab == "📈 Resultados":
     with st.expander("⏱ Tiempos [staging]", expanded=False):
         st.caption(f"Loop compute_line_detail (Tab Resultados, líneas asignadas): **{_ms_C} ms**")
         st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
-
-    # -----------------------------------------------------------------
-    # SECCIÓN: Análisis de bancos de prueba (fase 1 informativa)
-    # No modifica ningún valor oficial del motor.
-    # -----------------------------------------------------------------
-    st.divider()
-    st.markdown("## 🏭 Análisis de bancos de prueba")
-    st.info(
-        "**La información de bancos de prueba es una referencia adicional para detectar "
-        "posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\n"
-        "En D&A, esta fase usa una asignación simplificada por familia: dentro de una misma "
-        "familia puede haber equipos LV y MV que esta fase no distingue todavía."
-    )
-
-    _bench_cfg_r = load_table("test_bench_config")
-    _bench_map_r = load_table("da_bench_type")
-
-    # Filtrar por planta activa
-    if "plant_id" in _bench_cfg_r.columns:
-        _bench_cfg_r = _bench_cfg_r[
-            pd.to_numeric(_bench_cfg_r["plant_id"], errors="coerce") == plant_id
-        ].copy()
-    else:
-        _bench_cfg_r = pd.DataFrame()
-
-    if "plant_id" in _bench_map_r.columns:
-        _bench_map_r = _bench_map_r[
-            pd.to_numeric(_bench_map_r["plant_id"], errors="coerce") == plant_id
-        ].copy()
-    else:
-        _bench_map_r = pd.DataFrame()
-
-    if _bench_cfg_r.empty or _bench_map_r.empty:
-        st.warning(
-            "Configuración de bancos no disponible para esta planta. "
-            "Rellena las tablas en ⚙️ Configuración → Bancos de prueba."
-        )
-    elif detail_by_line:
-        _bench_rows = []
-        for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
-            _res = compute_bench_analysis(
-                line_id=_lid,
-                da_value=_model,
-                demand_week=_dem_w,
-                bench_cfg=_bench_cfg_r,
-                bench_map=_bench_map_r,
-                times_df_b=times_df,
-                stations_df_b=stations_df,
-                hours_eff=hours_eff,
-            )
-            _bench_rows.append({
-                "Línea":                                    f"{_nave}-{_bline}",
-                "Valor D&A":                               _res["da_value"],
-                "Tipo de prueba":                          _res["test_type"],
-                "Banco aplicable":                         _res["bench_type"],
-                "Capacidad máxima por bancos (UDS/SEM)":   _res["bench_capacity"] if _res["bench_capacity"] > 0 else "—",
-                "Demanda (UDS/SEM)":                       round(_dem_w, 2),
-                "Observación":                             _res["observation"],
-            })
-
-        _bench_df = pd.DataFrame(_bench_rows)
-        st.dataframe(_bench_df, use_container_width=True, hide_index=True)
-
-        # -----------------------------------------------------------------
-        # RESUMEN AGREGADO POR TIPO DE BANCO
-        # -----------------------------------------------------------------
-        st.markdown("---")
-        st.markdown("### Resumen agregado por tipo de banco")
-        st.markdown(
-            "La tabla anterior analiza cada línea **por separado**: muestra si el banco "
-            "podría limitar esa línea individualmente. Sin embargo, cuando varias líneas "
-            "comparten el mismo tipo de banco, lo que importa es el consumo **conjunto**.\n\n"
-            "Este resumen agrega todas las líneas que usan el mismo tipo de banco y "
-            "compara las horas totales disponibles con las horas totales demandadas:\n\n"
-            "- **Horas disponibles/sem** = horas efectivas de la planta × número de bancos de ese tipo\n"
-            "- **Horas demandadas/sem** = Σ (demanda de cada línea × tiempo PARA real de esa línea)\n"
-            "- **Capacidad máxima (UDS/SEM)** = horas disponibles ÷ tiempo medio ponderado implícito "
-            "(equivalente a: horas disponibles × demanda total ÷ horas demandadas)\n"
-            "- **Demanda total (UDS/SEM)** = suma de demandas de todas las líneas que usan ese banco\n\n"
-            "Este bloque sigue siendo una capa informativa y **no modifica la lógica oficial del motor** "
-            "(capacidad, saturación, déficit ni cuello de botella)."
-        )
-
-        # Recolectar datos numéricos por banco — solo líneas D&A con tiempo_para válido
-        _agg_input: dict[str, dict] = {}
-        for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
-            _r = compute_bench_analysis(
-                line_id=_lid,
-                da_value=_model,
-                demand_week=_dem_w,
-                bench_cfg=_bench_cfg_r,
-                bench_map=_bench_map_r,
-                times_df_b=times_df,
-                stations_df_b=stations_df,
-                hours_eff=hours_eff,
-            )
-            _bt = _r["bench_type"]
-            _tp = _r["tiempo_para"]
-            if _bt in ("No aplica", "—") or _tp <= 0:
-                continue
-            if _bt not in _agg_input:
-                _agg_input[_bt] = {"demanda_total": 0.0, "horas_demandadas": 0.0}
-            _agg_input[_bt]["demanda_total"]   += _dem_w
-            _agg_input[_bt]["horas_demandadas"] += _dem_w * _tp
-
-        _agg_rows = []
-        for _bt, _vals in _agg_input.items():
-            # Horas disponibles = horas_eff × cantidad de bancos de ese tipo
-            _cfg_row = _bench_cfg_r[_bench_cfg_r["bench_type"] == _bt]
-            if _cfg_row.empty:
-                continue
-            _qty = int(pd.to_numeric(_cfg_row.iloc[0]["quantity"], errors="coerce") or 0)
-            _horas_disp = hours_eff * _qty
-
-            _dem_total   = _vals["demanda_total"]
-            _horas_dem   = _vals["horas_demandadas"]
-
-            # Capacidad máxima usando tiempo medio ponderado implícito:
-            #   tiempo_medio = horas_demandadas / demanda_total
-            #   cap_max = horas_disponibles / tiempo_medio
-            #           = horas_disponibles × demanda_total / horas_demandadas
-            # Esto evita elegir un tiempo fijo arbitrario cuando hay varias
-            # familias con distinto tiempo PARA usando el mismo banco.
-            if _horas_dem > 0 and _dem_total > 0:
-                _cap_max = (_horas_disp * _dem_total) / _horas_dem
-            else:
-                _cap_max = 0.0
-
-            # Saturación = horas demandadas / horas disponibles × 100
-            _sat = (_horas_dem / _horas_disp * 100) if _horas_disp > 0 else 0.0
-
-            # Estado con umbrales explícitos:
-            #   OK           → saturación ≤ 85%
-            #   Cerca del límite → 85% < saturación ≤ 100%
-            #   Saturado     → saturación > 100%
-            if _sat <= 85.0:
-                _estado = "✅ OK"
-            elif _sat <= 100.0:
-                _estado = "⚠️ Cerca del límite"
-            else:
-                _estado = "🔴 Saturado"
-
-            _agg_rows.append({
-                "Tipo de banco":                _bt,
-                "Horas disponibles/sem":        round(_horas_disp, 2),
-                "Horas demandadas/sem":         round(_horas_dem,  2),
-                "Capacidad máxima (UDS/SEM)":   round(_cap_max,    2),
-                "Demanda total (UDS/SEM)":      round(_dem_total,  2),
-                "Saturación (%)":               round(_sat,        1),
-                "Estado":                       _estado,
-            })
-
-        if _agg_rows:
-            _agg_df = pd.DataFrame(_agg_rows)
-
-            def _style_estado(row):
-                if "Saturado" in str(row.get("Estado", "")):
-                    return ["background-color: #ffe6e6; font-weight: 700;"] * len(row)
-                if "Cerca" in str(row.get("Estado", "")):
-                    return ["background-color: #fff8e1;"] * len(row)
-                return [""] * len(row)
-
-            st.dataframe(
-                _agg_df.style.apply(_style_estado, axis=1),
-                use_container_width=True,
-                hide_index=True,
-            )
-        else:
-            st.info(
-                "No hay líneas D&A con datos suficientes para calcular el resumen agregado. "
-                "Comprueba que el proceso PARA existe en tiempos y estaciones."
-            )
-    else:
-        st.info("Sin líneas planificadas. Selecciona modelos y demanda en Planificación.")
 
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
