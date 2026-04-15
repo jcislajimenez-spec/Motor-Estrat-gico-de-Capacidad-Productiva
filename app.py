@@ -1283,52 +1283,62 @@ if st.session_state.active_tab == "📊 Planificación":
     if _pid not in st.session_state.line_bench_variant:
         st.session_state.line_bench_variant[_pid] = {}
 
-    colL, colR = st.columns([1.1, 1.0], gap="large")
+    # Una fila por línea con 3 columnas: Modelo | Variante de prueba | Demanda
+    # Para líneas no-D&A la columna de variante queda vacía sin crear hueco visual.
+    for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
+        st.markdown(f"#### NAVE {nave}")
 
-    with colL:
-        st.markdown("### Selección")
-        for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
-            st.markdown(f"#### NAVE {nave}")
-            nave_line_ids = sorted(
-                stations_df.loc[stations_df["nave"] == nave, "line_id"]
-                .astype(str)
-                .str.strip()
-                .unique()
-                .tolist()
+        # Cabecera de columnas — se muestra una sola vez por nave
+        _ch1, _ch2, _ch3 = st.columns([1.2, 0.9, 1.0])
+        _ch1.caption("Modelo")
+        _ch2.caption("Variante de prueba (D&A)")
+        _ch3.caption("Demanda (UDS/SEM)")
+
+        nave_line_ids = sorted(
+            stations_df.loc[stations_df["nave"] == nave, "line_id"]
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+
+        for line_id in nave_line_ids:
+            allowed = allowed_by_line.get(line_id, [])
+            if not allowed:
+                st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
+                continue
+
+            default_model = (
+                st.session_state.line_model
+                .get(_pid, {})
+                .get(line_id, allowed[0])
             )
+            if default_model not in allowed:
+                default_model = allowed[0]
 
-            for line_id in nave_line_ids:
-                allowed = allowed_by_line.get(line_id, [])
-                if not allowed:
-                    st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
-                    continue
+            _c1, _c2, _c3 = st.columns([1.2, 0.9, 1.0])
 
-                default_model = (
-                    st.session_state.line_model
-                    .get(_pid, {})
-                    .get(line_id, allowed[0])
-                )
-                if default_model not in allowed:
-                    default_model = allowed[0]
-
+            with _c1:
                 m = st.selectbox(
                     f"Modelo ({line_id})",
                     options=allowed,
                     index=allowed.index(default_model),
-                    key=f"sel_model_{_pid}_{line_id}"
+                    key=f"sel_model_{_pid}_{line_id}",
+                    label_visibility="collapsed",
                 )
                 st.session_state.line_model[_pid][line_id] = m
 
-                # Selector de variante de prueba — solo para líneas D&A (fase 2)
+            with _c2:
                 if m in _DA_VALUES:
                     _vopt = ["— (general)", "LV", "MV"]
                     _cur_v = st.session_state.line_bench_variant.get(_pid, {}).get(line_id, "")
                     _v_idx = _vopt.index(_cur_v) if _cur_v in _vopt else 0
                     _v = st.selectbox(
-                        f"Variante de prueba ({line_id})",
+                        f"Variante ({line_id})",
                         options=_vopt,
                         index=_v_idx,
                         key=f"sel_variant_{_pid}_{line_id}",
+                        label_visibility="collapsed",
                         help=(
                             "Indica si este equipo requiere banco LV o MV. "
                             "'— (general)' usa la regla configurada para la familia."
@@ -1338,30 +1348,12 @@ if st.session_state.active_tab == "📊 Planificación":
                         "" if _v == "— (general)" else _v
                     )
                 else:
-                    # Si el modelo cambia a no-D&A, limpiar variante anterior si existe
+                    # No es D&A: celda vacía y limpiar variante anterior si existía
                     st.session_state.line_bench_variant.get(_pid, {}).pop(line_id, None)
 
-    with colR:
-        st.markdown("### Demanda (UDS/SEM)")
-        for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
-            st.markdown(f"#### NAVE {nave}")
-            nave_line_ids = sorted(
-                stations_df.loc[stations_df["nave"] == nave, "line_id"]
-                .astype(str)
-                .str.strip()
-                .unique()
-                .tolist()
-            )
-            for line_id in nave_line_ids:
-                model = (
-                    st.session_state.line_model
-                    .get(_pid, {})
-                    .get(line_id)
-                )
-                if not model:
-                    continue
+            with _c3:
                 d = st.number_input(
-                    f"Demanda ({line_id} – {model})",
+                    f"Demanda ({line_id} – {m})",
                     min_value=0.0,
                     value=float(
                         st.session_state.line_demand
@@ -1370,6 +1362,7 @@ if st.session_state.active_tab == "📊 Planificación":
                     ),
                     step=1.0,
                     key=f"demand_{_pid}_{line_id}",
+                    label_visibility="collapsed",
                 )
                 st.session_state.line_demand[_pid][line_id] = d
 
