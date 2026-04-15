@@ -725,11 +725,18 @@ if "line_model" not in st.session_state:
     st.session_state.line_model = {}
 if "line_demand" not in st.session_state:
     st.session_state.line_demand = {}
+# Variante de prueba por línea D&A — fase 2 bancos de prueba
+# Estructura: {plant_id: {line_id: 'LV' | 'MV' | ''}}
+# Vacío ('') significa "usar regla general de la familia".
+if "line_bench_variant" not in st.session_state:
+    st.session_state.line_bench_variant = {}
 _pid_init = st.session_state["plant_id"]
 if _pid_init not in st.session_state.line_model:
     st.session_state.line_model[_pid_init] = {}
 if _pid_init not in st.session_state.line_demand:
     st.session_state.line_demand[_pid_init] = {}
+if _pid_init not in st.session_state.line_bench_variant:
+    st.session_state.line_bench_variant[_pid_init] = {}
 
 # =========================================================
 # Capacidad por modelo y planta (cacheada a nivel de módulo)
@@ -1261,12 +1268,16 @@ if st.session_state.active_tab == "📊 Planificación":
         st.session_state.line_model = {}
     if "line_demand" not in st.session_state:
         st.session_state.line_demand = {}
+    if "line_bench_variant" not in st.session_state:
+        st.session_state.line_bench_variant = {}
 
     _pid = st.session_state["plant_id"]
     if _pid not in st.session_state.line_model:
         st.session_state.line_model[_pid] = {}
     if _pid not in st.session_state.line_demand:
         st.session_state.line_demand[_pid] = {}
+    if _pid not in st.session_state.line_bench_variant:
+        st.session_state.line_bench_variant[_pid] = {}
 
     colL, colR = st.columns([1.1, 1.0], gap="large")
 
@@ -1303,6 +1314,28 @@ if st.session_state.active_tab == "📊 Planificación":
                     key=f"sel_model_{_pid}_{line_id}"
                 )
                 st.session_state.line_model[_pid][line_id] = m
+
+                # Selector de variante de prueba — solo para líneas D&A (fase 2)
+                if m in _DA_VALUES:
+                    _vopt = ["— (general)", "LV", "MV"]
+                    _cur_v = st.session_state.line_bench_variant.get(_pid, {}).get(line_id, "")
+                    _v_idx = _vopt.index(_cur_v) if _cur_v in _vopt else 0
+                    _v = st.selectbox(
+                        f"Variante de prueba ({line_id})",
+                        options=_vopt,
+                        index=_v_idx,
+                        key=f"sel_variant_{_pid}_{line_id}",
+                        help=(
+                            "Indica si este equipo requiere banco LV o MV. "
+                            "'— (general)' usa la regla configurada para la familia."
+                        ),
+                    )
+                    st.session_state.line_bench_variant[_pid][line_id] = (
+                        "" if _v == "— (general)" else _v
+                    )
+                else:
+                    # Si el modelo cambia a no-D&A, limpiar variante anterior si existe
+                    st.session_state.line_bench_variant.get(_pid, {}).pop(line_id, None)
 
     with colR:
         st.markdown("### Demanda (UDS/SEM)")
@@ -1634,10 +1667,14 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
             pd.to_numeric(_bmap_ed["plant_id"], errors="coerce") == plant_id
         ].copy()
     else:
-        _bmap_ed = pd.DataFrame(columns=["da_value", "bench_type"])
+        _bmap_ed = pd.DataFrame(columns=["da_value", "da_variant", "bench_type"])
+
+    # Asegurar que da_variant existe aunque la tabla venga sin esa columna (pre-migración)
+    if "da_variant" not in _bmap_ed.columns:
+        _bmap_ed["da_variant"] = ""
 
     _bmap_show = _bmap_ed[
-        [c for c in ["da_value", "bench_type"] if c in _bmap_ed.columns]
+        [c for c in ["da_value", "da_variant", "bench_type"] if c in _bmap_ed.columns]
     ].copy()
 
     edited_bench_map = st.data_editor(
@@ -1645,11 +1682,26 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "da_value": st.column_config.TextColumn(
-                "Valor D&A en el motor", help="SL, SD, LL, LD, XD o XL"
+            "da_value": st.column_config.SelectboxColumn(
+                "Valor D&A en el motor",
+                options=["SL", "SD", "LL", "LD", "XD", "XL"],
+                help="Familia D&A tal como existe hoy en el motor.",
+                required=True,
             ),
-            "bench_type": st.column_config.TextColumn(
-                "Banco aplicable", help="LV, MV o XL_MV"
+            "da_variant": st.column_config.SelectboxColumn(
+                "Variante de prueba",
+                options=["", "LV", "MV"],
+                help=(
+                    "Vacío = regla general de la familia. "
+                    "'LV' o 'MV' = regla específica para esa variante."
+                ),
+                required=False,
+            ),
+            "bench_type": st.column_config.SelectboxColumn(
+                "Banco aplicable",
+                options=["LV", "MV", "XL_MV"],
+                help="Banco que se asigna a esta combinación.",
+                required=True,
             ),
         },
     )
@@ -1657,6 +1709,9 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     if st.button("💾 Guardar asignación D&A"):
         _out = edited_bench_map.copy()
         _out["plant_id"] = plant_id
+        # Normalizar da_variant: None → ''
+        if "da_variant" in _out.columns:
+            _out["da_variant"] = _out["da_variant"].fillna("").astype(str).str.strip()
         save_table(_out, "da_bench_type")
         st.session_state["bench_map_saved"] = True
     if st.session_state.get("bench_map_saved"):
@@ -1685,30 +1740,40 @@ def compute_bench_analysis(
     times_df_b: "pd.DataFrame",
     stations_df_b: "pd.DataFrame",
     hours_eff: float,
+    da_variant: str = "",
 ) -> dict:
     """
-    Capa informativa de bancos de prueba — fase 1.
+    Capa informativa de bancos de prueba — fase 2.
 
     Calcula si los bancos de prueba disponibles podrían limitar la capacidad
     de una línea D&A. NO modifica ningún valor oficial del motor (capacidad,
     saturación, déficit, cuello de botella).
 
-    La asignación tipo-de-prueba por valor D&A es una SIMPLIFICACIÓN OPERATIVA:
-    dentro de una misma familia puede haber equipos LV y MV que esta fase
-    no distingue todavía.
+    da_variant (fase 2): variante de prueba informada por el planificador
+    para esta línea ('LV', 'MV', o '' para usar la regla general).
+    Si da_variant es '' el comportamiento es idéntico a la fase 1.
+
+    Búsqueda en bench_map (dos pasos):
+      1. Coincidencia exacta: da_value + da_variant
+      2. Si no existe: regla general da_value + da_variant=''
+      3. Si tampoco: "Datos insuficientes"
 
     Devuelve un dict con:
         da_value       — valor tal como existe en el motor
+        da_variant     — variante informada ('' si no se especificó)
         test_type      — tipo de prueba (LV / MV / No aplica)
         bench_type     — banco aplicable (LV / MV / XL_MV / No aplica)
         bench_capacity — UDS/SEM máximas que soportan los bancos (0 si no aplica)
         tiempo_para    — horas/ud del proceso PARA calculadas (0.0 si no aplica o sin datos)
         observation    — texto del aviso para el usuario
     """
+    da_variant = (da_variant or "").strip()
+
     # 1. ¿Es D&A?
     if da_value not in _DA_VALUES:
         return {
             "da_value": da_value,
+            "da_variant": da_variant,
             "test_type": "No aplica",
             "bench_type": "No aplica",
             "bench_capacity": 0.0,
@@ -1716,11 +1781,32 @@ def compute_bench_analysis(
             "observation": "No aplica",
         }
 
-    # 2. ¿Tiene asignación de banco?
-    row_map = bench_map[bench_map["da_value"] == da_value]
+    # 2. Buscar asignación de banco — dos pasos
+    # Si la tabla no tiene la columna da_variant aún (pre-migración), tratar
+    # todas las filas como da_variant='', compatibilidad hacia atrás.
+    _has_variant_col = "da_variant" in bench_map.columns
+
+    row_map = pd.DataFrame()
+    if da_variant and _has_variant_col:
+        # Paso 1: coincidencia exacta familia + variante
+        row_map = bench_map[
+            (bench_map["da_value"] == da_value) &
+            (bench_map["da_variant"].astype(str).str.strip() == da_variant)
+        ]
+    if row_map.empty:
+        # Paso 2: regla general de la familia (da_variant vacío)
+        if _has_variant_col:
+            row_map = bench_map[
+                (bench_map["da_value"] == da_value) &
+                (bench_map["da_variant"].astype(str).str.strip() == "")
+            ]
+        else:
+            row_map = bench_map[bench_map["da_value"] == da_value]
+
     if row_map.empty:
         return {
             "da_value": da_value,
+            "da_variant": da_variant,
             "test_type": "—",
             "bench_type": "—",
             "bench_capacity": 0.0,
@@ -1737,6 +1823,7 @@ def compute_bench_analysis(
     if row_cfg.empty:
         return {
             "da_value": da_value,
+            "da_variant": da_variant,
             "test_type": test_type,
             "bench_type": bench_type,
             "bench_capacity": 0.0,
@@ -1786,6 +1873,7 @@ def compute_bench_analysis(
     if tiempo_para is None or tiempo_para <= 0:
         return {
             "da_value": da_value,
+            "da_variant": da_variant,
             "test_type": test_type,
             "bench_type": bench_type,
             "bench_capacity": 0.0,
@@ -1804,6 +1892,7 @@ def compute_bench_analysis(
 
     return {
         "da_value":       da_value,
+        "da_variant":     da_variant,
         "test_type":      test_type,
         "bench_type":     bench_type,
         "bench_capacity": round(bench_capacity, 2),
@@ -2144,8 +2233,9 @@ if st.session_state.active_tab == "📈 Resultados":
         st.info(
             "**La información de bancos de prueba es una referencia adicional para detectar "
             "posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\n"
-            "En D&A, esta fase usa una asignación simplificada por familia: dentro de una misma "
-            "familia puede haber equipos LV y MV que esta fase no distingue todavía."
+            "Para cada línea D&A puedes especificar la **Variante de prueba** (LV o MV) en la pestaña "
+            "Planificación. Si no se especifica, se aplica la regla general configurada para esa familia. "
+            "La asignación por familia sigue siendo una simplificación operativa cuando la variante no se informa."
         )
 
         _bench_cfg_r = load_table("test_bench_config")
@@ -2173,6 +2263,11 @@ if st.session_state.active_tab == "📈 Resultados":
         elif detail_by_line:
             _bench_rows = []
             for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
+                _da_variant = (
+                    st.session_state.line_bench_variant
+                    .get(plant_id, {})
+                    .get(_lid, "")
+                )
                 _res = compute_bench_analysis(
                     line_id=_lid,
                     da_value=_model,
@@ -2182,13 +2277,16 @@ if st.session_state.active_tab == "📈 Resultados":
                     times_df_b=times_df,
                     stations_df_b=stations_df,
                     hours_eff=hours_eff,
+                    da_variant=_da_variant,
                 )
                 # Solo mostramos líneas D&A que entran en este análisis
                 if _res["bench_type"] == "No aplica":
                     continue
+                _variant_label = _res["da_variant"] if _res["da_variant"] else "—"
                 _bench_rows.append({
                     "Línea":                                   f"{_nave}-{_bline}",
                     "Valor D&A":                              _res["da_value"],
+                    "Variante":                               _variant_label,
                     "Tipo de prueba":                         _res["test_type"],
                     "Banco aplicable":                        _res["bench_type"],
                     "Capacidad máxima por bancos (UDS/SEM)":  _res["bench_capacity"] if _res["bench_capacity"] > 0 else "—",
@@ -2230,6 +2328,11 @@ if st.session_state.active_tab == "📈 Resultados":
             # Recolectar datos numéricos por banco — solo líneas D&A con tiempo_para válido
             _agg_input: dict[str, dict] = {}
             for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
+                _da_variant_agg = (
+                    st.session_state.line_bench_variant
+                    .get(plant_id, {})
+                    .get(_lid, "")
+                )
                 _r = compute_bench_analysis(
                     line_id=_lid,
                     da_value=_model,
@@ -2239,6 +2342,7 @@ if st.session_state.active_tab == "📈 Resultados":
                     times_df_b=times_df,
                     stations_df_b=stations_df,
                     hours_eff=hours_eff,
+                    da_variant=_da_variant_agg,
                 )
                 _bt = _r["bench_type"]
                 _tp = _r["tiempo_para"]
