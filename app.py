@@ -2410,6 +2410,155 @@ if st.session_state.active_tab == "📈 Resultados":
                     use_container_width=True,
                     hide_index=True,
                 )
+
+                # ---------------------------------------------------------
+                # FASE 3 — Simulación estratégica de escenarios de banco
+                # Proyección hipotética basada en el resumen agregado.
+                # No modifica ningún valor oficial del motor.
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.markdown("### 🔭 Simulación estratégica de escenarios de banco")
+                st.warning(
+                    "**Este bloque muestra proyecciones hipotéticas a partir de la "
+                    "configuración actual de bancos.** "
+                    "Los valores de +1 y +2 bancos son estimaciones lineales orientativas. "
+                    "No modifican la capacidad oficial del motor ni ningún otro resultado de la herramienta."
+                )
+
+                import math as _math
+
+                # ── Bloque A: proyección con bancos adicionales ────────────
+                st.markdown("#### ¿Qué pasaría si añadiera más bancos?")
+
+                _sim_a_rows = []
+                for _row in _agg_rows:
+                    _bt       = _row["Tipo de banco"]
+                    _qty      = int(_bench_cfg_r.loc[
+                        _bench_cfg_r["bench_type"] == _bt, "quantity"
+                    ].iloc[0]) if not _bench_cfg_r[_bench_cfg_r["bench_type"] == _bt].empty else 1
+                    _cap_now  = _row["Capacidad máxima (UDS/SEM)"]
+                    _dem      = _row["Demanda total (UDS/SEM)"]
+                    _def_now  = round(_cap_now - _dem, 2)
+
+                    # Proyección lineal: cap × (qty + N) / qty
+                    if _qty > 0:
+                        _cap_p1 = round(_cap_now * (_qty + 1) / _qty, 2)
+                        _cap_p2 = round(_cap_now * (_qty + 2) / _qty, 2)
+                    else:
+                        _cap_p1 = _cap_now
+                        _cap_p2 = _cap_now
+
+                    _def_p1 = round(_cap_p1 - _dem, 2)
+                    _def_p2 = round(_cap_p2 - _dem, 2)
+
+                    # Columna de diagnóstico rápido
+                    if _def_now >= 0:
+                        _diag = "✅ Cubierto con configuración actual"
+                    elif _def_p1 >= 0:
+                        _diag = "➕ Se cubriría con +1 banco"
+                    elif _def_p2 >= 0:
+                        _diag = "➕➕ Se cubriría con +2 bancos"
+                    else:
+                        _diag = "🔴 Insuficiente incluso con +2 bancos"
+
+                    _sim_a_rows.append({
+                        "Tipo de banco":             _bt,
+                        "Bancos actuales":            _qty,
+                        "Cap. actual (UDS/SEM)":      _cap_now,
+                        "Demanda (UDS/SEM)":           _dem,
+                        "Déficit actual":              _def_now,
+                        "Cap. con +1 banco":          _cap_p1,
+                        "Déficit con +1 banco":       _def_p1,
+                        "Cap. con +2 bancos":         _cap_p2,
+                        "Déficit con +2 bancos":      _def_p2,
+                        "Diagnóstico":                _diag,
+                    })
+
+                def _style_sim_a(row):
+                    def_now = row.get("Déficit actual", 0)
+                    try:
+                        def_now = float(def_now)
+                    except (TypeError, ValueError):
+                        def_now = 0
+                    if def_now < 0:
+                        return ["background-color: #fff3cd;"] * len(row)
+                    return [""] * len(row)
+
+                def _fmt_deficit(v):
+                    try:
+                        f = float(v)
+                        return f"+{f:.2f}" if f >= 0 else f"{f:.2f}"
+                    except (TypeError, ValueError):
+                        return str(v)
+
+                _sim_a_df = pd.DataFrame(_sim_a_rows)
+                _deficit_cols_a = [
+                    "Déficit actual", "Déficit con +1 banco", "Déficit con +2 bancos"
+                ]
+                st.dataframe(
+                    _sim_a_df.style
+                        .apply(_style_sim_a, axis=1)
+                        .format({c: _fmt_deficit for c in _deficit_cols_a
+                                 if c in _sim_a_df.columns}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                # ── Bloque B: bancos mínimos necesarios ───────────────────
+                st.markdown("#### ¿Cuántos bancos hacen falta para cubrir la demanda actual?")
+
+                _sim_b_rows = []
+                for _row in _agg_rows:
+                    _bt      = _row["Tipo de banco"]
+                    _qty     = int(_bench_cfg_r.loc[
+                        _bench_cfg_r["bench_type"] == _bt, "quantity"
+                    ].iloc[0]) if not _bench_cfg_r[_bench_cfg_r["bench_type"] == _bt].empty else 1
+                    _cap_now = _row["Capacidad máxima (UDS/SEM)"]
+                    _dem     = _row["Demanda total (UDS/SEM)"]
+
+                    # Capacidad unitaria por banco
+                    _cap_por_banco = (_cap_now / _qty) if _qty > 0 else 0.0
+
+                    # Bancos mínimos para cubrir demanda (ceil)
+                    if _cap_por_banco > 0 and _dem > 0:
+                        _min_banks = _math.ceil(_dem / _cap_por_banco)
+                    else:
+                        _min_banks = _qty  # sin datos suficientes, no cambiar
+
+                    _extra = max(0, _min_banks - _qty)
+
+                    if _extra == 0:
+                        _estado_b = "✅ Sin necesidad adicional"
+                    else:
+                        _estado_b = f"➕ Faltan {_extra} banco{'s' if _extra > 1 else ''}"
+
+                    _sim_b_rows.append({
+                        "Tipo de banco":                         _bt,
+                        "Bancos actuales":                       _qty,
+                        "Cap. por banco (UDS/SEM)":              round(_cap_por_banco, 2),
+                        "Demanda actual (UDS/SEM)":              _dem,
+                        "Bancos mínimos para cubrir demanda":    _min_banks,
+                        "Bancos adicionales necesarios":         _extra,
+                        "Estado":                                _estado_b,
+                    })
+
+                def _style_sim_b(row):
+                    extra = row.get("Bancos adicionales necesarios", 0)
+                    try:
+                        extra = int(extra)
+                    except (TypeError, ValueError):
+                        extra = 0
+                    if extra > 0:
+                        return ["background-color: #ffe6e6;"] * len(row)
+                    return ["background-color: #e8f5e9;"] * len(row)
+
+                _sim_b_df = pd.DataFrame(_sim_b_rows)
+                st.dataframe(
+                    _sim_b_df.style.apply(_style_sim_b, axis=1),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
             else:
                 st.info(
                     "No hay líneas D&A con datos suficientes para calcular el resumen agregado. "
