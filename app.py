@@ -23,6 +23,174 @@ def _fmt_num(v) -> str:
     return f"{f:.2f}".rstrip("0")
 
 
+def _build_css(dark: bool) -> str:
+    """Genera el bloque <style> completo según modo claro/oscuro."""
+    if dark:
+        bg         = "#1A1D27"
+        bg_sidebar = "#141720"
+        bg_card    = "#22263A"
+        bdr        = "#2E3447"
+        accent     = "#D93050"   # rojo Ingeteam más brillante sobre fondo oscuro
+        accent_h4  = "#8BA8CC"
+        text_main  = "#CDD4E0"
+        text_sub   = "#8090A8"
+    else:
+        bg         = "#F5F6F8"
+        bg_sidebar = "#FFFFFF"
+        bg_card    = "#FFFFFF"
+        bdr        = "#DDE1E7"
+        accent     = "#A6192E"
+        accent_h4  = "#2C3E50"
+        text_main  = "#1A1A2E"
+        text_sub   = "#5A6473"
+
+    dark_only = (
+        f"""
+[data-testid="stAlert"] {{
+    position: relative;
+    isolation: isolate;
+}}
+[data-testid="stAlert"]::before {{
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(10,12,22,0.55);
+    z-index: 0;
+    pointer-events: none;
+    border-radius: 4px;
+}}
+[data-testid="stAlert"] > div {{
+    position: relative;
+    z-index: 1;
+}}
+[data-testid="stAlert"] p,
+[data-testid="stAlert"] li {{
+    color: #E0E8F8 !important;
+}}
+[data-baseweb="base-input"],
+[data-baseweb="input"] {{
+    background-color: {bg_card} !important;
+    color: {text_main} !important;
+}}
+input[type="number"] {{
+    color: {text_main} !important;
+}}
+"""
+        if dark else ""
+    )
+
+    return f"""<style>
+/* ── Fondo principal ──────────────────────────────────────── */
+[data-testid="stApp"], .main {{
+    background-color: {bg} !important;
+}}
+.main .block-container {{
+    background-color: {bg} !important;
+    padding-top: 1.5rem;
+}}
+
+/* ── Sidebar ──────────────────────────────────────────────── */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div:first-child {{
+    background-color: {bg_sidebar} !important;
+    border-right: 1px solid {bdr};
+}}
+
+/* ── Titulares h1 / h2 / h3 ──────────────────────────────── */
+h1, h2, h3 {{
+    color: {accent} !important;
+    font-family: "Trade Gothic", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+}}
+h2 {{
+    padding-bottom: 0.25em;
+    border-bottom: 2px solid {accent};
+    margin-bottom: 0.6em;
+}}
+
+/* ── Subtítulos h4 / h5 / h6 ─────────────────────────────── */
+h4, h5, h6 {{
+    color: {accent_h4} !important;
+    font-family: "Trade Gothic", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+}}
+
+/* ── Texto cuerpo ─────────────────────────────────────────── */
+.stMarkdown p, .stMarkdown li {{
+    color: {text_main} !important;
+    font-family: "Trade Gothic", "Helvetica Neue", Arial, sans-serif;
+}}
+.stCaption p {{
+    color: {text_sub} !important;
+    font-size: 0.83em;
+}}
+[data-testid="stWidgetLabel"] p, label {{
+    color: {text_sub} !important;
+}}
+
+/* ── Sidebar — texto y encabezados ───────────────────────── */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{
+    color: {text_main} !important;
+}}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {{
+    color: {accent} !important;
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+}}
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+button[data-baseweb="tab"] {{
+    font-weight: 600 !important;
+    color: {text_sub} !important;
+    background: transparent !important;
+}}
+button[data-baseweb="tab"][aria-selected="true"] {{
+    color: {accent} !important;
+    border-bottom: 3px solid {accent} !important;
+    background: transparent !important;
+}}
+[data-baseweb="tab-list"] {{
+    background-color: {bg} !important;
+    border-bottom: 1px solid {bdr} !important;
+}}
+
+/* ── Cabeceras de tabla HTML ──────────────────────────────── */
+thead tr th {{
+    background-color: {bg_card} !important;
+    color: {accent_h4} !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid {bdr} !important;
+}}
+
+/* ── Expanders ────────────────────────────────────────────── */
+[data-testid="stExpander"] {{
+    border: 1px solid {bdr} !important;
+    border-radius: 6px !important;
+    overflow: hidden;
+}}
+
+/* ── Divisores ────────────────────────────────────────────── */
+hr {{
+    border-color: {bdr} !important;
+    margin: 1.2em 0;
+}}
+
+/* ── Clases personalizadas existentes en la app ──────────── */
+.red-text {{
+    color: {accent} !important;
+    font-weight: bold;
+}}
+.small-text {{
+    color: {text_sub} !important;
+}}
+{dark_only}
+</style>"""
+
+
 def resource_path(relative_path: str) -> str:
     """Devuelve la ruta absoluta a un recurso.
 
@@ -54,61 +222,12 @@ def _load_logo():
 logo = _load_logo()
 st.sidebar.image(logo, use_container_width=True)
 
-st.markdown("""
-<style>
-/* Fondo general */
-.main {
-    background-color: #FFFFFF;
-}
+# Inicializar modo oscuro (una vez por sesión)
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = False
 
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background-color: #FFFFFF;
-}
-
-/* Títulos principales */
-h1, h2, h3 {
-    color: #A6192E;
-    font-family: "Trade Gothic", sans-serif;
-    font-weight: bold;
-}
-
-/* Texto general */
-body, p, div {
-    color: #000000;
-    font-family: "Trade Gothic", sans-serif;
-}
-
-/* Subtítulos y textos secundarios */
-.small-text {
-    color: #63666A;
-}
-
-/* Tabs */
-button[data-baseweb="tab"] {
-    font-weight: bold;
-    color: #63666A;
-}
-
-button[data-baseweb="tab"][aria-selected="true"] {
-    color: #A6192E;
-    border-bottom: 3px solid #A6192E;
-}
-
-/* Tabla */
-thead tr th {
-    background-color: #F5F5F5;
-    color: #63666A;
-    font-weight: bold;
-}
-
-/* Saturaciones en rojo corporativo */
-.red-text {
-    color: #A6192E;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
+# Inyectar CSS según modo actual
+st.markdown(_build_css(st.session_state.dark_mode), unsafe_allow_html=True)
 
 DATA_DIR = resource_path("data")
 
@@ -607,6 +726,10 @@ _PAGES = [
     "🧭 Capacidad según mix",
 ]
 st.sidebar.radio("Pantalla:", _PAGES, key="active_tab")
+
+st.sidebar.divider()
+st.sidebar.checkbox("🌙  Modo oscuro", key="dark_mode")
+st.sidebar.divider()
 
 # =========================================================
 # SIDEBAR – PARÁMETROS (SIEMPRE VISIBLES)
