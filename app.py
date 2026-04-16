@@ -1283,16 +1283,17 @@ if st.session_state.active_tab == "📊 Planificación":
     if _pid not in st.session_state.line_bench_variant:
         st.session_state.line_bench_variant[_pid] = {}
 
-    # Una fila por línea con 3 columnas: Modelo | Variante de prueba | Demanda
-    # Para líneas no-D&A la columna de variante queda vacía sin crear hueco visual.
+    # Una fila por línea con 2 columnas: Selección combinada | Demanda
+    # Para D&A el selector combina familia + variante en una sola opción.
+    # Para no D&A muestra solo el modelo, sin variantes.
+    _VARIANT_LABELS = ["general", "LV", "MV"]  # etiquetas visibles para D&A
+
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
 
-        # Cabecera de columnas — se muestra una sola vez por nave
-        _ch1, _ch2, _ch3 = st.columns([1.2, 0.9, 1.0])
-        _ch1.caption("Modelo")
-        _ch2.caption("Variante de prueba (D&A)")
-        _ch3.caption("Demanda (UDS/SEM)")
+        _ch1, _ch2 = st.columns([1.8, 1.0])
+        _ch1.caption("Modelo / Variante de prueba")
+        _ch2.caption("Demanda (UDS/SEM)")
 
         nave_line_ids = sorted(
             stations_df.loc[stations_df["nave"] == nave, "line_id"]
@@ -1308,52 +1309,67 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
                 continue
 
-            default_model = (
-                st.session_state.line_model
-                .get(_pid, {})
-                .get(line_id, allowed[0])
-            )
-            if default_model not in allowed:
-                default_model = allowed[0]
+            # Construir lista de opciones combinadas
+            # D&A → "LL · general", "LL · LV", "LL · MV"
+            # No D&A → "PT0163"
+            _combined_opts = []
+            for _mod in allowed:
+                if _mod in _DA_VALUES:
+                    for _vlbl in _VARIANT_LABELS:
+                        _combined_opts.append(f"{_mod} · {_vlbl}")
+                else:
+                    _combined_opts.append(_mod)
 
-            _c1, _c2, _c3 = st.columns([1.2, 0.9, 1.0])
+            # Recuperar selección actual y traducirla a opción combinada
+            _cur_model = (
+                st.session_state.line_model.get(_pid, {}).get(line_id)
+                or allowed[0]
+            )
+            if _cur_model not in allowed:
+                _cur_model = allowed[0]
+
+            _cur_variant = st.session_state.line_bench_variant.get(_pid, {}).get(line_id, "")
+
+            if _cur_model in _DA_VALUES:
+                _vlbl_cur = _cur_variant if _cur_variant in ("LV", "MV") else "general"
+                _cur_opt = f"{_cur_model} · {_vlbl_cur}"
+            else:
+                _cur_opt = _cur_model
+
+            if _cur_opt not in _combined_opts:
+                _cur_opt = _combined_opts[0]
+
+            _c1, _c2 = st.columns([1.8, 1.0])
 
             with _c1:
-                m = st.selectbox(
-                    f"Modelo ({line_id})",
-                    options=allowed,
-                    index=allowed.index(default_model),
-                    key=f"sel_model_{_pid}_{line_id}",
+                _sel = st.selectbox(
+                    f"Selección ({line_id})",
+                    options=_combined_opts,
+                    index=_combined_opts.index(_cur_opt),
+                    key=f"sel_combined_{_pid}_{line_id}",
                     label_visibility="collapsed",
+                    help=(
+                        "Para familias D&A elige también la variante de prueba. "
+                        "'general' usa la regla configurada para esa familia."
+                    ),
                 )
-                st.session_state.line_model[_pid][line_id] = m
+
+            # Descomponer la selección en modelo + variante
+            if " · " in _sel:
+                _m, _vlbl = _sel.split(" · ", 1)
+                _variant = "" if _vlbl == "general" else _vlbl
+            else:
+                _m = _sel
+                _variant = ""
+                st.session_state.line_bench_variant.get(_pid, {}).pop(line_id, None)
+
+            st.session_state.line_model[_pid][line_id] = _m
+            if _m in _DA_VALUES:
+                st.session_state.line_bench_variant[_pid][line_id] = _variant
 
             with _c2:
-                if m in _DA_VALUES:
-                    _vopt = ["— (general)", "LV", "MV"]
-                    _cur_v = st.session_state.line_bench_variant.get(_pid, {}).get(line_id, "")
-                    _v_idx = _vopt.index(_cur_v) if _cur_v in _vopt else 0
-                    _v = st.selectbox(
-                        f"Variante ({line_id})",
-                        options=_vopt,
-                        index=_v_idx,
-                        key=f"sel_variant_{_pid}_{line_id}",
-                        label_visibility="collapsed",
-                        help=(
-                            "Indica si este equipo requiere banco LV o MV. "
-                            "'— (general)' usa la regla configurada para la familia."
-                        ),
-                    )
-                    st.session_state.line_bench_variant[_pid][line_id] = (
-                        "" if _v == "— (general)" else _v
-                    )
-                else:
-                    # No es D&A: celda vacía y limpiar variante anterior si existía
-                    st.session_state.line_bench_variant.get(_pid, {}).pop(line_id, None)
-
-            with _c3:
                 d = st.number_input(
-                    f"Demanda ({line_id} – {m})",
+                    f"Demanda ({line_id} – {_m})",
                     min_value=0.0,
                     value=float(
                         st.session_state.line_demand
