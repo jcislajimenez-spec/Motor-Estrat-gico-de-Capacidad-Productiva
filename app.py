@@ -9,6 +9,20 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
+def _fmt_num(v) -> str:
+    """Formatea un número con máximo 2 decimales y sin ceros finales.
+
+    Ejemplos: 5.0 → '5', 5.50 → '5.5', 5.123 → '5.12', -3.0 → '-3'
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if f == int(f):
+        return str(int(f))
+    return f"{f:.2f}".rstrip("0")
+
+
 def resource_path(relative_path: str) -> str:
     """Devuelve la ruta absoluta a un recurso.
 
@@ -670,8 +684,8 @@ days_open_week = st.sidebar.number_input(
 weeks_equiv = days_open_year / max(days_open_week, 1)
 hours_eff = hours_week * shifts * availability * efficiency
 
-st.sidebar.caption(f"Horas efectivas planta: **{hours_eff:.2f} h/semana**")
-st.sidebar.caption(f"Semanas equivalentes: **{weeks_equiv:.2f} sem/año**")
+st.sidebar.caption(f"Horas efectivas planta: **{_fmt_num(hours_eff)} h/semana**")
+st.sidebar.caption(f"Semanas equivalentes: **{_fmt_num(weeks_equiv)} sem/año**")
 
 # ---------------------------------------------------------
 # GUARDAR PARÁMETROS DE ESTA PLANTA
@@ -1286,7 +1300,25 @@ if st.session_state.active_tab == "📊 Planificación":
     # Una fila por línea con 2 columnas: Selección combinada | Demanda
     # Para D&A el selector combina familia + variante en una sola opción.
     # Para no D&A muestra solo el modelo, sin variantes.
-    _VARIANT_LABELS = ["general", "LV", "MV"]  # etiquetas visibles para D&A
+    _VARIANT_LABELS = ["LV", "MV"]  # etiquetas visibles para D&A
+
+    # Lookup de la variante por defecto de cada familia D&A según su regla general
+    # (fila da_variant='' en da_bench_type). Usada cuando la variante almacenada está vacía.
+    # bench_type LV → "LV";  MV / XL_MV → "MV"
+    _da_default_variant: dict[str, str] = {}
+    _bmap_plan = load_table("da_bench_type")
+    if "plant_id" in _bmap_plan.columns:
+        _bmap_plan = _bmap_plan[
+            pd.to_numeric(_bmap_plan["plant_id"], errors="coerce") == _pid
+        ].copy()
+    if not _bmap_plan.empty and "da_variant" in _bmap_plan.columns:
+        _gen_rows = _bmap_plan[
+            _bmap_plan["da_variant"].astype(str).str.strip() == ""
+        ]
+        for _, _gr in _gen_rows.iterrows():
+            _dv = str(_gr["da_value"]).strip()
+            _bt = str(_gr.get("bench_type", "")).strip()
+            _da_default_variant[_dv] = "LV" if _bt == "LV" else "MV"
 
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
@@ -1310,7 +1342,7 @@ if st.session_state.active_tab == "📊 Planificación":
                 continue
 
             # Construir lista de opciones combinadas
-            # D&A → "LL · general", "LL · LV", "LL · MV"
+            # D&A → "LL · LV", "LL · MV"
             # No D&A → "PT0163"
             _combined_opts = []
             for _mod in allowed:
@@ -1331,7 +1363,12 @@ if st.session_state.active_tab == "📊 Planificación":
             _cur_variant = st.session_state.line_bench_variant.get(_pid, {}).get(line_id, "")
 
             if _cur_model in _DA_VALUES:
-                _vlbl_cur = _cur_variant if _cur_variant in ("LV", "MV") else "general"
+                if _cur_variant in ("LV", "MV"):
+                    _vlbl_cur = _cur_variant
+                else:
+                    # Sin variante explícita: usar la regla general real de la familia
+                    # (da_bench_type donde da_variant=''); si no está configurada, LV
+                    _vlbl_cur = _da_default_variant.get(_cur_model, _VARIANT_LABELS[0])
                 _cur_opt = f"{_cur_model} · {_vlbl_cur}"
             else:
                 _cur_opt = _cur_model
@@ -1348,16 +1385,13 @@ if st.session_state.active_tab == "📊 Planificación":
                     index=_combined_opts.index(_cur_opt),
                     key=f"sel_combined_{_pid}_{line_id}",
                     label_visibility="collapsed",
-                    help=(
-                        "Para familias D&A elige también la variante de prueba. "
-                        "'general' usa la regla configurada para esa familia."
-                    ),
+                    help="Para familias D&A elige también la variante de prueba: LV o MV.",
                 )
 
             # Descomponer la selección en modelo + variante
             if " · " in _sel:
                 _m, _vlbl = _sel.split(" · ", 1)
-                _variant = "" if _vlbl == "general" else _vlbl
+                _variant = _vlbl  # always LV or MV now
             else:
                 _m = _sel
                 _variant = ""
@@ -1434,8 +1468,21 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         "\n\nEn procesos manuales puros, machine_time puede ser 0."
     )
 
+    _fc1, _fc2 = st.columns(2)
+    _filter_t_model = _fc1.text_input("Filtrar por modelo", key="filter_times_model", placeholder="ej. PT0163")
+    _filter_t_proc  = _fc2.text_input("Filtrar por proceso", key="filter_times_proc",  placeholder="ej. ML")
+    _mask_t = pd.Series([True] * len(times_df), index=times_df.index)
+    if _filter_t_model:
+        _mask_t &= times_df["model"].astype(str).str.contains(_filter_t_model, case=False, na=False)
+    if _filter_t_proc:
+        _mask_t &= times_df["process"].astype(str).str.contains(_filter_t_proc, case=False, na=False)
+    _times_visible = times_df[_mask_t].copy()
+    _times_hidden  = times_df[~_mask_t].copy()
+    if _filter_t_model or _filter_t_proc:
+        st.caption(f"Mostrando {len(_times_visible)} de {len(times_df)} filas. Las filas ocultas se conservan al guardar.")
+
     edited_times = st.data_editor(
-        times_df,
+        _times_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -1464,8 +1511,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button("💾 Guardar tiempos"):
-        out = edited_times.copy()
-        out = out.reset_index(drop=True)
+        out = pd.concat([_times_hidden, edited_times], ignore_index=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
@@ -1690,8 +1736,21 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         [c for c in ["da_value", "da_variant", "bench_type"] if c in _bmap_ed.columns]
     ].copy()
 
+    _filter_da = st.selectbox(
+        "Filtrar por valor D&A",
+        options=["(Todos)", "SL", "SD", "LL", "LD", "XD", "XL"],
+        key="filter_da_bench",
+    )
+    if _filter_da != "(Todos)":
+        _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
+        _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
+        st.caption(f"Mostrando {len(_bmap_visible)} de {len(_bmap_show)} filas. Las filas ocultas se conservan al guardar.")
+    else:
+        _bmap_visible = _bmap_show.copy()
+        _bmap_hidden  = _bmap_show.iloc[0:0].copy()
+
     edited_bench_map = st.data_editor(
-        _bmap_show,
+        _bmap_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -1720,7 +1779,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button("💾 Guardar asignación D&A"):
-        _out = edited_bench_map.copy()
+        _out = pd.concat([_bmap_hidden, edited_bench_map], ignore_index=True)
         _out["plant_id"] = plant_id
         # Normalizar da_variant: None → ''
         if "da_variant" in _out.columns:
@@ -2065,7 +2124,7 @@ def _precompute_all_bases_for_tab4(
 
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader("Resultados de capacidad")
-    st.caption(f"Horas efectivas planta: {hours_eff:.2f} h/semana")
+    st.caption(f"Horas efectivas planta: {_fmt_num(hours_eff)} h/semana")
 
     summary_rows = []
     detail_by_line = {}
@@ -2297,8 +2356,8 @@ if st.session_state.active_tab == "📈 Resultados":
                     "Variante":                               _variant_label,
                     "Tipo de prueba":                         _res["test_type"],
                     "Banco aplicable":                        _res["bench_type"],
-                    "Capacidad máxima por bancos (UDS/SEM)":  _res["bench_capacity"] if _res["bench_capacity"] > 0 else "—",
-                    "Demanda (UDS/SEM)":                      round(_dem_w, 2),
+                    "Capacidad máxima por bancos (UDS/SEM)":  _fmt_num(_res["bench_capacity"]) if _res["bench_capacity"] > 0 else "—",
+                    "Demanda (UDS/SEM)":                      _fmt_num(_dem_w),
                     "Observación":                            _res["observation"],
                 })
 
@@ -2391,7 +2450,7 @@ if st.session_state.active_tab == "📈 Resultados":
                     "Horas demandadas/sem":        round(_horas_dem,  2),
                     "Capacidad máxima (UDS/SEM)":  round(_cap_max,    2),
                     "Demanda total (UDS/SEM)":     round(_dem_total,  2),
-                    "Saturación (%)":              round(_sat,        1),
+                    "Saturación (%)":              round(_sat,        2),
                     "Estado":                      _estado,
                 })
 
@@ -2405,8 +2464,14 @@ if st.session_state.active_tab == "📈 Resultados":
                         return ["background-color: #fff8e1;"] * len(row)
                     return [""] * len(row)
 
+                _agg_num_cols = [
+                    "Horas disponibles/sem", "Horas demandadas/sem",
+                    "Capacidad máxima (UDS/SEM)", "Demanda total (UDS/SEM)", "Saturación (%)",
+                ]
                 st.dataframe(
-                    _agg_df.style.apply(_style_estado, axis=1),
+                    _agg_df.style
+                        .apply(_style_estado, axis=1)
+                        .format({c: _fmt_num for c in _agg_num_cols if c in _agg_df.columns}),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2487,7 +2552,8 @@ if st.session_state.active_tab == "📈 Resultados":
                 def _fmt_deficit(v):
                     try:
                         f = float(v)
-                        return f"+{f:.2f}" if f >= 0 else f"{f:.2f}"
+                        base = _fmt_num(abs(f))
+                        return f"+{base}" if f >= 0 else f"-{base}"
                     except (TypeError, ValueError):
                         return str(v)
 
@@ -2495,11 +2561,16 @@ if st.session_state.active_tab == "📈 Resultados":
                 _deficit_cols_a = [
                     "Déficit actual", "Déficit con +1 banco", "Déficit con +2 bancos"
                 ]
+                _cap_cols_a = [
+                    "Cap. actual (UDS/SEM)", "Demanda (UDS/SEM)",
+                    "Cap. con +1 banco", "Cap. con +2 bancos",
+                ]
+                _fmt_a = {c: _fmt_num for c in _cap_cols_a if c in _sim_a_df.columns}
+                _fmt_a.update({c: _fmt_deficit for c in _deficit_cols_a if c in _sim_a_df.columns})
                 st.dataframe(
                     _sim_a_df.style
                         .apply(_style_sim_a, axis=1)
-                        .format({c: _fmt_deficit for c in _deficit_cols_a
-                                 if c in _sim_a_df.columns}),
+                        .format(_fmt_a),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2553,8 +2624,14 @@ if st.session_state.active_tab == "📈 Resultados":
                     return ["background-color: #e8f5e9;"] * len(row)
 
                 _sim_b_df = pd.DataFrame(_sim_b_rows)
+                _fmt_b = {
+                    c: _fmt_num for c in ["Cap. por banco (UDS/SEM)", "Demanda actual (UDS/SEM)"]
+                    if c in _sim_b_df.columns
+                }
                 st.dataframe(
-                    _sim_b_df.style.apply(_style_sim_b, axis=1),
+                    _sim_b_df.style
+                        .apply(_style_sim_b, axis=1)
+                        .format(_fmt_b),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2578,7 +2655,7 @@ if st.session_state.active_tab == "📈 Resultados":
                 if not productive_m.empty:
                     cap_week = float(productive_m["capacity"].min())
 
-            header = f"{nave}-{base_line} — Modelo: {model} | Capacidad máx: {cap_week:.2f} uds/sem | Cuello: {bottleneck_proc} | Demanda: {demand_week:.2f} uds/sem"
+            header = f"{nave}-{base_line} — Modelo: {model} | Capacidad máx: {_fmt_num(cap_week)} uds/sem | Cuello: {bottleneck_proc} | Demanda: {_fmt_num(demand_week)} uds/sem"
             with st.expander(header, expanded=False):
                 if merged is None or merged.empty:
                     st.warning("No hay datos suficientes (revisa estaciones o tiempos).")
