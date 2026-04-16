@@ -23,6 +23,184 @@ def _fmt_num(v) -> str:
     return f"{f:.2f}".rstrip("0")
 
 
+# =========================================================
+# INTERNACIONALIZACIÓN — solo textos fijos de interfaz
+# =========================================================
+_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "es": {
+        "app_title":          "Motor Estratégico de Capacidad Productiva",
+        "app_subtitle":       "Planificación por líneas y simulación de mix",
+        "plant_select":       "Seleccionar planta",
+        "plant_new":          "Nueva planta",
+        "plant_add":          "Añadir planta",
+        "nav_label":          "Pantalla:",
+        "nav_global":         "🌐 Global",
+        "nav_planning":       "📊 Planificación",
+        "nav_config":         "⚙️ Configuración (Power User)",
+        "nav_results":        "📈 Resultados",
+        "nav_mix":            "🧭 Capacidad según mix",
+        "dark_mode_label":    "🌙  Modo oscuro",
+        "lang_label":         "🌍 Idioma",
+        "params_header":      "Parámetros de planificación",
+        "param_hours_week":   "Horas por semana",
+        "param_shifts":       "Turnos",
+        "param_availability": "Disponibilidad",
+        "param_efficiency":   "Eficiencia",
+        "param_days_year":    "Días abiertos al año",
+        "param_days_week":    "Días abiertos por semana",
+        "caption_hours_eff":  "Horas efectivas planta:",
+        "caption_weeks_equiv":"Semanas equivalentes:",
+        "unit_week":          "h/semana",
+        "unit_year":          "sem/año",
+        "btn_save_params":    "Guardar parámetros de esta planta",
+        "msg_params_saved":   "Parámetros guardados para esta planta",
+        "tab_global_header":  "🌐 Visión Global Multiplanta",
+        "tab_plan_header":    "Selección de modelo por línea",
+        "plan_col_model":     "Modelo / Variante de prueba",
+        "plan_col_demand":    "Demanda (UDS/SEM)",
+        "tab_cfg_header":     "Configuración (power user)",
+        "tab_cfg_caption":    "Aquí se mantienen modelos, tiempos, estaciones y compatibilidades. Usuario normal NO debería tocar esto.",
+        "btn_save_models":    "💾 Guardar modelos",
+        "msg_models_saved":   "Modelos guardados",
+        "btn_save_times":     "💾 Guardar tiempos",
+        "msg_times_saved":    "Tiempos guardados",
+        "btn_save_stations":  "💾 Guardar estaciones / operarios",
+        "msg_stations_saved": "Guardado",
+        "btn_save_compat":    "💾 Guardar compatibilidades",
+        "msg_compat_saved":   "Compatibilidades guardadas",
+        "btn_save_benches":   "💾 Guardar bancos",
+        "msg_benches_saved":  "Configuración de bancos guardada",
+        "btn_save_da":        "💾 Guardar asignación D&A",
+        "msg_da_saved":       "Asignación D&A guardada",
+        "tab_res_header":     "Resultados de capacidad",
+        "res_hours_eff":      "Horas efectivas planta:",
+        "res_no_lines":       "Sin líneas planificadas. Selecciona modelos y demanda en Planificación.",
+        "res_detail_header":  "## 🔎 Detalle fino por línea y subproceso",
+        "res_detail_caption": "Desglose real por subproceso. El cuello de botella es el subproceso con menor capacidad.",
+        "tab_mix_header":     "Capacidad según mix",
+    },
+    "en": {
+        "app_title":          "Strategic Production Capacity Engine",
+        "app_subtitle":       "Line planning and mix simulation",
+        "plant_select":       "Select plant",
+        "plant_new":          "New plant",
+        "plant_add":          "Add plant",
+        "nav_label":          "Screen:",
+        "nav_global":         "🌐 Global",
+        "nav_planning":       "📊 Planning",
+        "nav_config":         "⚙️ Configuration (Power User)",
+        "nav_results":        "📈 Results",
+        "nav_mix":            "🧭 Capacity by mix",
+        "dark_mode_label":    "🌙  Dark mode",
+        "lang_label":         "🌍 Language",
+        "params_header":      "Planning parameters",
+        "param_hours_week":   "Hours per week",
+        "param_shifts":       "Shifts",
+        "param_availability": "Availability",
+        "param_efficiency":   "Efficiency",
+        "param_days_year":    "Open days per year",
+        "param_days_week":    "Open days per week",
+        "caption_hours_eff":  "Effective plant hours:",
+        "caption_weeks_equiv":"Equivalent weeks:",
+        "unit_week":          "h/week",
+        "unit_year":          "wk/year",
+        "btn_save_params":    "Save plant parameters",
+        "msg_params_saved":   "Parameters saved for this plant",
+        "tab_global_header":  "🌐 Multi-Plant Global View",
+        "tab_plan_header":    "Model selection by line",
+        "plan_col_model":     "Model / Test variant",
+        "plan_col_demand":    "Demand (UNITS/WEEK)",
+        "tab_cfg_header":     "Configuration (power user)",
+        "tab_cfg_caption":    "Models, times, stations and compatibilities are managed here. Regular users should NOT modify this.",
+        "btn_save_models":    "💾 Save models",
+        "msg_models_saved":   "Models saved",
+        "btn_save_times":     "💾 Save times",
+        "msg_times_saved":    "Times saved",
+        "btn_save_stations":  "💾 Save stations / operators",
+        "msg_stations_saved": "Saved",
+        "btn_save_compat":    "💾 Save compatibilities",
+        "msg_compat_saved":   "Compatibilities saved",
+        "btn_save_benches":   "💾 Save banks",
+        "msg_benches_saved":  "Bank configuration saved",
+        "btn_save_da":        "💾 Save D&A assignment",
+        "msg_da_saved":       "D&A assignment saved",
+        "tab_res_header":     "Capacity results",
+        "res_hours_eff":      "Effective plant hours:",
+        "res_no_lines":       "No lines planned. Select models and demand in Planning.",
+        "res_detail_header":  "## 🔎 Fine detail by line and subprocess",
+        "res_detail_caption": "Actual breakdown by subprocess. The bottleneck is the subprocess with the lowest capacity.",
+        "tab_mix_header":     "Capacity by mix",
+    },
+    "eu": {
+        "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
+        "app_subtitle":       "Lerro-planifikazioa eta mix simulazioa",
+        "plant_select":       "Planta hautatu",
+        "plant_new":          "Planta berria",
+        "plant_add":          "Planta gehitu",
+        "nav_label":          "Pantaila:",
+        "nav_global":         "🌐 Global",
+        "nav_planning":       "📊 Planifikazioa",
+        "nav_config":         "⚙️ Konfigurazioa (Power User)",
+        "nav_results":        "📈 Emaitzak",
+        "nav_mix":            "🧭 Mix-aren araberako ahalmena",
+        "dark_mode_label":    "🌙  Modu iluna",
+        "lang_label":         "🌍 Hizkuntza",
+        "params_header":      "Planifikazio-parametroak",
+        "param_hours_week":   "Asteko orduak",
+        "param_shifts":       "Txandak",
+        "param_availability": "Erabilgarritasuna",
+        "param_efficiency":   "Efizientzia",
+        "param_days_year":    "Urteko egun irekiak",
+        "param_days_week":    "Asteko egun irekiak",
+        "caption_hours_eff":  "Plantaren ordu eraginkorrak:",
+        "caption_weeks_equiv":"Aste baliokideak:",
+        "unit_week":          "o/aste",
+        "unit_year":          "aste/urte",
+        "btn_save_params":    "Planta honen parametroak gorde",
+        "msg_params_saved":   "Parametroak gordeta planta honentzat",
+        "tab_global_header":  "🌐 Planta Anitzeko Ikuspegi Globala",
+        "tab_plan_header":    "Eredu-hautaketa lerroaren arabera",
+        "plan_col_model":     "Eredua / Proba-aldaera",
+        "plan_col_demand":    "Eskaria (UNITATE/ASTE)",
+        "tab_cfg_header":     "Konfigurazioa (power user)",
+        "tab_cfg_caption":    "Ereduak, denborak, estazioak eta bateragarritasunak kudeatzen dira hemen. Erabiltzaile arruntak EZ luke ukitu behar.",
+        "btn_save_models":    "💾 Ereduak gorde",
+        "msg_models_saved":   "Ereduak gordeta",
+        "btn_save_times":     "💾 Denborak gorde",
+        "msg_times_saved":    "Denborak gordeta",
+        "btn_save_stations":  "💾 Estazioak / operarioak gorde",
+        "msg_stations_saved": "Gordeta",
+        "btn_save_compat":    "💾 Bateragarritasunak gorde",
+        "msg_compat_saved":   "Bateragarritasunak gordeta",
+        "btn_save_benches":   "💾 Bankuak gorde",
+        "msg_benches_saved":  "Bankuen konfigurazioa gordeta",
+        "btn_save_da":        "💾 D&A esleipena gorde",
+        "msg_da_saved":       "D&A esleipena gordeta",
+        "tab_res_header":     "Ahalmen-emaitzak",
+        "res_hours_eff":      "Plantaren ordu eraginkorrak:",
+        "res_no_lines":       "Lerrorik ez planifikatua. Hautatu ereduak eta eskaria Planifikazioan.",
+        "res_detail_header":  "## 🔎 Xehetasun zehatza lerro eta azpiprozesuka",
+        "res_detail_caption": "Benetako banaketa azpiprozesuka. Botila-lepoa ahalmen txikiena duen azpiprozesua da.",
+        "tab_mix_header":     "Mix-aren araberako ahalmena",
+    },
+}
+
+_LANG_OPTIONS = {"es": "🇪🇸 Español", "en": "🇬🇧 English", "eu": "🟥🟩⬜ Euskara"}
+
+
+def t(key: str) -> str:
+    """Resuelve un texto de interfaz en el idioma activo de la sesión.
+
+    Fallback en cascada: idioma activo → español → la propia clave.
+    Nunca lanza excepción: si la clave no existe devuelve la clave tal cual.
+    """
+    lang = st.session_state.get("lang", "es")
+    return (
+        _TRANSLATIONS.get(lang, _TRANSLATIONS["es"])
+        .get(key, _TRANSLATIONS["es"].get(key, key))
+    )
+
+
 def _build_css(dark: bool) -> str:
     """Genera el bloque <style> completo según modo claro/oscuro."""
     if dark:
@@ -222,9 +400,11 @@ def _load_logo():
 logo = _load_logo()
 st.sidebar.image(logo, use_container_width=True)
 
-# Inicializar modo oscuro (una vez por sesión)
+# Inicializar preferencias de interfaz (una vez por sesión)
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
+if "lang" not in st.session_state:
+    st.session_state.lang = "es"
 
 # Inyectar CSS según modo actual
 st.markdown(_build_css(st.session_state.dark_mode), unsafe_allow_html=True)
@@ -677,7 +857,7 @@ if plants_df.empty:
 plant_names = plants_df["name"].astype(str).tolist()
 
 selected_plant_name = st.sidebar.selectbox(
-    "Seleccionar planta",
+    t("plant_select"),
     plant_names
 )
 
@@ -690,9 +870,9 @@ st.session_state["plant_id"] = plant_id
 # =========================================================
 # AÑADIR NUEVA PLANTA
 # =========================================================
-new_plant_name = st.sidebar.text_input("Nueva planta")
+new_plant_name = st.sidebar.text_input(t("plant_new"))
 
-if st.sidebar.button("Añadir planta"):
+if st.sidebar.button(t("plant_add")):
     if new_plant_name.strip():
         next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
 
@@ -712,8 +892,8 @@ if st.sidebar.button("Añadir planta"):
 # APP CONFIG
 # =========================================================
 
-st.title("Motor Estratégico de Capacidad Productiva")
-st.caption("Planificación por líneas y simulación de mix")
+st.title(t("app_title"))
+st.caption(t("app_subtitle"))
 
 # =========================================================
 # SIDEBAR – NAVEGACIÓN
@@ -725,16 +905,30 @@ _PAGES = [
     "📈 Resultados",
     "🧭 Capacidad según mix",
 ]
-st.sidebar.radio("Pantalla:", _PAGES, key="active_tab")
+_PAGES_I18N = {p: k for p, k in zip(_PAGES, [
+    "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix"
+])}
+st.sidebar.radio(
+    t("nav_label"),
+    _PAGES,
+    key="active_tab",
+    format_func=lambda x: t(_PAGES_I18N[x]),
+)
 
 st.sidebar.divider()
-st.sidebar.checkbox("🌙  Modo oscuro", key="dark_mode")
+st.sidebar.checkbox(t("dark_mode_label"), key="dark_mode")
+st.sidebar.selectbox(
+    t("lang_label"),
+    options=list(_LANG_OPTIONS.keys()),
+    format_func=lambda x: _LANG_OPTIONS[x],
+    key="lang",
+)
 st.sidebar.divider()
 
 # =========================================================
 # SIDEBAR – PARÁMETROS (SIEMPRE VISIBLES)
 # =========================================================
-st.sidebar.header("Parámetros de planificación")
+st.sidebar.header(t("params_header"))
 
 settings_df = load_table("settings")
 settings_df = settings_df[settings_df["plant_id"] == plant_id]
@@ -760,28 +954,28 @@ else:
     }
 
 hours_week = st.sidebar.number_input(
-    "Horas por semana",
+    t("param_hours_week"),
     min_value=0.0,
     value=current_settings["hours_week"],
     step=0.5
 )
 
 shifts = st.sidebar.number_input(
-    "Turnos",
+    t("param_shifts"),
     min_value=1,
     value=current_settings["shifts"],
     step=1
 )
 
 availability = st.sidebar.slider(
-    "Disponibilidad",
+    t("param_availability"),
     0.0, 1.0,
     current_settings["availability"],
     0.01
 )
 
 efficiency = st.sidebar.slider(
-    "Eficiencia",
+    t("param_efficiency"),
     0.0, 1.0,
     current_settings["efficiency"],
     0.01
@@ -790,14 +984,14 @@ efficiency = st.sidebar.slider(
 st.sidebar.divider()
 
 days_open_year = st.sidebar.number_input(
-    "Días abiertos al año",
+    t("param_days_year"),
     min_value=1,
     value=current_settings["days_open_year"],
     step=1
 )
 
 days_open_week = st.sidebar.number_input(
-    "Días abiertos por semana",
+    t("param_days_week"),
     min_value=1,
     max_value=7,
     value=current_settings["days_open_week"],
@@ -807,14 +1001,14 @@ days_open_week = st.sidebar.number_input(
 weeks_equiv = days_open_year / max(days_open_week, 1)
 hours_eff = hours_week * shifts * availability * efficiency
 
-st.sidebar.caption(f"Horas efectivas planta: **{_fmt_num(hours_eff)} h/semana**")
-st.sidebar.caption(f"Semanas equivalentes: **{_fmt_num(weeks_equiv)} sem/año**")
+st.sidebar.caption(f"{t('caption_hours_eff')} **{_fmt_num(hours_eff)} {t('unit_week')}**")
+st.sidebar.caption(f"{t('caption_weeks_equiv')} **{_fmt_num(weeks_equiv)} {t('unit_year')}**")
 
 # ---------------------------------------------------------
 # GUARDAR PARÁMETROS DE ESTA PLANTA
 # ---------------------------------------------------------
 
-if st.sidebar.button("Guardar parámetros de esta planta"):
+if st.sidebar.button(t("btn_save_params")):
 
     new_settings = pd.DataFrame([{
         "plant_id": plant_id,
@@ -828,7 +1022,7 @@ if st.sidebar.button("Guardar parámetros de esta planta"):
 
     save_table(new_settings, "settings")
 
-    st.sidebar.success("Parámetros guardados para esta planta")
+    st.sidebar.success(t("msg_params_saved"))
 
 # =========================================================
 # CARGA DATOS
@@ -1022,7 +1216,7 @@ def load_all_plants_data():
 # =========================================================
 
 if st.session_state.active_tab == "🌐 Global":
-    st.subheader("🌐 Visión Global Multiplanta")
+    st.subheader(t("tab_global_header"))
     st.info("Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.")
     
     # --- Cargar TODOS los datos de TODAS las plantas ---
@@ -1402,7 +1596,7 @@ if st.session_state.active_tab == "🌐 Global":
 _DA_VALUES = {"SL", "SD", "LL", "LD", "XD", "XL"}
 
 if st.session_state.active_tab == "📊 Planificación":
-    st.subheader("Selección de modelo por línea")
+    st.subheader(t("tab_plan_header"))
 
     # Session state anidado por planta: line_model[plant_id][line_id], line_demand[plant_id][line_id]
     if "line_model" not in st.session_state:
@@ -1447,8 +1641,8 @@ if st.session_state.active_tab == "📊 Planificación":
         st.markdown(f"#### NAVE {nave}")
 
         _ch1, _ch2 = st.columns([1.8, 1.0])
-        _ch1.caption("Modelo / Variante de prueba")
-        _ch2.caption("Demanda (UDS/SEM)")
+        _ch1.caption(t("plan_col_model"))
+        _ch2.caption(t("plan_col_demand"))
 
         nave_line_ids = sorted(
             stations_df.loc[stations_df["nave"] == nave, "line_id"]
@@ -1543,8 +1737,8 @@ if st.session_state.active_tab == "📊 Planificación":
 # 2) CONFIGURACIÓN (POWER USER)
 # =========================================================
 if st.session_state.active_tab == "⚙️ Configuración (Power User)":
-    st.subheader("Configuración (power user)")
-    st.caption("Aquí se mantienen modelos, tiempos, estaciones y compatibilidades. Usuario normal NO debería tocar esto.")
+    st.subheader(t("tab_cfg_header"))
+    st.caption(t("tab_cfg_caption"))
 
     # --- A) Gestión de modelos (checkbox)
     st.markdown("## Gestión de modelos (models.csv)")
@@ -1561,7 +1755,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         }
     )
 
-    if st.button("💾 Guardar modelos"):
+    if st.button(t("btn_save_models")):
         out = edited_models.copy()
         out = out.reset_index(drop=True)
         out["model"] = out["model"].astype(str).str.strip()
@@ -1572,7 +1766,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.session_state["models_saved"] = True
 
     if st.session_state.get("models_saved"):
-        st.success("Modelos guardados")
+        st.success(t("msg_models_saved"))
         st.session_state["models_saved"] = False
 
     st.divider()
@@ -1633,7 +1827,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         }
     )
 
-    if st.button("💾 Guardar tiempos"):
+    if st.button(t("btn_save_times")):
         out = pd.concat([_times_hidden, edited_times], ignore_index=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["process"] = out["process"].astype(str).str.strip()
@@ -1673,7 +1867,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.session_state["times_warning"] = None
 
     if st.session_state.get("times_saved"):
-        st.success("Tiempos guardados")
+        st.success(t("msg_times_saved"))
         st.session_state["times_saved"] = False
 
     st.divider()
@@ -1691,7 +1885,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         }
     )
 
-    if st.button("💾 Guardar estaciones / operarios"):
+    if st.button(t("btn_save_stations")):
         out = edited_stations.copy()
         out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
@@ -1720,7 +1914,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.session_state["stations_warning"] = None
 
     if st.session_state.get("stations_saved"):
-        st.success("Guardado")
+        st.success(t("msg_stations_saved"))
         st.session_state["stations_saved"] = False
 
     st.divider()
@@ -1772,14 +1966,14 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                     "compatible": 1 if checked else 0
                 })
 
-    if st.button("💾 Guardar compatibilidades"):
+    if st.button(t("btn_save_compat")):
         out = pd.DataFrame(edited_rows)
         out["plant_id"] = plant_id
         save_table(out, "compatibility")
         st.session_state["compat_saved"] = True
 
     if st.session_state.get("compat_saved"):
-        st.success("Compatibilidades guardadas")
+        st.success(t("msg_compat_saved"))
         st.session_state["compat_saved"] = False
 
     # --- E) Bancos de prueba (fase 1 informativa) ----------------------------
@@ -1825,13 +2019,13 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         },
     )
 
-    if st.button("💾 Guardar bancos"):
+    if st.button(t("btn_save_benches")):
         _out = edited_bench_cfg.copy()
         _out["plant_id"] = plant_id
         save_table(_out, "test_bench_config")
         st.session_state["bench_cfg_saved"] = True
     if st.session_state.get("bench_cfg_saved"):
-        st.success("Configuración de bancos guardada")
+        st.success(t("msg_benches_saved"))
         st.session_state["bench_cfg_saved"] = False
 
     # E2) Asignación valor D&A → tipo de banco
@@ -1901,7 +2095,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         },
     )
 
-    if st.button("💾 Guardar asignación D&A"):
+    if st.button(t("btn_save_da")):
         _out = pd.concat([_bmap_hidden, edited_bench_map], ignore_index=True)
         _out["plant_id"] = plant_id
         # Normalizar da_variant: None → ''
@@ -1910,7 +2104,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         save_table(_out, "da_bench_type")
         st.session_state["bench_map_saved"] = True
     if st.session_state.get("bench_map_saved"):
-        st.success("Asignación D&A guardada")
+        st.success(t("msg_da_saved"))
         st.session_state["bench_map_saved"] = False
 
 # =========================================================
@@ -2246,8 +2440,8 @@ def _precompute_all_bases_for_tab4(
 
 
 if st.session_state.active_tab == "📈 Resultados":
-    st.subheader("Resultados de capacidad")
-    st.caption(f"Horas efectivas planta: {_fmt_num(hours_eff)} h/semana")
+    st.subheader(t("tab_res_header"))
+    st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
 
     summary_rows = []
     detail_by_line = {}
@@ -2765,11 +2959,11 @@ if st.session_state.active_tab == "📈 Resultados":
                     "Comprueba que el proceso PARA existe en tiempos y estaciones."
                 )
         else:
-            st.info("Sin líneas planificadas. Selecciona modelos y demanda en Planificación.")
+            st.info(t("res_no_lines"))
 
         st.divider()
-        st.markdown("## 🔎 Detalle fino por línea y subproceso")
-        st.caption("Desglose real por subproceso. El cuello de botella es el subproceso con menor capacidad.")
+        st.markdown(t("res_detail_header"))
+        st.caption(t("res_detail_caption"))
 
         for line_id, (nave, base_line, model, demand_week, bottleneck_proc, merged) in detail_by_line.items():
             cap_week = 0.0
@@ -2866,7 +3060,7 @@ if st.session_state.active_tab == "📈 Resultados":
 
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
-    st.subheader("Capacidad según mix")
+    st.subheader(t("tab_mix_header"))
     st.info(
         "La planta produce **horas configurables**.\n"
         "La capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\n"
