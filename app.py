@@ -2303,12 +2303,15 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         [c for c in ["da_value", "da_variant", "bench_type"] if c in _bmap_ed.columns]
     ].copy()
 
+    _da_opts = [t("cfg_filter_da_all"), "SL", "SD", "LL", "LD", "XD", "XL"]
+    if st.session_state.get("filter_da_bench", "") not in _da_opts:
+        st.session_state["filter_da_bench"] = t("cfg_filter_da_all")
     _filter_da = st.selectbox(
         t("cfg_filter_da"),
-        options=[t("cfg_filter_da_all"), "SL", "SD", "LL", "LD", "XD", "XL"],
+        options=_da_opts,
         key="filter_da_bench",
     )
-    if _filter_da != t("cfg_filter_da_all"):
+    if _filter_da in _DA_VALUES:
         _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
         _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
         st.caption(t("cfg_showing_rows").format(shown=len(_bmap_visible), total=len(_bmap_show)))
