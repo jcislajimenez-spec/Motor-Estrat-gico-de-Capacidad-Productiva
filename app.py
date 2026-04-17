@@ -124,6 +124,51 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_per_model":          "### Por modelo",
         "mix_slider_label":       "Ocupación simulada (% de planta)",
         "mix_slider_help":        "Este % es una ocupación estructural teórica (no planificación real).",
+        # Configuración — títulos limpios (sin sufijos de fichero)
+        "cfg_models_header":      "## Gestión de modelos",
+        "cfg_times_header":       "## Tiempos por modelo y proceso",
+        "cfg_times_info":         "**Machine time** = tiempo automático fijo no reducible (test automático, horno, robot, ciclo máquina). No depende del nº de operarios.\n\n**Labor time** = horas-hombre secuenciales necesarias por unidad (preparación, conexión, montaje manual, supervisión, retirada).\n\nLa capacidad se calcula mediante:\n\n`cycle_time_real = max(machine_time, labor_time / operarios)`\n\n`capacity = (horas_efectivas × estaciones) / cycle_time_real`\n\nEn procesos manuales puros, machine_time puede ser 0.",
+        "cfg_stations_header":    "## Configuración de estaciones y operarios",
+        "cfg_compat_header":      "## Compatibilidad modelo ↔ línea",
+        "cfg_line_label":         "Línea",
+        "cfg_benches_section":    "## Bancos de prueba",
+        "cfg_benches_caption":    "Configuración de bancos disponibles por planta y asignación de tipo de prueba a cada valor D&A. **Esta asignación es una simplificación operativa de esta fase**: dentro de una misma familia puede haber equipos con prueba LV y equipos con prueba MV. Solo aplica a los valores D&A: SL, SD, LL, LD, XD, XL.",
+        "cfg_da_header":          "### Asignación valor D&A → tipo de banco",
+        "cfg_da_caption":         "Usa los valores exactos de D&A tal como existen hoy en el motor (SL, SD, LL, LD, XD, XL). En esta fase no se baja al nivel de modelo real. La asignación es una simplificación operativa: una misma familia puede tener equipos LV y equipos MV que esta fase no distingue todavía.",
+        "cfg_col_bench_type":     "Tipo de banco",
+        "cfg_col_bench_qty":      "Cantidad de bancos",
+        "cfg_col_da_value":       "Valor D&A en el motor",
+        "cfg_col_da_variant":     "Variante de prueba",
+        "cfg_col_bench_apply":    "Banco aplicable",
+        # Planificación
+        "plan_no_models":         "sin modelos compatibles activos (revisa compatibilidades/modelos).",
+        # Resultados — bancos
+        "res_bench_header":       "## 🏭 Análisis de bancos de prueba",
+        "res_bench_info":         "**La información de bancos de prueba es una referencia adicional para detectar posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\nPara cada línea D&A puedes especificar la **Variante de prueba** (LV o MV) en la pestaña Planificación. Si no se especifica, se aplica la regla general configurada para esa familia. La asignación por familia sigue siendo una simplificación operativa cuando la variante no se informa.",
+        "res_bench_warning":      "Configuración de bancos no disponible para esta planta. Rellena las tablas en ⚙️ Configuración → Bancos de prueba.",
+        "res_no_da_lines":        "No hay líneas D&A activas con bancos configurados para esta planta.",
+        "res_bench_agg_header":   "### Resumen agregado por tipo de banco",
+        "res_bench_agg_text":     "La tabla anterior analiza cada línea D&A **por separado**, mostrando si los bancos disponibles podrían limitarla de forma individual. Sin embargo, en la práctica varias líneas pueden compartir el mismo conjunto de bancos, y lo que determina si hay un problema real es el consumo **conjunto**.\n\nEste resumen agrega todas las líneas que usan el mismo tipo de banco y compara las horas totales disponibles con las horas totales que la demanda actual requeriría:\n\n- **Horas disponibles/sem**: horas efectivas de la planta × número de bancos de ese tipo.\n- **Horas demandadas/sem**: suma de (demanda de cada línea × tiempo de prueba PARA de esa línea). Indica cuántas horas de banco se necesitarían para cubrir la demanda planificada.\n- **Demanda total (UDS/SEM)**: suma de unidades semanales de todas las líneas que usan ese banco.\n- **Capacidad máxima (UDS/SEM)**: capacidad equivalente del conjunto de bancos con la mezcla actual de familias.\n- **Saturación (%)**: nivel de ocupación del conjunto de bancos.\n\nEste bloque es informativo y **no modifica la lógica oficial del motor** (capacidad, saturación, déficit ni cuello de botella).",
+        "res_bench_sim_header":   "### 🔭 Simulación estratégica de escenarios de banco",
+        "res_bench_sim_warning":  "**Este bloque muestra proyecciones hipotéticas a partir de la configuración actual de bancos.** Los valores de +1 y +2 bancos son estimaciones lineales orientativas. No modifican la capacidad oficial del motor ni ningún otro resultado de la herramienta.",
+        "res_bench_q1":           "#### ¿Qué pasaría si añadiera más bancos?",
+        "res_bench_q2":           "#### ¿Cuántos bancos hacen falta para cubrir la demanda actual?",
+        "res_no_da_data":         "No hay líneas D&A con datos suficientes para calcular el resumen agregado. Comprueba que el proceso PARA existe en tiempos y estaciones.",
+        # Global — adicionales
+        "global_sim_turns":       "⚠️ Simulación: todas las plantas con **{n} turno(s)**",
+        "global_mod_detail_plant": "**Planta:**",
+        "global_mod_detail_hours": "**Horas estimadas:**",
+        "global_mod_delete":      "🗑️ Eliminar",
+        "global_model_selected":  "**Modelo seleccionado:**",
+        # Mix — panel derecho
+        "mix_ceiling_label":      "**Techo estructural planta:**",
+        "mix_max_hours_year":     "**Horas máximas/año (estructura):**",
+        "mix_excess_label":       "Exceso estructural:",
+        "mix_occupancy_label":    "**Ocupación agregada:**",
+        "mix_hours_week_label":   "**Horas/sem (equivalentes):**",
+        "mix_hours_year_label":   "**Horas/año (equivalentes):**",
+        "mix_pot_caption":        "🎚️ Uso del potenciómetro:",
+        "mix_equiv_label":        "Equivalente aproximado",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -222,6 +267,51 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_per_model":          "### By model",
         "mix_slider_label":       "Simulated occupancy (% of plant)",
         "mix_slider_help":        "This % is a theoretical structural occupancy (not real planning).",
+        # Configuration — clean titles (no file name suffixes)
+        "cfg_models_header":      "## Model management",
+        "cfg_times_header":       "## Times by model and process",
+        "cfg_times_info":         "**Machine time** = fixed automatic non-reducible time (automatic test, oven, robot, machine cycle). Does not depend on the number of operators.\n\n**Labor time** = sequential man-hours required per unit (preparation, wiring, manual assembly, supervision, retrieval).\n\nCapacity is calculated as:\n\n`cycle_time_real = max(machine_time, labor_time / operators)`\n\n`capacity = (effective_hours × stations) / cycle_time_real`\n\nFor purely manual processes, machine_time may be 0.",
+        "cfg_stations_header":    "## Station and operator configuration",
+        "cfg_compat_header":      "## Model ↔ line compatibility",
+        "cfg_line_label":         "Line",
+        "cfg_benches_section":    "## Test benches",
+        "cfg_benches_caption":    "Configuration of available benches per plant and assignment of test type to each D&A value. **This assignment is an operational simplification for this phase**: within the same family there may be equipment with LV test and equipment with MV test. Applies only to D&A values: SL, SD, LL, LD, XD, XL.",
+        "cfg_da_header":          "### D&A value → bench type assignment",
+        "cfg_da_caption":         "Use the exact D&A values as they exist today in the engine (SL, SD, LL, LD, XD, XL). At this phase, we do not go down to the real model level. The assignment is an operational simplification: the same family may have LV and MV equipment that this phase does not yet distinguish.",
+        "cfg_col_bench_type":     "Bench type",
+        "cfg_col_bench_qty":      "Number of benches",
+        "cfg_col_da_value":       "D&A value in engine",
+        "cfg_col_da_variant":     "Test variant",
+        "cfg_col_bench_apply":    "Applicable bench",
+        # Planning
+        "plan_no_models":         "no active compatible models (check compatibilities/models).",
+        # Results — benches
+        "res_bench_header":       "## 🏭 Test bench analysis",
+        "res_bench_info":         "**Test bench information is an additional reference to detect potential limitations. It does not yet replace the official line capacity calculation.**\n\nFor each D&A line you can specify the **Test variant** (LV or MV) in the Planning tab. If not specified, the general rule configured for that family applies. Family-level assignment remains an operational simplification when the variant is not informed.",
+        "res_bench_warning":      "Bench configuration not available for this plant. Fill in the tables in ⚙️ Configuration → Test benches.",
+        "res_no_da_lines":        "No active D&A lines with benches configured for this plant.",
+        "res_bench_agg_header":   "### Aggregated summary by bench type",
+        "res_bench_agg_text":     "The table above analyses each D&A line **separately**, showing whether the available benches could individually limit it. However, in practice several lines may share the same set of benches, and what determines whether there is a real problem is the **combined** consumption.\n\nThis summary aggregates all lines using the same bench type and compares total available hours with total hours that current demand would require:\n\n- **Available hours/week**: effective plant hours × number of benches of that type.\n- **Demanded hours/week**: sum of (line demand × PARA test time for that line). Indicates how many bench hours would be needed to meet planned demand.\n- **Total demand (UDS/WEEK)**: total weekly units of all lines using that bench.\n- **Max capacity (UDS/WEEK)**: equivalent capacity of the bench set with the current family mix.\n- **Saturation (%)**: occupancy level of the bench set.\n\nThis block is informational and **does not modify the official engine logic** (capacity, saturation, deficit or bottleneck).",
+        "res_bench_sim_header":   "### 🔭 Strategic bench scenario simulation",
+        "res_bench_sim_warning":  "**This block shows hypothetical projections based on the current bench configuration.** Values for +1 and +2 benches are linear indicative estimates. They do not modify the official engine capacity or any other result of the tool.",
+        "res_bench_q1":           "#### What would happen if more benches were added?",
+        "res_bench_q2":           "#### How many benches are needed to cover current demand?",
+        "res_no_da_data":         "No D&A lines with sufficient data to calculate the aggregated summary. Check that the PARA process exists in times and stations.",
+        # Global — additional
+        "global_sim_turns":       "⚠️ Simulation: all plants with **{n} shift(s)**",
+        "global_mod_detail_plant": "**Plant:**",
+        "global_mod_detail_hours": "**Estimated hours:**",
+        "global_mod_delete":      "🗑️ Delete",
+        "global_model_selected":  "**Selected model:**",
+        # Mix — right panel
+        "mix_ceiling_label":      "**Plant structural ceiling:**",
+        "mix_max_hours_year":     "**Max hours/year (structure):**",
+        "mix_excess_label":       "Structural excess:",
+        "mix_occupancy_label":    "**Aggregate occupancy:**",
+        "mix_hours_week_label":   "**Hours/week (equivalent):**",
+        "mix_hours_year_label":   "**Hours/year (equivalent):**",
+        "mix_pot_caption":        "🎚️ Dial usage:",
+        "mix_equiv_label":        "Approximate equivalent",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -320,6 +410,51 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_per_model":          "### Ereduaren arabera",
         "mix_slider_label":       "Simulatutako okupazioa (plantaren %)",
         "mix_slider_help":        "% hau okupazio estrukturala teorikoa da (ez benetako planifikazioa).",
+        # Konfigurazioa — izenburuak garbiak (fitxategi-atzizkiak gabe)
+        "cfg_models_header":      "## Ereduen kudeaketa",
+        "cfg_times_header":       "## Denborak ereduaren eta prozesuaren arabera",
+        "cfg_times_info":         "**Machine time** = denbora automatiko finko ez-murrizgarria (test automatikoa, labea, robota, makina-zikloa). Ez dago operario kopuruaren mende.\n\n**Labor time** = unitateko beharrezko gizakideko ordu sekuentzialak (prestaketa, konexioa, eskuzko muntaketa, gainbegiraketa, erretiratzea).\n\nAhalmena honela kalkulatzen da:\n\n`cycle_time_real = max(machine_time, labor_time / operarioak)`\n\n`capacity = (ordu_eraginkorrak × estazioak) / cycle_time_real`\n\nEskuzko prozesu hutsetan, machine_time 0 izan daiteke.",
+        "cfg_stations_header":    "## Estazioen eta operarioen konfigurazioa",
+        "cfg_compat_header":      "## Eredua ↔ lerro bateragarritasuna",
+        "cfg_line_label":         "Lerroa",
+        "cfg_benches_section":    "## Proba-bankuak",
+        "cfg_benches_caption":    "Plantako eskuragarri dauden bankuen konfigurazioa eta proba-motaren esleipena D&A balio bakoitzarentzat. **Esleipen hau fase honen sinplifikazio operatiboa da**: familia beraren barruan egon daitezke LV probarekin eta MV probarekin ekipoak. D&A balioentzat soilik aplikatzen da: SL, SD, LL, LD, XD, XL.",
+        "cfg_da_header":          "### D&A balioa → banku-mota esleipena",
+        "cfg_da_caption":         "Erabili D&A balio zehatzak gaur egun motor-ean dauden moduan (SL, SD, LL, LD, XD, XL). Fase honetan ez da eredu-mailaraino jaisten. Esleipena sinplifikazio operatiboa da: familia berdinak LV eta MV ekipoak izan ditzake fase honek oraindik bereizten ez dituena.",
+        "cfg_col_bench_type":     "Banku-mota",
+        "cfg_col_bench_qty":      "Banku kopurua",
+        "cfg_col_da_value":       "D&A balioa motor-ean",
+        "cfg_col_da_variant":     "Proba-aldaera",
+        "cfg_col_bench_apply":    "Banku aplikagarria",
+        # Planifikazioa
+        "plan_no_models":         "eredu bateragarri aktiborik gabe (egiaztatu bateragarritasunak/ereduak).",
+        # Emaitzak — bankuak
+        "res_bench_header":       "## 🏭 Proba-bankuen analisia",
+        "res_bench_info":         "**Proba-bankuen informazioa erreferentzia gehigarri bat da muga posibleak hautemateko. Oraindik ez du lerroaren ahalmen-kalkulu ofiziala ordezkatzen.**\n\nD&A lerro bakoitzeko **Proba-aldaera** (LV edo MV) zehazteko aukera daukazu Planifikazio fitxan. Zehaztuta ez badago, familia horretarako konfiguratutako arau orokorra aplikatzen da. Familia-mailako esleipena sinplifikazio operatiboa izaten jarraitzen du aldaera informatzen ez denean.",
+        "res_bench_warning":      "Bankuen konfigurazioa ez dago eskuragarri planta honentzat. Bete taulak ⚙️ Konfigurazioa → Proba-bankuak atalean.",
+        "res_no_da_lines":        "Ez dago D&A lerro aktiborik planta honetarako konfiguratutako bankuekin.",
+        "res_bench_agg_header":   "### Banku-motaren araberako laburpen agregatua",
+        "res_bench_agg_text":     "Aurreko taulak D&A lerro bakoitza **bereizita** aztertzen du, eskuragarri dauden bankuek indibidualkiro mugatu dezaketen erakutsiz. Hala ere, praktikan hainbat lerrork banku multzo bera parteka dezakete, eta arazo erreala dagoen zehazteko kontsumo **bateratua** da garrantzitsua.\n\nLaburpen honek banku-mota bera erabiltzen duten lerro guztiak agregatzen ditu eta eskuragarri dauden ordu guztiak egungo eskaerak beharko lukeen ordu guztiekin alderatzen ditu:\n\n- **Eskuragarri dauden orduak/aste**: plantaren ordu eraginkorrak × banku-mota horretako banku kopurua.\n- **Eskatutako orduak/aste**: lerro bakoitzaren eskaera × PARA proba-denbora batura.\n- **Eskaera totala (UDS/ASTE)**: banku hori erabiltzen duten lerro guztien asteko unitate batura.\n- **Ahalmen maximoa (UDS/ASTE)**: egungo familia-mixarekin banku multzoak duen baliokide ahalmena.\n- **Saturazioa (%)**: banku multzoko okupazio-maila.\n\nBloke hau informatibo da eta **ez du motor-aren logika ofiziala aldatzen** (ahalmena, saturazioa, defizita ez eta botila-lepoa).",
+        "res_bench_sim_header":   "### 🔭 Bankuen eszenatokien simulazio estrategikoa",
+        "res_bench_sim_warning":  "**Bloke honek bankuen egungo konfiguraziotik abiatutako proiekzio hipotetikoak erakusten ditu.** +1 eta +2 bankuen balioak estimazio lineal orientagarriak dira. Ez dute motor-aren ahalmen ofiziala aldatzen.",
+        "res_bench_q1":           "#### Zer gertatuko litzateke banku gehiago gehituz gero?",
+        "res_bench_q2":           "#### Zenbat banku behar dira egungo eskaria estaltzeko?",
+        "res_no_da_data":         "Ez dago laburpen agregatua kalkulatzeko datu nahiko dituzten D&A lerrorik. Egiaztatu PARA prozesua denboretan eta estazioetan existitzen dela.",
+        # Global — gehigarriak
+        "global_sim_turns":       "⚠️ Simulazioa: planta guztiak **{n} txanda(k)** dituztelarik",
+        "global_mod_detail_plant": "**Planta:**",
+        "global_mod_detail_hours": "**Ordu estimatuak:**",
+        "global_mod_delete":      "🗑️ Ezabatu",
+        "global_model_selected":  "**Hautatutako eredua:**",
+        # Mix — eskuineko panela
+        "mix_ceiling_label":      "**Plantaren teto estrukturala:**",
+        "mix_max_hours_year":     "**Ordu maximoak/urte (egitura):**",
+        "mix_excess_label":       "Gainezkoa estrukturala:",
+        "mix_occupancy_label":    "**Okupazio agregatua:**",
+        "mix_hours_week_label":   "**Ordu/aste (baliokideak):**",
+        "mix_hours_year_label":   "**Ordu/urte (baliokideak):**",
+        "mix_pot_caption":        "🎚️ Potentziornetroa erabilita:",
+        "mix_equiv_label":        "Baliokide hurbila",
     },
 }
 
@@ -1405,7 +1540,7 @@ if st.session_state.active_tab == "🌐 Global":
     u_sem_col, u_year_col, h_sem_col, h_year_col = esc_map[escenario]
     
     if shifts_override:
-        st.caption(f"⚠️ Simulación: todas las plantas con **{shifts_override} turno(s)**")
+        st.caption(t("global_sim_turns").format(n=shifts_override))
     
     st.divider()
     
@@ -1606,7 +1741,7 @@ if st.session_state.active_tab == "🌐 Global":
                 "Capacidad (h/año)": model_df["Capacidad (h/año)"].sum(),
             }])], ignore_index=True)
             
-            st.markdown(f"**Modelo seleccionado:** {selected_model}")
+            st.markdown(f"{t('global_model_selected')} {selected_model}")
             st.dataframe(
                 model_df.style.format({
                     "Capacidad (uds/sem)": "{:.1f}",
@@ -1640,9 +1775,9 @@ if st.session_state.active_tab == "🌐 Global":
         # Mostrar modificaciones existentes
         for i, mod in enumerate(st.session_state.global_modificaciones):
             with st.expander(f"📌 {mod['nombre']}", expanded=False):
-                st.write(f"**Planta:** {mod['planta']}")
-                st.write(f"**Horas estimadas:** {mod['horas']} h")
-                if st.button("🗑️ Eliminar", key=f"del_mod_{i}"):
+                st.write(f"{t('global_mod_detail_plant')} {mod['planta']}")
+                st.write(f"{t('global_mod_detail_hours')} {mod['horas']} h")
+                if st.button(t("global_mod_delete"), key=f"del_mod_{i}"):
                     st.session_state.global_modificaciones.pop(i)
                     st.rerun()
         
@@ -1795,7 +1930,7 @@ if st.session_state.active_tab == "📊 Planificación":
         for line_id in nave_line_ids:
             allowed = allowed_by_line.get(line_id, [])
             if not allowed:
-                st.info(f"{line_id}: sin modelos compatibles activos (revisa compatibilidades/modelos).")
+                st.info(f"{line_id}: {t('plan_no_models')}")
                 continue
 
             # Construir lista de opciones combinadas
@@ -1881,7 +2016,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     st.caption(t("tab_cfg_caption"))
 
     # --- A) Gestión de modelos (checkbox)
-    st.markdown("## Gestión de modelos (models.csv)")
+    st.markdown(t("cfg_models_header"))
 
     models_editor = models_df.copy()
     models_editor["active"] = models_editor["active"].astype(int).clip(0, 1).astype(bool)
@@ -1912,18 +2047,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     st.divider()
 
     # --- B) Tiempos por modelo y proceso
-    st.markdown("## Tiempos por modelo y proceso (models_process_times.csv)")
-
-    st.info(
-        "**Machine time** = tiempo automático fijo no reducible "
-        "(test automático, horno, robot, ciclo máquina). No depende del nº de operarios.\n\n"
-        "**Labor time** = horas-hombre secuenciales necesarias por unidad "
-        "(preparación, conexión, montaje manual, supervisión, retirada).\n\n"
-        "La capacidad se calcula mediante:\n\n"
-        "`cycle_time_real = max(machine_time, labor_time / operarios)`\n\n"
-        "`capacity = (horas_efectivas × estaciones) / cycle_time_real`"
-        "\n\nEn procesos manuales puros, machine_time puede ser 0."
-    )
+    st.markdown(t("cfg_times_header"))
+    st.info(t("cfg_times_info"))
 
     _fc1, _fc2 = st.columns(2)
     _filter_t_model = _fc1.text_input(t("cfg_filter_model"), key="filter_times_model", placeholder="ej. PT0163")
@@ -2013,7 +2138,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     st.divider()
 
     # --- C) Estaciones / operarios por línea y proceso
-    st.markdown("## Configuración de estaciones y operarios por línea/proceso (lines_process_stations.csv)")
+    st.markdown(t("cfg_stations_header"))
 
     edited_stations = st.data_editor(
         stations_df,
@@ -2061,7 +2186,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
 
     
     # --- D) Compatibilidad modelo ↔ línea (checkbox)
-    st.markdown("## Compatibilidad modelo ↔ línea (compatibility.csv)")
+    st.markdown(t("cfg_compat_header"))
 
     # Sólo mostramos modelos existentes en models.csv (da igual activos o no: compat se define aquí)
     all_models = sorted(models_df["model"].astype(str).str.strip().unique().tolist())
@@ -2080,8 +2205,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
             nave = "N1"
             base_line = parts[0]
 
-        st.markdown(f"### Línea {line_id}")
-        with st.expander(f"Línea {line_id}", expanded=True):
+        st.markdown(f"### {t('cfg_line_label')} {line_id}")
+        with st.expander(f"{t('cfg_line_label')} {line_id}", expanded=True):
             cols = st.columns(3)
             for i, m in enumerate(all_models):
                 current = compat_df[
@@ -2116,15 +2241,10 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.success(t("msg_compat_saved"))
         st.session_state["compat_saved"] = False
 
-    # --- E) Bancos de prueba (fase 1 informativa) ----------------------------
+    # --- E) Bancos de prueba ----------------------------
     st.divider()
-    st.markdown("## Bancos de prueba (D&A — fase 1 informativa)")
-    st.caption(
-        "Configuración de bancos disponibles por planta y asignación de tipo de prueba "
-        "a cada valor D&A. **Esta asignación es una simplificación operativa de esta fase**: "
-        "dentro de una misma familia puede haber equipos con prueba LV y equipos con prueba MV. "
-        "Solo aplica a los valores D&A: SL, SD, LL, LD, XD, XL."
-    )
+    st.markdown(t("cfg_benches_section"))
+    st.caption(t("cfg_benches_caption"))
 
     # E1) Bancos disponibles por tipo
     st.markdown(t("cfg_benches_by_type"))
@@ -2146,10 +2266,10 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         num_rows="dynamic",
         column_config={
             "bench_type": st.column_config.TextColumn(
-                "Tipo de banco", help="LV, MV o XL_MV"
+                t("cfg_col_bench_type"), help="LV, MV o XL_MV"
             ),
             "quantity": st.column_config.NumberColumn(
-                "Cantidad de bancos", min_value=0, step=1, format="%d"
+                t("cfg_col_bench_qty"), min_value=0, step=1, format="%d"
             ),
             "hours_per_unit_override": st.column_config.NumberColumn(
                 "Tiempo manual h/ud (solo si PARA no existe)",
@@ -2169,13 +2289,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         st.session_state["bench_cfg_saved"] = False
 
     # E2) Asignación valor D&A → tipo de banco
-    st.markdown("### Asignación valor D&A → tipo de banco")
-    st.caption(
-        "Usa los valores exactos de D&A tal como existen hoy en el motor "
-        "(SL, SD, LL, LD, XD, XL). En esta fase no se baja al nivel de modelo real. "
-        "La asignación es una simplificación operativa: una misma familia puede tener "
-        "equipos LV y equipos MV que esta fase no distingue todavía."
-    )
+    st.markdown(t("cfg_da_header"))
+    st.caption(t("cfg_da_caption"))
 
     _bmap_ed = load_table("da_bench_type")
     if "plant_id" in _bmap_ed.columns:
@@ -2212,13 +2327,13 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         num_rows="dynamic",
         column_config={
             "da_value": st.column_config.SelectboxColumn(
-                "Valor D&A en el motor",
+                t("cfg_col_da_value"),
                 options=["SL", "SD", "LL", "LD", "XD", "XL"],
                 help="Familia D&A tal como existe hoy en el motor.",
                 required=True,
             ),
             "da_variant": st.column_config.SelectboxColumn(
-                "Variante de prueba",
+                t("cfg_col_da_variant"),
                 options=["", "LV", "MV"],
                 help=(
                     "Vacío = regla general de la familia. "
@@ -2227,7 +2342,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                 required=False,
             ),
             "bench_type": st.column_config.SelectboxColumn(
-                "Banco aplicable",
+                t("cfg_col_bench_apply"),
                 options=["LV", "MV", "XL_MV"],
                 help="Banco que se asigna a esta combinación.",
                 required=True,
@@ -2753,14 +2868,8 @@ if st.session_state.active_tab == "📈 Resultados":
         # No modifica ningún valor oficial del motor.
         # -----------------------------------------------------------------
         st.divider()
-        st.markdown("## 🏭 Análisis de bancos de prueba")
-        st.info(
-            "**La información de bancos de prueba es una referencia adicional para detectar "
-            "posibles limitaciones. Todavía no sustituye el cálculo oficial de capacidad de la línea.**\n\n"
-            "Para cada línea D&A puedes especificar la **Variante de prueba** (LV o MV) en la pestaña "
-            "Planificación. Si no se especifica, se aplica la regla general configurada para esa familia. "
-            "La asignación por familia sigue siendo una simplificación operativa cuando la variante no se informa."
-        )
+        st.markdown(t("res_bench_header"))
+        st.info(t("res_bench_info"))
 
         _bench_cfg_r = load_table("test_bench_config")
         _bench_map_r = load_table("da_bench_type")
@@ -2780,10 +2889,7 @@ if st.session_state.active_tab == "📈 Resultados":
             _bench_map_r = pd.DataFrame()
 
         if _bench_cfg_r.empty or _bench_map_r.empty:
-            st.warning(
-                "Configuración de bancos no disponible para esta planta. "
-                "Rellena las tablas en ⚙️ Configuración → Bancos de prueba."
-            )
+            st.warning(t("res_bench_warning"))
         elif detail_by_line:
             _bench_rows = []
             for _lid, (_nave, _bline, _model, _dem_w, _bot, _mrg) in detail_by_line.items():
@@ -2822,32 +2928,14 @@ if st.session_state.active_tab == "📈 Resultados":
                 _bench_df = pd.DataFrame(_bench_rows)
                 st.dataframe(_bench_df, use_container_width=True, hide_index=True)
             else:
-                st.info("No hay líneas D&A activas con bancos configurados para esta planta.")
+                st.info(t("res_no_da_lines"))
 
             # -----------------------------------------------------------------
             # RESUMEN AGREGADO POR TIPO DE BANCO
             # -----------------------------------------------------------------
             st.markdown("---")
-            st.markdown("### Resumen agregado por tipo de banco")
-            st.markdown(
-                "La tabla anterior analiza cada línea D&A **por separado**, mostrando si los bancos "
-                "disponibles podrían limitarla de forma individual. Sin embargo, en la práctica varias "
-                "líneas pueden compartir el mismo conjunto de bancos, y lo que determina si hay un "
-                "problema real es el consumo **conjunto**.\n\n"
-                "Este resumen agrega todas las líneas que usan el mismo tipo de banco y compara las "
-                "horas totales disponibles con las horas totales que la demanda actual requeriría:\n\n"
-                "- **Horas disponibles/sem**: horas efectivas de la planta × número de bancos de ese tipo.\n"
-                "- **Horas demandadas/sem**: suma de (demanda de cada línea × tiempo de prueba PARA de esa "
-                "línea). Indica cuántas horas de banco se necesitarían para cubrir la demanda planificada.\n"
-                "- **Demanda total (UDS/SEM)**: suma de unidades semanales de todas las líneas que usan ese banco.\n"
-                "- **Capacidad máxima (UDS/SEM)**: capacidad equivalente del conjunto de bancos con la mezcla "
-                "actual de familias. Este valor usa el tiempo medio ponderado real de las líneas activas, "
-                "por lo que puede cambiar si varía la combinación de familias planificadas.\n"
-                "- **Saturación (%)**: nivel de ocupación del conjunto de bancos. Indica qué porcentaje de "
-                "las horas disponibles consume la demanda actual.\n\n"
-                "Este bloque es informativo y **no modifica la lógica oficial del motor** "
-                "(capacidad, saturación, déficit ni cuello de botella)."
-            )
+            st.markdown(t("res_bench_agg_header"))
+            st.markdown(t("res_bench_agg_text"))
 
             # Recolectar datos numéricos por banco — solo líneas D&A con tiempo_para válido
             _agg_input: dict[str, dict] = {}
@@ -2939,18 +3027,13 @@ if st.session_state.active_tab == "📈 Resultados":
                 # No modifica ningún valor oficial del motor.
                 # ---------------------------------------------------------
                 st.markdown("---")
-                st.markdown("### 🔭 Simulación estratégica de escenarios de banco")
-                st.warning(
-                    "**Este bloque muestra proyecciones hipotéticas a partir de la "
-                    "configuración actual de bancos.** "
-                    "Los valores de +1 y +2 bancos son estimaciones lineales orientativas. "
-                    "No modifican la capacidad oficial del motor ni ningún otro resultado de la herramienta."
-                )
+                st.markdown(t("res_bench_sim_header"))
+                st.warning(t("res_bench_sim_warning"))
 
                 import math as _math
 
                 # ── Bloque A: proyección con bancos adicionales ────────────
-                st.markdown("#### ¿Qué pasaría si añadiera más bancos?")
+                st.markdown(t("res_bench_q1"))
 
                 _sim_a_rows = []
                 for _row in _agg_rows:
@@ -3033,7 +3116,7 @@ if st.session_state.active_tab == "📈 Resultados":
                 )
 
                 # ── Bloque B: bancos mínimos necesarios ───────────────────
-                st.markdown("#### ¿Cuántos bancos hacen falta para cubrir la demanda actual?")
+                st.markdown(t("res_bench_q2"))
 
                 _sim_b_rows = []
                 for _row in _agg_rows:
@@ -3094,10 +3177,7 @@ if st.session_state.active_tab == "📈 Resultados":
                 )
 
             else:
-                st.info(
-                    "No hay líneas D&A con datos suficientes para calcular el resumen agregado. "
-                    "Comprueba que el proceso PARA existe en tiempos y estaciones."
-                )
+                st.info(t("res_no_da_data"))
         else:
             st.info(t("res_no_lines"))
 
@@ -3364,7 +3444,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         st.caption(t("mix_sim_caption"))
 
         H_max_plant = float(sum(max_h_week_by_line.values())) if max_h_week_by_line else 0.0
-        st.markdown(f"**Techo estructural planta (H_max_plant):** {H_max_plant:.2f} h/sem")
+        st.markdown(f"{t('mix_ceiling_label')} {H_max_plant:.2f} h/sem")
 
         maxH_by_model = {}
         for m in cycle_by_model.keys():
@@ -3440,12 +3520,12 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                 total_h_year = total_h_week * float(weeks_equiv)
                 H_max_plant_year = H_max_plant * float(weeks_equiv)
 
-                st.write(f"**Horas máximas/año (estructura):** {H_max_plant_year:.2f}")
+                st.write(f"{t('mix_max_hours_year')} {H_max_plant_year:.2f}")
                 if exceso > 0:
-                    st.error(f"Exceso estructural: {exceso:.2f}%")
-                st.write(f"**Ocupación agregada:** {total_selected_pct:.2f}%")
-                st.write(f"**Horas/sem (equivalentes):** {total_h_week:.2f}")
-                st.write(f"**Horas/año (equivalentes):** {total_h_year:.2f}")
+                    st.error(f"{t('mix_excess_label')} {exceso:.2f}%")
+                st.write(f"{t('mix_occupancy_label')} {total_selected_pct:.2f}%")
+                st.write(f"{t('mix_hours_week_label')} {total_h_week:.2f}")
+                st.write(f"{t('mix_hours_year_label')} {total_h_year:.2f}")
 
             with left:
                 st.markdown(t("mix_per_model"))
@@ -3485,12 +3565,12 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
 
                             # Uso del potenciómetro (% del recorrido del slider)
                             pct_of_slider = (sel_pct / max_pct * 100.0) if max_pct > 0 else 0.0
-                            st.caption(f"🎚️ Uso del potenciómetro: **{pct_of_slider:.0f}%**")
+                            st.caption(f"{t('mix_pot_caption')} **{pct_of_slider:.0f}%**")
 
                             # Equivalencias dinámicas
                             st.markdown(
                                 f"<div style='background:#f8f9fa;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:8px;'>"
-                                f"<b>Equivalente aproximado</b><br>"
+                                f"<b>{t('mix_equiv_label')}</b><br>"
                                 f"Uds/sem: <b>{sel_u_week:.2f}</b> · Uds/año: <b>{sel_u_year:.2f}</b><br>"
                                 f"h/sem: <b>{sel_h_week:.2f}</b> · h/año: <b>{sel_h_year:.2f}</b>"
                                 f"</div>",
