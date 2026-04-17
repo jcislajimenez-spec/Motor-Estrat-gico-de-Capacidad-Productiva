@@ -78,6 +78,52 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_detail_header":  "## 🔎 Detalle fino por línea y subproceso",
         "res_detail_caption": "Desglose real por subproceso. El cuello de botella es el subproceso con menor capacidad.",
         "tab_mix_header":     "Capacidad según mix",
+        # Sidebar mensajes
+        "plant_added":            "Planta añadida",
+        "plant_name_empty":       "Escribe un nombre de planta",
+        # Global
+        "global_info":            "Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.",
+        "global_scenario_header": "### 📊 Selector de Escenario",
+        "global_capacity_header": "### 📈 Resumen Global de Capacidad",
+        "global_avail_header":    "### ⚡ Capacidad vs Disponibilidad",
+        "global_avail_caption":   "Introduce la disponibilidad anual (horas) para cada planta.",
+        "global_model_header":    "### 🔧 Capacidad por Modelo",
+        "global_model_select":    "Seleccionar modelo:",
+        "global_model_info":      "Selecciona un modelo específico para ver su capacidad en todas las plantas.",
+        "global_no_models":       "No hay modelos activos en ninguna planta.",
+        "global_mods_header":     "### 🔧 Modificaciones Necesarias",
+        "global_mods_caption":    "Registro de mejoras planificadas",
+        "global_mod_expander":    "➕ Añadir modificación",
+        "global_mod_name":        "Nombre de la modificación",
+        "global_mod_plant":       "Planta",
+        "global_mod_hours":       "Horas estimadas",
+        "global_mod_btn":         "Añadir",
+        "global_milestones_header": "### 📊 Resumen de Hitos",
+        "global_metric_count":    "Nº Hitos",
+        "global_metric_hours":    "Horas Totales",
+        "global_distrib_header":  "### 📊 Distribución de Capacidad por Planta",
+        "global_usage_header":    "### 📋 Uso de Líneas por Planta",
+        # Configuración
+        "cfg_filter_model":       "Filtrar por modelo",
+        "cfg_filter_process":     "Filtrar por proceso",
+        "cfg_showing_rows":       "Mostrando {shown} de {total} filas. Las filas ocultas se conservan al guardar.",
+        "cfg_benches_by_type":    "### Bancos disponibles por tipo",
+        # Resultados
+        "res_no_results_yet":     "No hay resultados aún. Selecciona modelos/demanda en Planificación.",
+        "res_chart_header":       "## 📊 Representación gráfica de Demanda vs Capacidad",
+        "res_no_data":            "No hay datos suficientes (revisa estaciones o tiempos).",
+        # Mix
+        "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
+        "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
+        "mix_level2":             "### Nivel 2 — Por línea (rango estructural)",
+        "mix_level3":             "## Nivel 3 — Simulador de ocupación estructural por modelo",
+        "mix_sim_caption":        "Este simulador **NO** cambia la planificación real. Solo sirve para explorar, en términos de **horas estructurales (h/sem)**, cuánto 'peso' podría llegar a ocupar cada modelo dentro del **techo estructural** de la planta.",
+        "mix_no_combos":          "No hay combinaciones válidas para calcular el rango. Revisa compatibilidades, estaciones y/o tiempos.",
+        "mix_no_valid_models":    "No hay modelos válidos (capacidad estructural > 0) para construir el simulador.",
+        "mix_plant_agg":          "### Agregado planta",
+        "mix_per_model":          "### Por modelo",
+        "mix_slider_label":       "Ocupación simulada (% de planta)",
+        "mix_slider_help":        "Este % es una ocupación estructural teórica (no planificación real).",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -130,6 +176,52 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_detail_header":  "## 🔎 Fine detail by line and subprocess",
         "res_detail_caption": "Actual breakdown by subprocess. The bottleneck is the subprocess with the lowest capacity.",
         "tab_mix_header":     "Capacity by mix",
+        # Sidebar messages
+        "plant_added":            "Plant added",
+        "plant_name_empty":       "Enter a plant name",
+        # Global
+        "global_info":            "This view shows aggregated information from **ALL plants** simultaneously, independent of the sidebar plant selector.",
+        "global_scenario_header": "### 📊 Scenario Selector",
+        "global_capacity_header": "### 📈 Global Capacity Summary",
+        "global_avail_header":    "### ⚡ Capacity vs Availability",
+        "global_avail_caption":   "Enter the annual availability (hours) for each plant.",
+        "global_model_header":    "### 🔧 Capacity by Model",
+        "global_model_select":    "Select model:",
+        "global_model_info":      "Select a specific model to see its capacity across all plants.",
+        "global_no_models":       "No active models in any plant.",
+        "global_mods_header":     "### 🔧 Pending Modifications",
+        "global_mods_caption":    "Record of planned improvements",
+        "global_mod_expander":    "➕ Add modification",
+        "global_mod_name":        "Modification name",
+        "global_mod_plant":       "Plant",
+        "global_mod_hours":       "Estimated hours",
+        "global_mod_btn":         "Add",
+        "global_milestones_header": "### 📊 Milestones Summary",
+        "global_metric_count":    "No. Milestones",
+        "global_metric_hours":    "Total Hours",
+        "global_distrib_header":  "### 📊 Capacity Distribution by Plant",
+        "global_usage_header":    "### 📋 Line Usage by Plant",
+        # Configuration
+        "cfg_filter_model":       "Filter by model",
+        "cfg_filter_process":     "Filter by process",
+        "cfg_showing_rows":       "Showing {shown} of {total} rows. Hidden rows are preserved when saving.",
+        "cfg_benches_by_type":    "### Available benches by type",
+        # Results
+        "res_no_results_yet":     "No results yet. Select models/demand in Planning.",
+        "res_chart_header":       "## 📊 Demand vs Capacity chart",
+        "res_no_data":            "Insufficient data (check stations or times).",
+        # Mix
+        "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
+        "mix_level1":             "### Level 1 — Plant global (structural range)",
+        "mix_level2":             "### Level 2 — By line (structural range)",
+        "mix_level3":             "## Level 3 — Structural occupancy simulator by model",
+        "mix_sim_caption":        "This simulator does **NOT** change the actual planning. It only helps explore, in terms of **structural hours (h/week)**, how much 'weight' each model could occupy within the plant's **structural ceiling**.",
+        "mix_no_combos":          "No valid combinations to calculate the range. Check compatibilities, stations and/or times.",
+        "mix_no_valid_models":    "No valid models (structural capacity > 0) to build the simulator.",
+        "mix_plant_agg":          "### Plant aggregate",
+        "mix_per_model":          "### By model",
+        "mix_slider_label":       "Simulated occupancy (% of plant)",
+        "mix_slider_help":        "This % is a theoretical structural occupancy (not real planning).",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -182,6 +274,52 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_detail_header":  "## 🔎 Xehetasun zehatza lerro eta azpiprozesuka",
         "res_detail_caption": "Benetako banaketa azpiprozesuka. Botila-lepoa ahalmen txikiena duen azpiprozesua da.",
         "tab_mix_header":     "Mix-aren araberako ahalmena",
+        # Sidebar mezuak
+        "plant_added":            "Planta gehitu da",
+        "plant_name_empty":       "Idatzi planta izen bat",
+        # Global
+        "global_info":            "Ikuspegi honek **PLANTA GUZTIEN** informazio agregatua erakusten du aldi berean, sidebar-eko planta-hautatzailearekin independentean.",
+        "global_scenario_header": "### 📊 Eszenatoki-hautatzailea",
+        "global_capacity_header": "### 📈 Ahalmen Global Laburpena",
+        "global_avail_header":    "### ⚡ Ahalmena vs Erabilgarritasuna",
+        "global_avail_caption":   "Sartu urteko erabilgarritasuna (orduak) planta bakoitzarentzat.",
+        "global_model_header":    "### 🔧 Ahalmena ereduaren arabera",
+        "global_model_select":    "Eredua hautatu:",
+        "global_model_info":      "Hautatu eredu zehatz bat planta guztietan duen ahalmena ikusteko.",
+        "global_no_models":       "Ez dago eredu aktiborik inongo plantan.",
+        "global_mods_header":     "### 🔧 Beharrezko Aldaketak",
+        "global_mods_caption":    "Planeatutako hobetze-erregistroa",
+        "global_mod_expander":    "➕ Aldaketa gehitu",
+        "global_mod_name":        "Aldaketaren izena",
+        "global_mod_plant":       "Planta",
+        "global_mod_hours":       "Ordu estimatuak",
+        "global_mod_btn":         "Gehitu",
+        "global_milestones_header": "### 📊 Hito-laburpena",
+        "global_metric_count":    "Hito kop.",
+        "global_metric_hours":    "Ordu Guztiak",
+        "global_distrib_header":  "### 📊 Ahalmen-banaketa plantaren arabera",
+        "global_usage_header":    "### 📋 Lerro-erabilera plantaren arabera",
+        # Konfigurazioa
+        "cfg_filter_model":       "Ereduaren arabera iragazi",
+        "cfg_filter_process":     "Prozesuaren arabera iragazi",
+        "cfg_showing_rows":       "{shown} errenkada erakusten, {total}etik. Ezkutuko errenkadak gordeta mantentzen dira.",
+        "cfg_benches_by_type":    "### Eskuragarri dauden bankuak motaren arabera",
+        # Emaitzak
+        "res_no_results_yet":     "Oraindik emaitzarik ez. Hautatu ereduak/eskaria Planifikazioan.",
+        "res_chart_header":       "## 📊 Eskaera vs Ahalmena grafikoa",
+        "res_no_data":            "Datu nahikorik ez (egiaztatu estazioak edo denborak).",
+        # Mix
+        "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
+        "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
+        "mix_level2":             "### 2. maila — Lerroz lerro (tarte estrukturala)",
+        "mix_level3":             "## 3. maila — Ereduaren araberako okupazio estrukturalaren simulagailua",
+        "mix_sim_caption":        "Simulagailu honek ez du benetako planifikazioa **ALDATZEN**. **Ordu estrukturalei (o/aste)** dagokienez, eredu bakoitzak plantaren **teto estrukturalaren** barruan zenbat 'pisu' har lezakeen esploratzeko balio du.",
+        "mix_no_combos":          "Ez dago tarte estrukturala kalkulatzeko konbinazio baliodunterik. Egiaztatu bateragarritasunak, estazioak eta/edo denborak.",
+        "mix_no_valid_models":    "Ez dago eredu baliodunik (ahalmen estrukturala > 0) simulagailua eraikitzeko.",
+        "mix_plant_agg":          "### Planta agregatua",
+        "mix_per_model":          "### Ereduaren arabera",
+        "mix_slider_label":       "Simulatutako okupazioa (plantaren %)",
+        "mix_slider_help":        "% hau okupazio estrukturala teorikoa da (ez benetako planifikazioa).",
     },
 }
 
@@ -397,9 +535,6 @@ ASSETS_DIR = resource_path("assets")
 def _load_logo():
     return Image.open(os.path.join(ASSETS_DIR, "ingeteam_logo.jpg"))
 
-logo = _load_logo()
-st.sidebar.image(logo, use_container_width=True)
-
 # Inicializar preferencias de interfaz (una vez por sesión)
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
@@ -408,6 +543,19 @@ if "lang" not in st.session_state:
 
 # Inyectar CSS según modo actual
 st.markdown(_build_css(st.session_state.dark_mode), unsafe_allow_html=True)
+
+# ── Franja de controles compacta — encima del logo ────────────────
+_ui_c1, _ui_c2 = st.sidebar.columns(2)
+_ui_c1.checkbox(t("dark_mode_label"), key="dark_mode")
+_ui_c2.selectbox(
+    t("lang_label"),
+    options=list(_LANG_OPTIONS.keys()),
+    format_func=lambda x: _LANG_OPTIONS[x],
+    key="lang",
+)
+
+logo = _load_logo()
+st.sidebar.image(logo, use_container_width=True)
 
 DATA_DIR = resource_path("data")
 
@@ -884,10 +1032,10 @@ if st.sidebar.button(t("plant_add")):
         plants_df = pd.concat([plants_df, new_row], ignore_index=True)
         save_table(plants_df, "plants")
 
-        st.sidebar.success("Planta añadida")
+        st.sidebar.success(t("plant_added"))
         st.rerun()
     else:
-        st.sidebar.warning("Escribe un nombre de planta")
+        st.sidebar.warning(t("plant_name_empty"))
 # =========================================================
 # APP CONFIG
 # =========================================================
@@ -915,14 +1063,6 @@ st.sidebar.radio(
     format_func=lambda x: t(_PAGES_I18N[x]),
 )
 
-st.sidebar.divider()
-st.sidebar.checkbox(t("dark_mode_label"), key="dark_mode")
-st.sidebar.selectbox(
-    t("lang_label"),
-    options=list(_LANG_OPTIONS.keys()),
-    format_func=lambda x: _LANG_OPTIONS[x],
-    key="lang",
-)
 st.sidebar.divider()
 
 # =========================================================
@@ -1217,14 +1357,14 @@ def load_all_plants_data():
 
 if st.session_state.active_tab == "🌐 Global":
     st.subheader(t("tab_global_header"))
-    st.info("Esta vista muestra información agregada de **TODAS las plantas** simultáneamente, independiente del selector de planta del sidebar.")
+    st.info(t("global_info"))
     
     # --- Cargar TODOS los datos de TODAS las plantas ---
     all_data = load_all_plants_data()
 
     # --- Calcular capacidad para TODAS las plantas ---
     # Selector global de turnos (solo afecta a esta pestaña)
-    st.markdown("### 📊 Selector de Escenario")
+    st.markdown(t("global_scenario_header"))
     
     col_esc1, col_esc2, col_esc3 = st.columns([1, 1, 2])
     with col_esc1:
@@ -1272,7 +1412,7 @@ if st.session_state.active_tab == "🌐 Global":
     # =====================================================
     # 2️⃣ RESUMEN GLOBAL DE CAPACIDAD
     # =====================================================
-    st.markdown("### 📈 Resumen Global de Capacidad")
+    st.markdown(t("global_capacity_header"))
     st.caption(f"Escenario: **{escenario}**" + (f" | Turnos: **{shifts_override}**" if shifts_override else ""))
     
     # Construir DataFrame de resumen
@@ -1320,8 +1460,8 @@ if st.session_state.active_tab == "🌐 Global":
     # =====================================================
     # 3️⃣ DISPONIBILIDAD Y % USO
     # =====================================================
-    st.markdown("### ⚡ Capacidad vs Disponibilidad")
-    st.caption("Introduce la disponibilidad anual (horas) para cada planta.")
+    st.markdown(t("global_avail_header"))
+    st.caption(t("global_avail_caption"))
     
     # Inicializar disponibilidad en session_state
     if "global_disponibilidad" not in st.session_state:
@@ -1418,8 +1558,8 @@ if st.session_state.active_tab == "🌐 Global":
     # =====================================================
     # 4️⃣ RESUMEN POR MODELO
     # =====================================================
-    st.markdown("### 🔧 Capacidad por Modelo")
-    
+    st.markdown(t("global_model_header"))
+
     # Obtener todos los modelos activos de todas las plantas
     all_active_models = set()
     for _, plant_row in all_data["plants"].iterrows():
@@ -1433,7 +1573,7 @@ if st.session_state.active_tab == "🌐 Global":
     
     if all_active_models:
         selected_model = st.selectbox(
-            "Seleccionar modelo:",
+            t("global_model_select"),
             ["Todos los modelos"] + all_active_models,
             key="global_model_filter"
         )
@@ -1478,9 +1618,9 @@ if st.session_state.active_tab == "🌐 Global":
                 hide_index=True
             )
         else:
-            st.info("Selecciona un modelo específico para ver su capacidad en todas las plantas.")
+            st.info(t("global_model_info"))
     else:
-        st.warning("No hay modelos activos en ninguna planta.")
+        st.warning(t("global_no_models"))
     
     st.divider()
     
@@ -1490,8 +1630,8 @@ if st.session_state.active_tab == "🌐 Global":
     col_left, col_right = st.columns([2, 1])
     
     with col_right:
-        st.markdown("### 🔧 Modificaciones Necesarias")
-        st.caption("Registro de mejoras planificadas")
+        st.markdown(t("global_mods_header"))
+        st.caption(t("global_mods_caption"))
         
         # Inicializar modificaciones en session_state
         if "global_modificaciones" not in st.session_state:
@@ -1507,16 +1647,16 @@ if st.session_state.active_tab == "🌐 Global":
                     st.rerun()
         
         # Añadir nueva modificación
-        with st.expander("➕ Añadir modificación", expanded=False):
-            new_mod_nombre = st.text_input("Nombre de la modificación", key="new_mod_nombre")
+        with st.expander(t("global_mod_expander"), expanded=False):
+            new_mod_nombre = st.text_input(t("global_mod_name"), key="new_mod_nombre")
             new_mod_planta = st.selectbox(
-                "Planta",
+                t("global_mod_plant"),
                 [p["name"] for _, p in all_data["plants"].iterrows()],
                 key="new_mod_planta"
             )
-            new_mod_horas = st.number_input("Horas estimadas", min_value=0, value=10, key="new_mod_horas")
-            
-            if st.button("Añadir", key="btn_add_mod"):
+            new_mod_horas = st.number_input(t("global_mod_hours"), min_value=0, value=10, key="new_mod_horas")
+
+            if st.button(t("global_mod_btn"), key="btn_add_mod"):
                 if new_mod_nombre.strip():
                     st.session_state.global_modificaciones.append({
                         "nombre": new_mod_nombre.strip(),
@@ -1527,21 +1667,21 @@ if st.session_state.active_tab == "🌐 Global":
         
         # Resumen de hitos
         st.markdown("---")
-        st.markdown("### 📊 Resumen de Hitos")
+        st.markdown(t("global_milestones_header"))
         total_mods = len(st.session_state.global_modificaciones)
         total_horas_mods = sum(m["horas"] for m in st.session_state.global_modificaciones)
-        
+
         col_h1, col_h2 = st.columns(2)
         with col_h1:
-            st.metric("Nº Hitos", total_mods)
+            st.metric(t("global_metric_count"), total_mods)
         with col_h2:
-            st.metric("Horas Totales", f"{total_horas_mods} h")
+            st.metric(t("global_metric_hours"), f"{total_horas_mods} h")
     
     with col_left:
         # =====================================================
         # 6️⃣ % USO LÍNEAS POR PLANTA
         # =====================================================
-        st.markdown("### 📊 Distribución de Capacidad por Planta")
+        st.markdown(t("global_distrib_header"))
         
         # Gráfico de tarta
         plant_names_chart = [r["plant_name"] for r in global_results if r[h_year_col] > 0]
@@ -1562,7 +1702,7 @@ if st.session_state.active_tab == "🌐 Global":
             st.plotly_chart(fig_pie, use_container_width=True, key="chart_pie_global")
         
         # Tabla de % uso líneas
-        st.markdown("### 📋 Uso de Líneas por Planta")
+        st.markdown(t("global_usage_header"))
         
         uso_lineas_rows = []
         total_lineas = sum(r["lines_count"] for r in global_results)
@@ -1786,8 +1926,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     _fc1, _fc2 = st.columns(2)
-    _filter_t_model = _fc1.text_input("Filtrar por modelo", key="filter_times_model", placeholder="ej. PT0163")
-    _filter_t_proc  = _fc2.text_input("Filtrar por proceso", key="filter_times_proc",  placeholder="ej. ML")
+    _filter_t_model = _fc1.text_input(t("cfg_filter_model"), key="filter_times_model", placeholder="ej. PT0163")
+    _filter_t_proc  = _fc2.text_input(t("cfg_filter_process"), key="filter_times_proc", placeholder="ej. ML")
     _mask_t = pd.Series([True] * len(times_df), index=times_df.index)
     if _filter_t_model:
         _mask_t &= times_df["model"].astype(str).str.contains(_filter_t_model, case=False, na=False)
@@ -1796,7 +1936,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     _times_visible = times_df[_mask_t].copy()
     _times_hidden  = times_df[~_mask_t].copy()
     if _filter_t_model or _filter_t_proc:
-        st.caption(f"Mostrando {len(_times_visible)} de {len(times_df)} filas. Las filas ocultas se conservan al guardar.")
+        st.caption(t("cfg_showing_rows").format(shown=len(_times_visible), total=len(times_df)))
 
     edited_times = st.data_editor(
         _times_visible,
@@ -1987,7 +2127,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     # E1) Bancos disponibles por tipo
-    st.markdown("### Bancos disponibles por tipo")
+    st.markdown(t("cfg_benches_by_type"))
     _bcfg_ed = load_table("test_bench_config")
     if "plant_id" in _bcfg_ed.columns:
         _bcfg_ed = _bcfg_ed[
@@ -2061,7 +2201,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     if _filter_da != "(Todos)":
         _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
         _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
-        st.caption(f"Mostrando {len(_bmap_visible)} de {len(_bmap_show)} filas. Las filas ocultas se conservan al guardar.")
+        st.caption(t("cfg_showing_rows").format(shown=len(_bmap_visible), total=len(_bmap_show)))
     else:
         _bmap_visible = _bmap_show.copy()
         _bmap_hidden  = _bmap_show.iloc[0:0].copy()
@@ -2594,7 +2734,7 @@ if st.session_state.active_tab == "📈 Resultados":
         return s
 
     if summary_df.empty:
-        st.info("No hay resultados aún. Selecciona modelos/demanda en Planificación.")
+        st.info(t("res_no_results_yet"))
     else:
         display_cols = [
             "nave", "line", "model",
@@ -2975,7 +3115,7 @@ if st.session_state.active_tab == "📈 Resultados":
             header = f"{nave}-{base_line} — Modelo: {model} | Capacidad máx: {_fmt_num(cap_week)} uds/sem | Cuello: {bottleneck_proc} | Demanda: {_fmt_num(demand_week)} uds/sem"
             with st.expander(header, expanded=False):
                 if merged is None or merged.empty:
-                    st.warning("No hay datos suficientes (revisa estaciones o tiempos).")
+                    st.warning(t("res_no_data"))
                 else:
                     _detail_cols = ["process", "stations", "operators_per_station"]
                     if "machine_time" in merged.columns:
@@ -3002,7 +3142,7 @@ if st.session_state.active_tab == "📈 Resultados":
                     )
 
     st.divider()
-    st.markdown("## 📊 Representación gráfica de Demanda vs Capacidad")
+    st.markdown(t("res_chart_header"))
 
     if not summary_df.empty:
         df_plot = summary_df.copy()
@@ -3061,11 +3201,7 @@ if st.session_state.active_tab == "📈 Resultados":
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader(t("tab_mix_header"))
-    st.info(
-        "La planta produce **horas configurables**.\n"
-        "La capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\n"
-        "Aquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año)."
-    )
+    st.info(t("mix_info"))
 
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
@@ -3170,7 +3306,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
 
     if not line_stats_rows:
-        st.warning("No hay combinaciones válidas para calcular el rango. Revisa compatibilidades, estaciones y/o tiempos.")
+        st.warning(t("mix_no_combos"))
     else:
         line_stats_df = pd.DataFrame(line_stats_rows)
 
@@ -3189,7 +3325,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         ]
         plant_df = pd.DataFrame(plant_rows)
 
-        st.markdown("### Nivel 1 — Global planta (rango estructural)")
+        st.markdown(t("mix_level1"))
         st.dataframe(
             plant_df.style.format({"UDS/SEM": "{:.1f}", "UDS/AÑO": "{:.1f}", "h/SEM": "{:.1f}", "h/AÑO": "{:.1f}"}),
             use_container_width=True,
@@ -3198,7 +3334,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
 
         st.divider()
 
-        st.markdown("### Nivel 2 — Por línea (rango estructural)")
+        st.markdown(t("mix_level2"))
         col_order = [
             "nave", "line",
             "Modelo Máx (h/SEM)", "Modelo Mín (h/SEM)",
@@ -3224,11 +3360,8 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             hide_index=True
         )
 
-        st.markdown("## Nivel 3 — Simulador de ocupación estructural por modelo")
-        st.caption(
-            "Este simulador **NO** cambia la planificación real. Solo sirve para explorar, en términos de **horas estructurales (h/sem)**, "
-            "cuánto 'peso' podría llegar a ocupar cada modelo dentro del **techo estructural** de la planta."
-        )
+        st.markdown(t("mix_level3"))
+        st.caption(t("mix_sim_caption"))
 
         H_max_plant = float(sum(max_h_week_by_line.values())) if max_h_week_by_line else 0.0
         st.markdown(f"**Techo estructural planta (H_max_plant):** {H_max_plant:.2f} h/sem")
@@ -3247,12 +3380,12 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
         share_max_by_model = {m: (maxH_by_model[m] / H_max_plant) if H_max_plant > 0 else 0.0 for m in valid_models}
 
         if not valid_models or H_max_plant <= 0:
-            st.info("No hay modelos válidos (capacidad estructural > 0) para construir el simulador.")
+            st.info(t("mix_no_valid_models"))
         else:
             left, right = st.columns([3.2, 1.4], gap="large")
 
             with right:
-                st.markdown("### Agregado planta")
+                st.markdown(t("mix_plant_agg"))
                 total_selected_pct = 0.0
 
                 palette = px.colors.qualitative.Plotly
@@ -3315,7 +3448,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                 st.write(f"**Horas/año (equivalentes):** {total_h_year:.2f}")
 
             with left:
-                st.markdown("### Por modelo")
+                st.markdown(t("mix_per_model"))
                 grid_cols = 2
                 rows = [valid_models[i:i+grid_cols] for i in range(0, len(valid_models), grid_cols)]
 
@@ -3333,14 +3466,14 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                             st.markdown(f"#### {m}")
                             key = f"mix_lvl3_pct_{m}"
                             sel_pct = st.slider(
-                                "Ocupación simulada (% de planta)",
+                                t("mix_slider_label"),
                                 min_value=0.0,
                                 max_value=max_pct,
                                 value=float(st.session_state.get(key, 0.0) or 0.0),
                                 step=0.01,
                                 key=key,
                                 format="%.2f",
-                                help="Este % es una ocupación estructural teórica (no planificación real).",
+                                help=t("mix_slider_help"),
                             )
 
                             sel_h_week = H_max_plant * (sel_pct / 100.0)
