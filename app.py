@@ -1,6 +1,5 @@
 import os
 import sys
-import time  # TIMING — quitar tras Fase 3.2
 import streamlit as st
 import pandas as pd
 from PIL import Image
@@ -140,6 +139,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_da_value":       "Valor D&A en el motor",
         "cfg_col_da_variant":     "Variante de prueba",
         "cfg_col_bench_apply":    "Banco aplicable",
+        "cfg_filter_da":          "Filtrar por valor D&A",
+        "cfg_filter_da_all":      "(Todos)",
         # Planificación
         "plan_no_models":         "sin modelos compatibles activos (revisa compatibilidades/modelos).",
         # Resultados — bancos
@@ -283,6 +284,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_da_value":       "D&A value in engine",
         "cfg_col_da_variant":     "Test variant",
         "cfg_col_bench_apply":    "Applicable bench",
+        "cfg_filter_da":          "Filter by D&A value",
+        "cfg_filter_da_all":      "(All)",
         # Planning
         "plan_no_models":         "no active compatible models (check compatibilities/models).",
         # Results — benches
@@ -426,6 +429,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_da_value":       "D&A balioa motor-ean",
         "cfg_col_da_variant":     "Proba-aldaera",
         "cfg_col_bench_apply":    "Banku aplikagarria",
+        "cfg_filter_da":          "D&A balioaren arabera iragazi",
+        "cfg_filter_da_all":      "(Guztiak)",
         # Planifikazioa
         "plan_no_models":         "eredu bateragarri aktiborik gabe (egiaztatu bateragarritasunak/ereduak).",
         # Emaitzak — bankuak
@@ -1302,11 +1307,7 @@ if st.sidebar.button(t("btn_save_params")):
 # =========================================================
 # CARGA DATOS
 # =========================================================
-# TIMING D — load_plant_data (corre en cada rerun, debe ser <5 ms si cachea bien)
-_t0_D = time.perf_counter()
 _pd = load_plant_data(plant_id)
-_ms_D = round((time.perf_counter() - _t0_D) * 1000, 1)
-st.sidebar.caption(f"⏱ load_plant_data: {_ms_D} ms")
 
 models_df     = _pd["models_df"]
 times_df      = _pd["times_df"]
@@ -1523,13 +1524,7 @@ if st.session_state.active_tab == "🌐 Global":
     _turnos_map = {"Config. actual": None, "1 turno": 1, "2 turnos": 2, "3 turnos": 3}
     shifts_override = _turnos_map[turnos_option]
     
-    # TIMING A — compute_all_plants_structural_capacity (todas las plantas)
-    _t0_A = time.perf_counter()
     global_results = compute_all_plants_structural_capacity(all_data, shifts_override)
-    _ms_A = round((time.perf_counter() - _t0_A) * 1000, 1)
-    with st.expander("⏱ Tiempos [staging]", expanded=False):
-        st.caption(f"compute_all_plants_structural_capacity × {len(global_results)} plantas: **{_ms_A} ms**")
-        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
 
     # Mapear escenario a columnas
     esc_map = {
@@ -2309,11 +2304,11 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     ].copy()
 
     _filter_da = st.selectbox(
-        "Filtrar por valor D&A",
-        options=["(Todos)", "SL", "SD", "LL", "LD", "XD", "XL"],
+        t("cfg_filter_da"),
+        options=[t("cfg_filter_da_all"), "SL", "SD", "LL", "LD", "XD", "XL"],
         key="filter_da_bench",
     )
-    if _filter_da != "(Todos)":
+    if _filter_da != t("cfg_filter_da_all"):
         _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
         _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
         st.caption(t("cfg_showing_rows").format(shown=len(_bmap_visible), total=len(_bmap_show)))
@@ -2713,8 +2708,6 @@ if st.session_state.active_tab == "📈 Resultados":
     _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
     cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
 
-    # TIMING C — compute_line_detail × líneas asignadas (Tab Resultados)
-    _t0_C = time.perf_counter()
     for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
@@ -2778,7 +2771,6 @@ if st.session_state.active_tab == "📈 Resultados":
 
         detail_by_line[line_id] = (nave, base_line, model, demand_week, bottleneck_proc, merged)
 
-    _ms_C = round((time.perf_counter() - _t0_C) * 1000, 1)
     summary_df = pd.DataFrame(summary_rows)
 
     if not summary_df.empty:
@@ -3274,10 +3266,6 @@ if st.session_state.active_tab == "📈 Resultados":
         fig_total.update_layout(barmode="group")
         st.plotly_chart(fig_total, use_container_width=True, key="chart_total")
 
-    with st.expander("⏱ Tiempos [staging]", expanded=False):
-        st.caption(f"Loop compute_line_detail (Tab Resultados, líneas asignadas): **{_ms_C} ms**")
-        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
-
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader(t("tab_mix_header"))
@@ -3291,9 +3279,6 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     capH_line_model = {}
     capU_line_model = {}
     max_h_week_by_line = {}
-
-    # TIMING B — precompute + loop Tab 4 (Capacidad según mix)
-    _t0_B = time.perf_counter()
 
     # Pre-computar bases UNA VEZ: times_df y stations_df hasheados 1 vez en lugar de N×M
     _all_bases = _precompute_all_bases_for_tab4(
@@ -3379,11 +3364,6 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             "Prom h/AÑO": avg_h * weeks_equiv,
             "Min h/AÑO": min_h * weeks_equiv,
         })
-
-    _ms_B = round((time.perf_counter() - _t0_B) * 1000, 1)
-    with st.expander("⏱ Tiempos [staging]", expanded=False):
-        st.caption(f"Loop compute_line_detail (Tab Capacidad según mix, N×M): **{_ms_B} ms**")
-        st.caption("< 10 ms = cache hit  |  > 200 ms = miss o trabajo real")
 
     if not line_stats_rows:
         st.warning(t("mix_no_combos"))
