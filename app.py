@@ -801,7 +801,11 @@ def save_table(df: pd.DataFrame, table: str) -> None:
 
     c = get_connection()
     try:
-        cols = list(df.columns)
+        work_df = df.copy()
+        if "id" in work_df.columns:
+            work_df = work_df.drop(columns=["id"])
+
+        cols = list(work_df.columns)
         if not cols:
             return
 
@@ -809,14 +813,14 @@ def save_table(df: pd.DataFrame, table: str) -> None:
         col_list = ",".join([f'"{cname}"' for cname in cols])
 
         # Convertimos NaN -> None para psycopg2
-        values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+        values = [tuple(None if (pd.isna(v)) else v for v in row) for row in work_df[cols].itertuples(index=False, name=None)]
 
         with c.cursor() as cur:
             if "plant_id" in cols:
-                plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
+                plant_value = int(work_df["plant_id"].iloc[0]) if not work_df.empty else int(st.session_state["plant_id"])
                 # Seguridad: asegurar que solo guardamos datos de la planta correcta
-                df = df[df["plant_id"] == plant_value].copy()
-                values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+                work_df = work_df[work_df["plant_id"] == plant_value].copy()
+                values = [tuple(None if (pd.isna(v)) else v for v in row) for row in work_df[cols].itertuples(index=False, name=None)]
                 cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
             else:
                 cur.execute(f'TRUNCATE TABLE "{table}"')
