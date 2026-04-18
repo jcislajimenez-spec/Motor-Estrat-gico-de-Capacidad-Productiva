@@ -129,6 +129,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = tiempo automático fijo no reducible (test automático, horno, robot, ciclo máquina). No depende del nº de operarios.\n\n**Labor time** = horas-hombre secuenciales necesarias por unidad (preparación, conexión, montaje manual, supervisión, retirada).\n\nLa capacidad se calcula mediante:\n\n`cycle_time_real = max(machine_time, labor_time / operarios)`\n\n`capacity = (horas_efectivas × estaciones) / cycle_time_real`\n\nEn procesos manuales puros, machine_time puede ser 0.",
         "cfg_stations_header":    "## Configuración de estaciones y operarios",
         "cfg_compat_header":      "## Compatibilidad modelo ↔ línea",
+        "cfg_compat_expand_all":  "Desplegar todas",
+        "cfg_compat_collapse_all":"Plegar todas",
         "cfg_line_label":         "Línea",
         "cfg_benches_section":    "## Bancos de prueba",
         "cfg_benches_caption":    "Configuración de bancos disponibles por planta y asignación de tipo de prueba a cada valor D&A. **Esta asignación es una simplificación operativa de esta fase**: dentro de una misma familia puede haber equipos con prueba LV y equipos con prueba MV. Solo aplica a los valores D&A: SL, SD, LL, LD, XD, XL.",
@@ -141,6 +143,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Banco aplicable",
         "cfg_filter_da":          "Filtrar por valor D&A",
         "cfg_filter_da_all":      "(Todos)",
+        "cfg_filter_status":      "Estado",
+        "cfg_status_all":         "Todos",
+        "cfg_status_active":      "Activos",
+        "cfg_status_inactive":    "Inactivos",
+        "cfg_filter_nave":        "Nave",
+        "cfg_filter_proc_label":  "Proceso",
+        "cfg_compat_export":      "⬇ Exportar (CSV)",
         # Planificación
         "plan_no_models":         "sin modelos compatibles activos (revisa compatibilidades/modelos).",
         # Resultados — bancos
@@ -274,6 +283,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = fixed automatic non-reducible time (automatic test, oven, robot, machine cycle). Does not depend on the number of operators.\n\n**Labor time** = sequential man-hours required per unit (preparation, wiring, manual assembly, supervision, retrieval).\n\nCapacity is calculated as:\n\n`cycle_time_real = max(machine_time, labor_time / operators)`\n\n`capacity = (effective_hours × stations) / cycle_time_real`\n\nFor purely manual processes, machine_time may be 0.",
         "cfg_stations_header":    "## Station and operator configuration",
         "cfg_compat_header":      "## Model ↔ line compatibility",
+        "cfg_compat_expand_all":  "Expand all",
+        "cfg_compat_collapse_all":"Collapse all",
         "cfg_line_label":         "Line",
         "cfg_benches_section":    "## Test benches",
         "cfg_benches_caption":    "Configuration of available benches per plant and assignment of test type to each D&A value. **This assignment is an operational simplification for this phase**: within the same family there may be equipment with LV test and equipment with MV test. Applies only to D&A values: SL, SD, LL, LD, XD, XL.",
@@ -286,6 +297,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Applicable bench",
         "cfg_filter_da":          "Filter by D&A value",
         "cfg_filter_da_all":      "(All)",
+        "cfg_filter_status":      "Status",
+        "cfg_status_all":         "All",
+        "cfg_status_active":      "Active",
+        "cfg_status_inactive":    "Inactive",
+        "cfg_filter_nave":        "Bay",
+        "cfg_filter_proc_label":  "Process",
+        "cfg_compat_export":      "⬇ Export (CSV)",
         # Planning
         "plan_no_models":         "no active compatible models (check compatibilities/models).",
         # Results — benches
@@ -419,6 +437,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = denbora automatiko finko ez-murrizgarria (test automatikoa, labea, robota, makina-zikloa). Ez dago operario kopuruaren mende.\n\n**Labor time** = unitateko beharrezko gizakideko ordu sekuentzialak (prestaketa, konexioa, eskuzko muntaketa, gainbegiraketa, erretiratzea).\n\nAhalmena honela kalkulatzen da:\n\n`cycle_time_real = max(machine_time, labor_time / operarioak)`\n\n`capacity = (ordu_eraginkorrak × estazioak) / cycle_time_real`\n\nEskuzko prozesu hutsetan, machine_time 0 izan daiteke.",
         "cfg_stations_header":    "## Estazioen eta operarioen konfigurazioa",
         "cfg_compat_header":      "## Eredua ↔ lerro bateragarritasuna",
+        "cfg_compat_expand_all":  "Guztiak zabaldu",
+        "cfg_compat_collapse_all":"Guztiak itxi",
         "cfg_line_label":         "Lerroa",
         "cfg_benches_section":    "## Proba-bankuak",
         "cfg_benches_caption":    "Plantako eskuragarri dauden bankuen konfigurazioa eta proba-motaren esleipena D&A balio bakoitzarentzat. **Esleipen hau fase honen sinplifikazio operatiboa da**: familia beraren barruan egon daitezke LV probarekin eta MV probarekin ekipoak. D&A balioentzat soilik aplikatzen da: SL, SD, LL, LD, XD, XL.",
@@ -431,6 +451,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Banku aplikagarria",
         "cfg_filter_da":          "D&A balioaren arabera iragazi",
         "cfg_filter_da_all":      "(Guztiak)",
+        "cfg_filter_status":      "Egoera",
+        "cfg_status_all":         "Guztiak",
+        "cfg_status_active":      "Aktiboak",
+        "cfg_status_inactive":    "Ez-aktiboak",
+        "cfg_filter_nave":        "Nabe",
+        "cfg_filter_proc_label":  "Prozesua",
+        "cfg_compat_export":      "⬇ Esportatu (CSV)",
         # Planifikazioa
         "plan_no_models":         "eredu bateragarri aktiborik gabe (egiaztatu bateragarritasunak/ereduak).",
         # Emaitzak — bankuak
@@ -774,7 +801,11 @@ def save_table(df: pd.DataFrame, table: str) -> None:
 
     c = get_connection()
     try:
-        cols = list(df.columns)
+        work_df = df.copy()
+        if "id" in work_df.columns:
+            work_df = work_df.drop(columns=["id"])
+
+        cols = list(work_df.columns)
         if not cols:
             return
 
@@ -782,14 +813,14 @@ def save_table(df: pd.DataFrame, table: str) -> None:
         col_list = ",".join([f'"{cname}"' for cname in cols])
 
         # Convertimos NaN -> None para psycopg2
-        values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+        values = [tuple(None if (pd.isna(v)) else v for v in row) for row in work_df[cols].itertuples(index=False, name=None)]
 
         with c.cursor() as cur:
             if "plant_id" in cols:
-                plant_value = int(df["plant_id"].iloc[0]) if not df.empty else int(st.session_state["plant_id"])
+                plant_value = int(work_df["plant_id"].iloc[0]) if not work_df.empty else int(st.session_state["plant_id"])
                 # Seguridad: asegurar que solo guardamos datos de la planta correcta
-                df = df[df["plant_id"] == plant_value].copy()
-                values = [tuple(None if (pd.isna(v)) else v for v in row) for row in df[cols].itertuples(index=False, name=None)]
+                work_df = work_df[work_df["plant_id"] == plant_value].copy()
+                values = [tuple(None if (pd.isna(v)) else v for v in row) for row in work_df[cols].itertuples(index=False, name=None)]
                 cur.execute(f'DELETE FROM "{table}" WHERE plant_id = %s', (plant_value,))
             else:
                 cur.execute(f'TRUNCATE TABLE "{table}"')
@@ -1910,7 +1941,8 @@ if st.session_state.active_tab == "📊 Planificación":
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
 
-        _ch1, _ch2 = st.columns([1.8, 1.0])
+        _ch0, _ch1, _ch2 = st.columns([0.7, 1.8, 1.0])
+        _ch0.caption(t("cfg_line_label"))
         _ch1.caption(t("plan_col_model"))
         _ch2.caption(t("plan_col_demand"))
 
@@ -1963,7 +1995,8 @@ if st.session_state.active_tab == "📊 Planificación":
             if _cur_opt not in _combined_opts:
                 _cur_opt = _combined_opts[0]
 
-            _c1, _c2 = st.columns([1.8, 1.0])
+            _c0, _c1, _c2 = st.columns([0.7, 1.8, 1.0])
+            _c0.markdown(f"**{line_id}**")
 
             with _c1:
                 _sel = st.selectbox(
@@ -2016,8 +2049,28 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     models_editor = models_df.copy()
     models_editor["active"] = models_editor["active"].astype(int).clip(0, 1).astype(bool)
 
+    _mf1, _mf2 = st.columns(2)
+    _filter_m_name = _mf1.text_input(t("cfg_filter_model"), key="filter_models_name", placeholder="")
+    _status_opts = [t("cfg_status_all"), t("cfg_status_active"), t("cfg_status_inactive")]
+    if st.session_state.get("filter_models_status", "") not in _status_opts:
+        st.session_state["filter_models_status"] = t("cfg_status_all")
+    _filter_m_status = _mf2.selectbox(t("cfg_filter_status"), _status_opts, key="filter_models_status")
+
+    _mask_m = pd.Series([True] * len(models_editor), index=models_editor.index)
+    if _filter_m_name:
+        _mask_m &= models_editor["model"].astype(str).str.contains(_filter_m_name, case=False, na=False)
+    if _filter_m_status == t("cfg_status_active"):
+        _mask_m &= models_editor["active"] == True
+    elif _filter_m_status == t("cfg_status_inactive"):
+        _mask_m &= models_editor["active"] == False
+
+    _models_visible = models_editor[_mask_m].copy()
+    _models_hidden  = models_editor[~_mask_m].copy()
+    if _filter_m_name or _filter_m_status != t("cfg_status_all"):
+        st.caption(t("cfg_showing_rows").format(shown=len(_models_visible), total=len(models_editor)))
+
     edited_models = st.data_editor(
-        models_editor,
+        _models_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -2026,7 +2079,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button(t("btn_save_models")):
-        out = edited_models.copy()
+        out = pd.concat([_models_hidden, edited_models], ignore_index=True)
         out = out.reset_index(drop=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["description"] = out["description"].astype(str).str.strip()
@@ -2135,8 +2188,38 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     # --- C) Estaciones / operarios por línea y proceso
     st.markdown(t("cfg_stations_header"))
 
+    _sf1, _sf2, _sf3 = st.columns(3)
+    _nave_opts = [t("cfg_filter_da_all")] + sorted(stations_df["nave"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_nave", "") not in _nave_opts:
+        st.session_state["filter_stations_nave"] = t("cfg_filter_da_all")
+    _filter_st_nave = _sf1.selectbox(t("cfg_filter_nave"), _nave_opts, key="filter_stations_nave")
+
+    _line_opts = [t("cfg_filter_da_all")] + sorted(stations_df["line"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_line", "") not in _line_opts:
+        st.session_state["filter_stations_line"] = t("cfg_filter_da_all")
+    _filter_st_line = _sf2.selectbox(t("cfg_line_label"), _line_opts, key="filter_stations_line")
+
+    _proc_opts = [t("cfg_filter_da_all")] + sorted(stations_df["process"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_proc", "") not in _proc_opts:
+        st.session_state["filter_stations_proc"] = t("cfg_filter_da_all")
+    _filter_st_proc = _sf3.selectbox(t("cfg_filter_proc_label"), _proc_opts, key="filter_stations_proc")
+
+    _mask_st = pd.Series([True] * len(stations_df), index=stations_df.index)
+    _all_token = t("cfg_filter_da_all")
+    if _filter_st_nave != _all_token:
+        _mask_st &= stations_df["nave"].astype(str).str.strip() == _filter_st_nave
+    if _filter_st_line != _all_token:
+        _mask_st &= stations_df["line"].astype(str).str.strip() == _filter_st_line
+    if _filter_st_proc != _all_token:
+        _mask_st &= stations_df["process"].astype(str).str.strip() == _filter_st_proc
+
+    _stations_visible = stations_df[_mask_st].copy()
+    _stations_hidden  = stations_df[~_mask_st].copy()
+    if any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc]):
+        st.caption(t("cfg_showing_rows").format(shown=len(_stations_visible), total=len(stations_df)))
+
     edited_stations = st.data_editor(
-        stations_df,
+        _stations_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -2146,7 +2229,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button(t("btn_save_stations")):
-        out = edited_stations.copy()
+        out = pd.concat([_stations_hidden, edited_stations], ignore_index=True)
         out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
         out["nave"] = out["nave"].astype(str).str.strip()
@@ -2187,6 +2270,23 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     all_models = sorted(models_df["model"].astype(str).str.strip().unique().tolist())
     all_line_ids = sorted(stations_df["line_id"].astype(str).str.strip().unique().tolist())
 
+    # Inicializar estado de expanders por planta (persistente entre reruns)
+    for _lid in all_line_ids:
+        _ek = f"exp_compat_{plant_id}_{_lid}"
+        if _ek not in st.session_state:
+            st.session_state[_ek] = True
+
+    # Botones de control global
+    _gc1, _gc2, _gc3 = st.columns([1, 1, 5])
+    if _gc1.button(t("cfg_compat_expand_all"), key="btn_expand_all_compat"):
+        for _lid in all_line_ids:
+            st.session_state[f"exp_compat_{plant_id}_{_lid}"] = True
+        st.rerun()
+    if _gc2.button(t("cfg_compat_collapse_all"), key="btn_collapse_all_compat"):
+        for _lid in all_line_ids:
+            st.session_state[f"exp_compat_{plant_id}_{_lid}"] = False
+        st.rerun()
+
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
 
@@ -2200,9 +2300,9 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
             nave = "N1"
             base_line = parts[0]
 
-        st.markdown(f"### {t('cfg_line_label')} {line_id}")
-        with st.expander(f"{t('cfg_line_label')} {line_id}", expanded=True):
-            cols = st.columns(3)
+        _expanded_now = st.session_state.get(f"exp_compat_{plant_id}_{line_id}", True)
+        with st.expander(f"{t('cfg_line_label')} {line_id}", expanded=_expanded_now):
+            cols = st.columns(5)
             for i, m in enumerate(all_models):
                 current = compat_df[
                     (compat_df["line"] == base_line) &
@@ -2213,7 +2313,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                 if not current.empty:
                     cur_val = int(current.iloc[0]["compatible"])
 
-                checked = cols[i % 3].checkbox(
+                checked = cols[i % 5].checkbox(
                     m,
                     value=bool(cur_val),
                     key=f"compat_{plant_id}_{line_id}_{m}"
@@ -2225,6 +2325,16 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                     "model": m,
                     "compatible": 1 if checked else 0
                 })
+
+    if edited_rows:
+        _compat_csv = pd.DataFrame(edited_rows).assign(plant_id=plant_id).to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label=t("cfg_compat_export"),
+            data=_compat_csv,
+            file_name=f"compatibilidad_planta_{plant_id}.csv",
+            mime="text/csv",
+            key="btn_download_compat",
+        )
 
     if st.button(t("btn_save_compat")):
         out = pd.DataFrame(edited_rows)
