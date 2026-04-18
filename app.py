@@ -129,6 +129,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = tiempo automático fijo no reducible (test automático, horno, robot, ciclo máquina). No depende del nº de operarios.\n\n**Labor time** = horas-hombre secuenciales necesarias por unidad (preparación, conexión, montaje manual, supervisión, retirada).\n\nLa capacidad se calcula mediante:\n\n`cycle_time_real = max(machine_time, labor_time / operarios)`\n\n`capacity = (horas_efectivas × estaciones) / cycle_time_real`\n\nEn procesos manuales puros, machine_time puede ser 0.",
         "cfg_stations_header":    "## Configuración de estaciones y operarios",
         "cfg_compat_header":      "## Compatibilidad modelo ↔ línea",
+        "cfg_compat_expand_all":  "Desplegar todas",
+        "cfg_compat_collapse_all":"Plegar todas",
         "cfg_line_label":         "Línea",
         "cfg_benches_section":    "## Bancos de prueba",
         "cfg_benches_caption":    "Configuración de bancos disponibles por planta y asignación de tipo de prueba a cada valor D&A. **Esta asignación es una simplificación operativa de esta fase**: dentro de una misma familia puede haber equipos con prueba LV y equipos con prueba MV. Solo aplica a los valores D&A: SL, SD, LL, LD, XD, XL.",
@@ -274,6 +276,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = fixed automatic non-reducible time (automatic test, oven, robot, machine cycle). Does not depend on the number of operators.\n\n**Labor time** = sequential man-hours required per unit (preparation, wiring, manual assembly, supervision, retrieval).\n\nCapacity is calculated as:\n\n`cycle_time_real = max(machine_time, labor_time / operators)`\n\n`capacity = (effective_hours × stations) / cycle_time_real`\n\nFor purely manual processes, machine_time may be 0.",
         "cfg_stations_header":    "## Station and operator configuration",
         "cfg_compat_header":      "## Model ↔ line compatibility",
+        "cfg_compat_expand_all":  "Expand all",
+        "cfg_compat_collapse_all":"Collapse all",
         "cfg_line_label":         "Line",
         "cfg_benches_section":    "## Test benches",
         "cfg_benches_caption":    "Configuration of available benches per plant and assignment of test type to each D&A value. **This assignment is an operational simplification for this phase**: within the same family there may be equipment with LV test and equipment with MV test. Applies only to D&A values: SL, SD, LL, LD, XD, XL.",
@@ -419,6 +423,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_times_info":         "**Machine time** = denbora automatiko finko ez-murrizgarria (test automatikoa, labea, robota, makina-zikloa). Ez dago operario kopuruaren mende.\n\n**Labor time** = unitateko beharrezko gizakideko ordu sekuentzialak (prestaketa, konexioa, eskuzko muntaketa, gainbegiraketa, erretiratzea).\n\nAhalmena honela kalkulatzen da:\n\n`cycle_time_real = max(machine_time, labor_time / operarioak)`\n\n`capacity = (ordu_eraginkorrak × estazioak) / cycle_time_real`\n\nEskuzko prozesu hutsetan, machine_time 0 izan daiteke.",
         "cfg_stations_header":    "## Estazioen eta operarioen konfigurazioa",
         "cfg_compat_header":      "## Eredua ↔ lerro bateragarritasuna",
+        "cfg_compat_expand_all":  "Guztiak zabaldu",
+        "cfg_compat_collapse_all":"Guztiak itxi",
         "cfg_line_label":         "Lerroa",
         "cfg_benches_section":    "## Proba-bankuak",
         "cfg_benches_caption":    "Plantako eskuragarri dauden bankuen konfigurazioa eta proba-motaren esleipena D&A balio bakoitzarentzat. **Esleipen hau fase honen sinplifikazio operatiboa da**: familia beraren barruan egon daitezke LV probarekin eta MV probarekin ekipoak. D&A balioentzat soilik aplikatzen da: SL, SD, LL, LD, XD, XL.",
@@ -1910,7 +1916,8 @@ if st.session_state.active_tab == "📊 Planificación":
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
 
-        _ch1, _ch2 = st.columns([1.8, 1.0])
+        _ch0, _ch1, _ch2 = st.columns([0.7, 1.8, 1.0])
+        _ch0.caption(t("cfg_line_label"))
         _ch1.caption(t("plan_col_model"))
         _ch2.caption(t("plan_col_demand"))
 
@@ -1963,7 +1970,8 @@ if st.session_state.active_tab == "📊 Planificación":
             if _cur_opt not in _combined_opts:
                 _cur_opt = _combined_opts[0]
 
-            _c1, _c2 = st.columns([1.8, 1.0])
+            _c0, _c1, _c2 = st.columns([0.7, 1.8, 1.0])
+            _c0.markdown(f"**{line_id}**")
 
             with _c1:
                 _sel = st.selectbox(
@@ -2187,6 +2195,23 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     all_models = sorted(models_df["model"].astype(str).str.strip().unique().tolist())
     all_line_ids = sorted(stations_df["line_id"].astype(str).str.strip().unique().tolist())
 
+    # Inicializar estado de expanders por planta (persistente entre reruns)
+    for _lid in all_line_ids:
+        _ek = f"exp_compat_{plant_id}_{_lid}"
+        if _ek not in st.session_state:
+            st.session_state[_ek] = True
+
+    # Botones de control global
+    _gc1, _gc2, _gc3 = st.columns([1, 1, 5])
+    if _gc1.button(t("cfg_compat_expand_all"), key="btn_expand_all_compat"):
+        for _lid in all_line_ids:
+            st.session_state[f"exp_compat_{plant_id}_{_lid}"] = True
+        st.rerun()
+    if _gc2.button(t("cfg_compat_collapse_all"), key="btn_collapse_all_compat"):
+        for _lid in all_line_ids:
+            st.session_state[f"exp_compat_{plant_id}_{_lid}"] = False
+        st.rerun()
+
     # Matriz editable por línea real (nave + línea)
     edited_rows = []
 
@@ -2200,9 +2225,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
             nave = "N1"
             base_line = parts[0]
 
-        st.markdown(f"### {t('cfg_line_label')} {line_id}")
-        with st.expander(f"{t('cfg_line_label')} {line_id}", expanded=True):
-            cols = st.columns(3)
+        with st.expander(f"{t('cfg_line_label')} {line_id}", key=f"exp_compat_{plant_id}_{line_id}"):
+            cols = st.columns(5)
             for i, m in enumerate(all_models):
                 current = compat_df[
                     (compat_df["line"] == base_line) &
@@ -2213,7 +2237,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                 if not current.empty:
                     cur_val = int(current.iloc[0]["compatible"])
 
-                checked = cols[i % 3].checkbox(
+                checked = cols[i % 5].checkbox(
                     m,
                     value=bool(cur_val),
                     key=f"compat_{plant_id}_{line_id}_{m}"
