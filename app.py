@@ -2225,7 +2225,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
             nave = "N1"
             base_line = parts[0]
 
-        with st.expander(f"{t('cfg_line_label')} {line_id}", key=f"exp_compat_{plant_id}_{line_id}"):
+        _expanded_now = st.session_state.get(f"exp_compat_{plant_id}_{line_id}", True)
+        with st.expander(f"{t('cfg_line_label')} {line_id}", expanded=_expanded_now):
             cols = st.columns(5)
             for i, m in enumerate(all_models):
                 current = compat_df[
