@@ -143,6 +143,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Banco aplicable",
         "cfg_filter_da":          "Filtrar por valor D&A",
         "cfg_filter_da_all":      "(Todos)",
+        "cfg_filter_status":      "Estado",
+        "cfg_status_all":         "Todos",
+        "cfg_status_active":      "Activos",
+        "cfg_status_inactive":    "Inactivos",
+        "cfg_filter_nave":        "Nave",
+        "cfg_filter_proc_label":  "Proceso",
+        "cfg_compat_export":      "⬇ Exportar (CSV)",
         # Planificación
         "plan_no_models":         "sin modelos compatibles activos (revisa compatibilidades/modelos).",
         # Resultados — bancos
@@ -290,6 +297,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Applicable bench",
         "cfg_filter_da":          "Filter by D&A value",
         "cfg_filter_da_all":      "(All)",
+        "cfg_filter_status":      "Status",
+        "cfg_status_all":         "All",
+        "cfg_status_active":      "Active",
+        "cfg_status_inactive":    "Inactive",
+        "cfg_filter_nave":        "Bay",
+        "cfg_filter_proc_label":  "Process",
+        "cfg_compat_export":      "⬇ Export (CSV)",
         # Planning
         "plan_no_models":         "no active compatible models (check compatibilities/models).",
         # Results — benches
@@ -437,6 +451,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_col_bench_apply":    "Banku aplikagarria",
         "cfg_filter_da":          "D&A balioaren arabera iragazi",
         "cfg_filter_da_all":      "(Guztiak)",
+        "cfg_filter_status":      "Egoera",
+        "cfg_status_all":         "Guztiak",
+        "cfg_status_active":      "Aktiboak",
+        "cfg_status_inactive":    "Ez-aktiboak",
+        "cfg_filter_nave":        "Nabe",
+        "cfg_filter_proc_label":  "Prozesua",
+        "cfg_compat_export":      "⬇ Esportatu (CSV)",
         # Planifikazioa
         "plan_no_models":         "eredu bateragarri aktiborik gabe (egiaztatu bateragarritasunak/ereduak).",
         # Emaitzak — bankuak
@@ -2024,8 +2045,28 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     models_editor = models_df.copy()
     models_editor["active"] = models_editor["active"].astype(int).clip(0, 1).astype(bool)
 
+    _mf1, _mf2 = st.columns(2)
+    _filter_m_name = _mf1.text_input(t("cfg_filter_model"), key="filter_models_name", placeholder="")
+    _status_opts = [t("cfg_status_all"), t("cfg_status_active"), t("cfg_status_inactive")]
+    if st.session_state.get("filter_models_status", "") not in _status_opts:
+        st.session_state["filter_models_status"] = t("cfg_status_all")
+    _filter_m_status = _mf2.selectbox(t("cfg_filter_status"), _status_opts, key="filter_models_status")
+
+    _mask_m = pd.Series([True] * len(models_editor), index=models_editor.index)
+    if _filter_m_name:
+        _mask_m &= models_editor["model"].astype(str).str.contains(_filter_m_name, case=False, na=False)
+    if _filter_m_status == t("cfg_status_active"):
+        _mask_m &= models_editor["active"] == True
+    elif _filter_m_status == t("cfg_status_inactive"):
+        _mask_m &= models_editor["active"] == False
+
+    _models_visible = models_editor[_mask_m].copy()
+    _models_hidden  = models_editor[~_mask_m].copy()
+    if _filter_m_name or _filter_m_status != t("cfg_status_all"):
+        st.caption(t("cfg_showing_rows").format(shown=len(_models_visible), total=len(models_editor)))
+
     edited_models = st.data_editor(
-        models_editor,
+        _models_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -2034,7 +2075,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button(t("btn_save_models")):
-        out = edited_models.copy()
+        out = pd.concat([_models_hidden, edited_models], ignore_index=True)
         out = out.reset_index(drop=True)
         out["model"] = out["model"].astype(str).str.strip()
         out["description"] = out["description"].astype(str).str.strip()
@@ -2143,8 +2184,38 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     # --- C) Estaciones / operarios por línea y proceso
     st.markdown(t("cfg_stations_header"))
 
+    _sf1, _sf2, _sf3 = st.columns(3)
+    _nave_opts = [t("cfg_filter_da_all")] + sorted(stations_df["nave"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_nave", "") not in _nave_opts:
+        st.session_state["filter_stations_nave"] = t("cfg_filter_da_all")
+    _filter_st_nave = _sf1.selectbox(t("cfg_filter_nave"), _nave_opts, key="filter_stations_nave")
+
+    _line_opts = [t("cfg_filter_da_all")] + sorted(stations_df["line"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_line", "") not in _line_opts:
+        st.session_state["filter_stations_line"] = t("cfg_filter_da_all")
+    _filter_st_line = _sf2.selectbox(t("cfg_line_label"), _line_opts, key="filter_stations_line")
+
+    _proc_opts = [t("cfg_filter_da_all")] + sorted(stations_df["process"].astype(str).str.strip().unique().tolist())
+    if st.session_state.get("filter_stations_proc", "") not in _proc_opts:
+        st.session_state["filter_stations_proc"] = t("cfg_filter_da_all")
+    _filter_st_proc = _sf3.selectbox(t("cfg_filter_proc_label"), _proc_opts, key="filter_stations_proc")
+
+    _mask_st = pd.Series([True] * len(stations_df), index=stations_df.index)
+    _all_token = t("cfg_filter_da_all")
+    if _filter_st_nave != _all_token:
+        _mask_st &= stations_df["nave"].astype(str).str.strip() == _filter_st_nave
+    if _filter_st_line != _all_token:
+        _mask_st &= stations_df["line"].astype(str).str.strip() == _filter_st_line
+    if _filter_st_proc != _all_token:
+        _mask_st &= stations_df["process"].astype(str).str.strip() == _filter_st_proc
+
+    _stations_visible = stations_df[_mask_st].copy()
+    _stations_hidden  = stations_df[~_mask_st].copy()
+    if any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc]):
+        st.caption(t("cfg_showing_rows").format(shown=len(_stations_visible), total=len(stations_df)))
+
     edited_stations = st.data_editor(
-        stations_df,
+        _stations_visible,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -2154,7 +2225,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     )
 
     if st.button(t("btn_save_stations")):
-        out = edited_stations.copy()
+        out = pd.concat([_stations_hidden, edited_stations], ignore_index=True)
         out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
         out["nave"] = out["nave"].astype(str).str.strip()
@@ -2250,6 +2321,16 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
                     "model": m,
                     "compatible": 1 if checked else 0
                 })
+
+    if edited_rows:
+        _compat_csv = pd.DataFrame(edited_rows).assign(plant_id=plant_id).to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label=t("cfg_compat_export"),
+            data=_compat_csv,
+            file_name=f"compatibilidad_planta_{plant_id}.csv",
+            mime="text/csv",
+            key="btn_download_compat",
+        )
 
     if st.button(t("btn_save_compat")):
         out = pd.DataFrame(edited_rows)
