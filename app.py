@@ -1193,15 +1193,28 @@ new_plant_name = st.sidebar.text_input(t("plant_new"))
 
 if st.sidebar.button(t("plant_add")):
     if new_plant_name.strip():
-        next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
-
-        new_row = pd.DataFrame([{
-            "id": next_id,
-            "name": new_plant_name.strip()
-        }])
-
-        plants_df = pd.concat([plants_df, new_row], ignore_index=True)
-        save_table(plants_df, "plants")
+        if _has_db():
+            c = get_connection()
+            try:
+                with c.cursor() as cur:
+                    cur.execute(
+                        'INSERT INTO "plants" ("name") VALUES (%s)',
+                        (new_plant_name.strip(),)
+                    )
+                c.commit()
+            finally:
+                c.close()
+            try:
+                load_table.clear()
+                load_plant_data.clear()
+                load_all_plants_data.clear()
+            except Exception:
+                pass
+        else:
+            next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
+            new_row = pd.DataFrame([{"id": next_id, "name": new_plant_name.strip()}])
+            plants_df = pd.concat([plants_df, new_row], ignore_index=True)
+            save_csv(plants_df, "plants.csv")
 
         st.sidebar.success(t("plant_added"))
         st.rerun()
