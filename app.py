@@ -188,6 +188,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_hours_year_label":   "**Horas/año (equivalentes):**",
         "mix_pot_caption":        "🎚️ Uso del potenciómetro:",
         "mix_equiv_label":        "Equivalente aproximado",
+        # Scenario persistence
+        "plan_save_btn":          "Guardar escenario actual",
+        "plan_save_name_label":   "Nombre del escenario",
+        "plan_save_name_default": "Escenario guardado",
+        "plan_save_ok":           "Escenario guardado correctamente.",
+        "plan_save_no_db":        "Sin conexión a base de datos — escenario no persistido.",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -351,6 +357,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_hours_year_label":   "**Hours/year (equivalent):**",
         "mix_pot_caption":        "🎚️ Dial usage:",
         "mix_equiv_label":        "Approximate equivalent",
+        # Scenario persistence
+        "plan_save_btn":          "Save current scenario",
+        "plan_save_name_label":   "Scenario name",
+        "plan_save_name_default": "Saved scenario",
+        "plan_save_ok":           "Scenario saved successfully.",
+        "plan_save_no_db":        "No database connection — scenario not persisted.",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -514,6 +526,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "mix_hours_year_label":   "**Ordu/urte (baliokideak):**",
         "mix_pot_caption":        "🎚️ Potentziornetroa erabilita:",
         "mix_equiv_label":        "Baliokide hurbila",
+        # Scenario persistence
+        "plan_save_btn":          "Uneko eszenatokia gorde",
+        "plan_save_name_label":   "Eszenatokiaren izena",
+        "plan_save_name_default": "Gordetako eszenatokia",
+        "plan_save_ok":           "Eszenatokia ondo gorde da.",
+        "plan_save_no_db":        "Ez dago datu-base konexiorik — eszenatokia ez da gorde.",
     },
 }
 
@@ -867,6 +885,72 @@ def save_table(df: pd.DataFrame, table: str) -> None:
         load_all_plants_data.clear()
     except Exception:
         pass
+
+
+# =========================================================
+# Scenario persistence (Bloque 2)
+# =========================================================
+def load_active_scenario(plant_id: int) -> dict | None:
+    """Returns dict with keys line_model, line_demand, line_bench_variant for
+    the active scenario of plant_id, or None if no active scenario exists."""
+    if not _has_db():
+        return None
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT id FROM "scenarios" WHERE plant_id = %s AND is_active = TRUE LIMIT 1',
+                (plant_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            scenario_id = row[0]
+            cur.execute(
+                'SELECT line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
+                (scenario_id,)
+            )
+            lines = cur.fetchall()
+        result = {"line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        for line_id, model, demand, bench_variant in lines:
+            result["line_model"][line_id] = model or ""
+            result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
+            result["line_bench_variant"][line_id] = bench_variant or ""
+        return result
+    except Exception:
+        return None
+    finally:
+        c.close()
+
+
+def save_scenario(plant_id: int, name: str, line_model: dict, line_demand: dict, line_bench_variant: dict) -> None:
+    """Upsert active scenario for plant_id: deactivate others, insert/replace this one."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('UPDATE "scenarios" SET is_active = FALSE WHERE plant_id = %s', (plant_id,))
+            cur.execute(
+                'INSERT INTO "scenarios" (plant_id, name, is_active) VALUES (%s, %s, TRUE) RETURNING id',
+                (plant_id, name)
+            )
+            scenario_id = cur.fetchone()[0]
+            all_line_ids = set(line_model.keys()) | set(line_demand.keys()) | set(line_bench_variant.keys())
+            for lid in all_line_ids:
+                cur.execute(
+                    'INSERT INTO "scenario_lines" (scenario_id, line_id, model, demand, bench_variant) VALUES (%s, %s, %s, %s, %s)',
+                    (
+                        scenario_id,
+                        lid,
+                        line_model.get(lid, ""),
+                        float(line_demand.get(lid, 0.0)),
+                        line_bench_variant.get(lid, ""),
+                    )
+                )
+        c.commit()
+    finally:
+        c.close()
 
 
 def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -1410,7 +1494,16 @@ if "line_bench_variant" not in st.session_state:
     st.session_state.line_bench_variant = {}
 _pid_init = st.session_state["plant_id"]
 if _pid_init not in st.session_state.line_model:
-    st.session_state.line_model[_pid_init] = {}
+    # First visit for this plant: try to restore from active scenario
+    _scenario = load_active_scenario(_pid_init)
+    if _scenario:
+        st.session_state.line_model[_pid_init] = _scenario["line_model"]
+        st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
+        st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
+    else:
+        st.session_state.line_model[_pid_init] = {}
+        st.session_state.line_demand[_pid_init] = {}
+        st.session_state.line_bench_variant[_pid_init] = {}
 if _pid_init not in st.session_state.line_demand:
     st.session_state.line_demand[_pid_init] = {}
 if _pid_init not in st.session_state.line_bench_variant:
@@ -2074,6 +2167,27 @@ if st.session_state.active_tab == "📊 Planificación":
                     label_visibility="collapsed",
                 )
                 st.session_state.line_demand[_pid][line_id] = d
+
+    # --- Save scenario button ---
+    st.divider()
+    _sc_col1, _sc_col2 = st.columns([2, 1])
+    _sc_name = _sc_col1.text_input(
+        t("plan_save_name_label"),
+        value=t("plan_save_name_default"),
+        key="scenario_name_input",
+    )
+    if _sc_col2.button(t("plan_save_btn"), use_container_width=True):
+        if _has_db():
+            save_scenario(
+                _pid,
+                _sc_name.strip() or t("plan_save_name_default"),
+                st.session_state.line_model.get(_pid, {}),
+                st.session_state.line_demand.get(_pid, {}),
+                st.session_state.line_bench_variant.get(_pid, {}),
+            )
+            st.success(t("plan_save_ok"))
+        else:
+            st.info(t("plan_save_no_db"))
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
