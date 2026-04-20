@@ -2103,6 +2103,44 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     st.markdown(t("cfg_times_header"))
     st.info(t("cfg_times_info"))
 
+    with st.expander("📐 ¿Dos métricas de tiempo distintas? Ejemplo real: PT0163 · proceso ML"):
+        st.markdown(
+            """
+**Capacidad en unidades — lógica de cuello de botella**
+
+El motor calcula `cycle_time_real = max(machine_time, labor_time / operarios)` por proceso.
+Ese valor es el tiempo mínimo entre dos unidades consecutivas: lo que tarda la máquina en liberar la pieza,
+o lo que tarda cada operario individualmente, lo que sea mayor.
+
+Proceso **ML** en PT0163 — 5 estaciones, 2 operarios/estación, proceso manual:
+
+| | Valor |
+|---|---|
+| machine_time | 0 h (proceso manual, sin ciclo de máquina) |
+| labor_time | 48,03 HH |
+| Tiempo por operario | 48,03 / 2 = 24,015 h |
+| cycle_time_real | max(0 ; 24,015) = **24,015 h** |
+| Capacidad ML | (43 h/sem × 5 estaciones) / 24,015 ≈ **8,95 uds/sem** |
+
+---
+
+**Horas-hombre visibles — contenido de trabajo, no ritmo**
+
+Tener 2 operarios no reduce las horas: las distribuye.
+Producir 1 unidad en ML cuesta **48,03 HH** — lo ejecutan 2 personas en paralelo,
+pero el contenido total de trabajo no desaparece.
+
+Por eso las horas visibles usan `cycle_time` directamente, sin dividir entre operarios:
+
+`h/sem = capacidad (uds/sem) × Σ cycle_time por proceso`
+
+Una cifra mide **ritmo de salida** (cuello de botella).
+La otra mide **carga real de planta** (horas-hombre totales comprometidas).
+Dividir cycle_time entre operarios para calcular horas sería un error: reduciría artificialmente
+la carga visible sin que el trabajo desaparezca de la planta.
+"""
+        )
+
     _fc1, _fc2 = st.columns(2)
     _filter_t_model = _fc1.text_input(t("cfg_filter_model"), key="filter_times_model", placeholder="ej. PT0163")
     _filter_t_proc  = _fc2.text_input(t("cfg_filter_process"), key="filter_times_proc", placeholder="ej. ML")
