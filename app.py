@@ -1005,7 +1005,7 @@ def load_scenario_by_id(scenario_id: int) -> dict | None:
                 (scenario_id,)
             )
             lines = cur.fetchall()
-        result = {"line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        result = {"scenario_id": scenario_id, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
         for line_id, model, demand, bench_variant in lines:
             result["line_model"][line_id] = model or ""
             result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
@@ -2157,6 +2157,8 @@ if st.session_state.active_tab == "📊 Planificación":
         st.session_state.line_model[_pid] = _pending["line_model"]
         st.session_state.line_demand[_pid] = _pending["line_demand"]
         st.session_state.line_bench_variant[_pid] = _pending["line_bench_variant"]
+        if "scenario_id" in _pending:
+            st.session_state[f"scenario_select_{_pid}"] = _pending["scenario_id"]
         for _lid, _mdl in _pending["line_model"].items():
             _var = _pending["line_bench_variant"].get(_lid, "")
             if _mdl in _DA_VALUES:
@@ -2167,7 +2169,7 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state[f"sel_combined_{_pid}_{_lid}"] = _mdl
         for _lid, _dem in _pending["line_demand"].items():
             st.session_state[f"demand_{_pid}_{_lid}"] = float(_dem)
-        st.success(t("plan_load_ok"))
+        st.success(t(_pending.get("_msg", "plan_load_ok")))
 
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
@@ -2292,7 +2294,10 @@ if st.session_state.active_tab == "📊 Planificación":
                     st.rerun()
             if _sce3.button(t("plan_activate_btn"), use_container_width=True, key="btn_activate_sc"):
                 activate_scenario(_pid, _sc_sel_id)
-                st.success(t("plan_activate_ok"))
+                _activated = load_scenario_by_id(_sc_sel_id)
+                if _activated:
+                    _activated["_msg"] = "plan_activate_ok"
+                    st.session_state[f"_pending_scenario_{_pid}"] = _activated
                 st.rerun()
         else:
             st.caption(t("plan_no_scenarios"))
