@@ -196,9 +196,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_no_db":        "Sin conexión a base de datos — escenario no persistido.",
         "plan_scenarios_header":  "Escenarios guardados",
         "plan_load_btn":          "Cargar",
-        "plan_activate_btn":      "Marcar activo",
+        "plan_activate_btn":      "Usar por defecto",
         "plan_load_ok":           "Escenario cargado.",
-        "plan_activate_ok":       "Marcado como activo.",
+        "plan_activate_ok":       "Establecido como escenario por defecto.",
         "plan_no_scenarios":      "No hay escenarios guardados para esta planta.",
         "plan_active_marker":     "✓ activo",
     },
@@ -372,9 +372,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_no_db":        "No database connection — scenario not persisted.",
         "plan_scenarios_header":  "Saved scenarios",
         "plan_load_btn":          "Load",
-        "plan_activate_btn":      "Set active",
+        "plan_activate_btn":      "Set as default",
         "plan_load_ok":           "Scenario loaded.",
-        "plan_activate_ok":       "Marked as active.",
+        "plan_activate_ok":       "Set as default scenario.",
         "plan_no_scenarios":      "No saved scenarios for this plant.",
         "plan_active_marker":     "✓ active",
     },
@@ -548,9 +548,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_no_db":        "Ez dago datu-base konexiorik — eszenatokia ez da gorde.",
         "plan_scenarios_header":  "Gordetako eszenatokiak",
         "plan_load_btn":          "Kargatu",
-        "plan_activate_btn":      "Aktibo markatu",
+        "plan_activate_btn":      "Lehenetsita utzi",
         "plan_load_ok":           "Eszenatokia kargatu da.",
-        "plan_activate_ok":       "Aktibo gisa markatu da.",
+        "plan_activate_ok":       "Eszenatoki lehenetsi gisa ezarri da.",
         "plan_no_scenarios":      "Ez dago gordetako eszenatokiik planta honentzat.",
         "plan_active_marker":     "✓ aktibo",
     },
@@ -932,7 +932,7 @@ def load_active_scenario(plant_id: int) -> dict | None:
                 (scenario_id,)
             )
             lines = cur.fetchall()
-        result = {"line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        result = {"scenario_id": scenario_id, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
         for line_id, model, demand, bench_variant in lines:
             result["line_model"][line_id] = model or ""
             result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
@@ -1578,6 +1578,8 @@ if _pid_init not in st.session_state.line_model:
         st.session_state.line_model[_pid_init] = _scenario["line_model"]
         st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
         st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
+        # Sync selector to the loaded scenario so UI and session_state agree
+        st.session_state[f"scenario_select_{_pid_init}"] = _scenario["scenario_id"]
     else:
         st.session_state.line_model[_pid_init] = {}
         st.session_state.line_demand[_pid_init] = {}
@@ -2261,7 +2263,7 @@ if st.session_state.active_tab == "📊 Planificación":
                 t("plan_scenarios_header"),
                 options=list(_sc_label_map.keys()),
                 format_func=lambda sid: _sc_label_map[sid],
-                key="scenario_select",
+                key=f"scenario_select_{_pid}",
                 label_visibility="collapsed",
             )
             if _sce2.button(t("plan_load_btn"), use_container_width=True, key="btn_load_sc"):
