@@ -1009,6 +1009,11 @@ def compute_plant_structural_capacity(
     compat_active_p = p_compat[(p_compat["compatible"] == 1) & (p_compat["model"].isin(active_models_p))].copy()
     allowed_by_line_p = compat_active_p.groupby("line_id")["model"].apply(list).to_dict()
 
+    # Cycle times por modelo (para horas visibles)
+    _t = p_times.copy()
+    _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
+    cycle_by_model_p = _t.groupby("model")["cycle_time"].sum().to_dict()
+
     # Pre-convertir tipos numéricos una sola vez
     p_times["cycle_time"] = pd.to_numeric(p_times["cycle_time"], errors="coerce").fillna(0.0)
 
@@ -1085,7 +1090,7 @@ def compute_plant_structural_capacity(
             if cap_min <= 0:
                 continue
 
-            w_m = float(ctr.sum())
+            w_m = float(cycle_by_model_p.get(m, 0.0))
 
             capU_vals.append(cap_min)
             capH_vals.append(cap_min * w_m)
@@ -1424,6 +1429,8 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
         return {"cap_u_sem": 0.0, "cap_h_sem": 0.0}
 
     model_times = p_times[p_times["model"] == model_name].copy()
+    model_times["cycle_time"] = pd.to_numeric(model_times["cycle_time"], errors="coerce").fillna(0.0)
+    total_cycle = float(model_times["cycle_time"].sum())
 
     line_ids = p_stations["line_id"].astype(str).str.strip().unique().tolist()
 
@@ -1466,7 +1473,7 @@ def compute_model_capacity_by_plant(model_name: str, p_id: int, all_data: dict, 
             continue
 
         cap_u = float(cap_final.min())
-        cap_h = cap_u * float(ctr.sum())
+        cap_h = cap_u * total_cycle
 
         total_cap_u += cap_u
         total_cap_h += cap_h
@@ -2860,6 +2867,10 @@ if st.session_state.active_tab == "📈 Resultados":
        .tolist()
     )
 
+    _tc = times_df.copy()
+    _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
+    cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
+
     for line_id in all_line_ids:
 
         parts = line_id.split("-", 1)
@@ -2895,8 +2906,7 @@ if st.session_state.active_tab == "📈 Resultados":
         demand_year = demand_week * weeks_equiv
         cap_year = cap_week * weeks_equiv
 
-        _ctr_mask = (merged["cycle_time_real"] > 0) & (merged["stations"] > 0)
-        total_cycle_time_model = float(merged.loc[_ctr_mask, "cycle_time_real"].sum()) if not merged.empty else 0.0
+        total_cycle_time_model = cycle_time_by_model.get(model, 0.0)
 
         cap_hours_week = cap_week * total_cycle_time_model
         cap_hours_year = cap_hours_week * weeks_equiv
@@ -3424,6 +3434,10 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader(t("tab_mix_header"))
     st.info(t("mix_info"))
 
+    _t = times_df.copy()
+    _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
+    cycle_by_model = _t.groupby("model")["cycle_time"].sum().to_dict()
+
     line_stats_rows = []
     capH_line_model = {}
     capU_line_model = {}
@@ -3467,7 +3481,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             if cap_week <= 0:
                 continue
 
-            w_m = float(_prod["cycle_time_real"].sum())
+            w_m = float(cycle_by_model.get(m, 0.0))
             cap_h_week = cap_week * w_m
 
             capH_line_model[(line_id, m)] = float(cap_h_week)
