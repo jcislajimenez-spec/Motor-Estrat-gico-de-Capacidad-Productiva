@@ -194,6 +194,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_name_default": "Escenario guardado",
         "plan_save_ok":           "Escenario guardado correctamente.",
         "plan_save_no_db":        "Sin conexión a base de datos — escenario no persistido.",
+        "plan_scenarios_header":  "Escenarios guardados",
+        "plan_load_btn":          "Cargar",
+        "plan_activate_btn":      "Marcar activo",
+        "plan_load_ok":           "Escenario cargado.",
+        "plan_activate_ok":       "Marcado como activo.",
+        "plan_no_scenarios":      "No hay escenarios guardados para esta planta.",
+        "plan_active_marker":     "✓ activo",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -363,6 +370,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_name_default": "Saved scenario",
         "plan_save_ok":           "Scenario saved successfully.",
         "plan_save_no_db":        "No database connection — scenario not persisted.",
+        "plan_scenarios_header":  "Saved scenarios",
+        "plan_load_btn":          "Load",
+        "plan_activate_btn":      "Set active",
+        "plan_load_ok":           "Scenario loaded.",
+        "plan_activate_ok":       "Marked as active.",
+        "plan_no_scenarios":      "No saved scenarios for this plant.",
+        "plan_active_marker":     "✓ active",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -532,6 +546,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_save_name_default": "Gordetako eszenatokia",
         "plan_save_ok":           "Eszenatokia ondo gorde da.",
         "plan_save_no_db":        "Ez dago datu-base konexiorik — eszenatokia ez da gorde.",
+        "plan_scenarios_header":  "Gordetako eszenatokiak",
+        "plan_load_btn":          "Kargatu",
+        "plan_activate_btn":      "Aktibo markatu",
+        "plan_load_ok":           "Eszenatokia kargatu da.",
+        "plan_activate_ok":       "Aktibo gisa markatu da.",
+        "plan_no_scenarios":      "Ez dago gordetako eszenatokiik planta honentzat.",
+        "plan_active_marker":     "✓ aktibo",
     },
 }
 
@@ -948,6 +969,63 @@ def save_scenario(plant_id: int, name: str, line_model: dict, line_demand: dict,
                         line_bench_variant.get(lid, ""),
                     )
                 )
+        c.commit()
+    finally:
+        c.close()
+
+
+def list_scenarios(plant_id: int) -> list[dict]:
+    """Returns all scenarios for plant_id ordered by created_at DESC."""
+    if not _has_db():
+        return []
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT id, name, is_active FROM "scenarios" WHERE plant_id = %s ORDER BY created_at DESC',
+                (plant_id,)
+            )
+            rows = cur.fetchall()
+        return [{"id": r[0], "name": r[1], "is_active": bool(r[2])} for r in rows]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+def load_scenario_by_id(scenario_id: int) -> dict | None:
+    """Loads line data for a specific scenario id."""
+    if not _has_db():
+        return None
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
+                (scenario_id,)
+            )
+            lines = cur.fetchall()
+        result = {"line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        for line_id, model, demand, bench_variant in lines:
+            result["line_model"][line_id] = model or ""
+            result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
+            result["line_bench_variant"][line_id] = bench_variant or ""
+        return result
+    except Exception:
+        return None
+    finally:
+        c.close()
+
+
+def activate_scenario(plant_id: int, scenario_id: int) -> None:
+    """Sets the given scenario as active, deactivating all others for plant_id."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('UPDATE "scenarios" SET is_active = FALSE WHERE plant_id = %s', (plant_id,))
+            cur.execute('UPDATE "scenarios" SET is_active = TRUE WHERE id = %s', (scenario_id,))
         c.commit()
     finally:
         c.close()
@@ -2168,9 +2246,44 @@ if st.session_state.active_tab == "📊 Planificación":
                 )
                 st.session_state.line_demand[_pid][line_id] = d
 
-    # --- Save scenario button ---
+    # --- Scenario management ---
     st.divider()
-    _sc_col1, _sc_col2 = st.columns([2, 1])
+    if _has_db():
+        _sc_list = list_scenarios(_pid)
+        if _sc_list:
+            st.markdown(f"**{t('plan_scenarios_header')}**")
+            _sc_label_map = {
+                s["id"]: (f"{s['name']}  {t('plan_active_marker')}" if s["is_active"] else s["name"])
+                for s in _sc_list
+            }
+            _sce1, _sce2, _sce3 = st.columns([3, 1, 1], vertical_alignment="bottom")
+            _sc_sel_id = _sce1.selectbox(
+                t("plan_scenarios_header"),
+                options=list(_sc_label_map.keys()),
+                format_func=lambda sid: _sc_label_map[sid],
+                key="scenario_select",
+                label_visibility="collapsed",
+            )
+            if _sce2.button(t("plan_load_btn"), use_container_width=True, key="btn_load_sc"):
+                _loaded = load_scenario_by_id(_sc_sel_id)
+                if _loaded:
+                    st.session_state.line_model[_pid] = _loaded["line_model"]
+                    st.session_state.line_demand[_pid] = _loaded["line_demand"]
+                    st.session_state.line_bench_variant[_pid] = _loaded["line_bench_variant"]
+                    for _k in list(st.session_state.keys()):
+                        if _k.startswith(f"sel_combined_{_pid}_") or _k.startswith(f"demand_{_pid}_"):
+                            del st.session_state[_k]
+                    st.success(t("plan_load_ok"))
+                    st.rerun()
+            if _sce3.button(t("plan_activate_btn"), use_container_width=True, key="btn_activate_sc"):
+                activate_scenario(_pid, _sc_sel_id)
+                st.success(t("plan_activate_ok"))
+                st.rerun()
+        else:
+            st.caption(t("plan_no_scenarios"))
+
+    # --- Save (name + button on same line) ---
+    _sc_col1, _sc_col2 = st.columns([2, 1], vertical_alignment="bottom")
     _sc_name = _sc_col1.text_input(
         t("plan_save_name_label"),
         value=t("plan_save_name_default"),
