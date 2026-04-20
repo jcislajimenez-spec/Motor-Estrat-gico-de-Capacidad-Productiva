@@ -2150,6 +2150,25 @@ if st.session_state.active_tab == "📊 Planificación":
             _bt = str(_gr.get("bench_type", "")).strip()
             _da_default_variant[_dv] = "LV" if _bt == "LV" else "MV"
 
+    # Pending scenario load — apply BEFORE widgets are instantiated (Streamlit requirement)
+    _pending_key = f"_pending_scenario_{_pid}"
+    if _pending_key in st.session_state:
+        _pending = st.session_state.pop(_pending_key)
+        st.session_state.line_model[_pid] = _pending["line_model"]
+        st.session_state.line_demand[_pid] = _pending["line_demand"]
+        st.session_state.line_bench_variant[_pid] = _pending["line_bench_variant"]
+        for _lid, _mdl in _pending["line_model"].items():
+            _var = _pending["line_bench_variant"].get(_lid, "")
+            if _mdl in _DA_VALUES:
+                if _var not in _VARIANT_LABELS:
+                    _var = _da_default_variant.get(_mdl, _VARIANT_LABELS[0])
+                st.session_state[f"sel_combined_{_pid}_{_lid}"] = f"{_mdl} · {_var}"
+            elif _mdl:
+                st.session_state[f"sel_combined_{_pid}_{_lid}"] = _mdl
+        for _lid, _dem in _pending["line_demand"].items():
+            st.session_state[f"demand_{_pid}_{_lid}"] = float(_dem)
+        st.success(t("plan_load_ok"))
+
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
 
@@ -2269,21 +2288,7 @@ if st.session_state.active_tab == "📊 Planificación":
             if _sce2.button(t("plan_load_btn"), use_container_width=True, key="btn_load_sc"):
                 _loaded = load_scenario_by_id(_sc_sel_id)
                 if _loaded:
-                    st.session_state.line_model[_pid] = _loaded["line_model"]
-                    st.session_state.line_demand[_pid] = _loaded["line_demand"]
-                    st.session_state.line_bench_variant[_pid] = _loaded["line_bench_variant"]
-                    # SET widget keys explicitly — more reliable than DELETE for Streamlit rerun
-                    for _lid, _mdl in _loaded["line_model"].items():
-                        _var = _loaded["line_bench_variant"].get(_lid, "")
-                        if _mdl in _DA_VALUES:
-                            if _var not in _VARIANT_LABELS:
-                                _var = _da_default_variant.get(_mdl, _VARIANT_LABELS[0])
-                            st.session_state[f"sel_combined_{_pid}_{_lid}"] = f"{_mdl} · {_var}"
-                        elif _mdl:
-                            st.session_state[f"sel_combined_{_pid}_{_lid}"] = _mdl
-                    for _lid, _dem in _loaded["line_demand"].items():
-                        st.session_state[f"demand_{_pid}_{_lid}"] = float(_dem)
-                    st.success(t("plan_load_ok"))
+                    st.session_state[f"_pending_scenario_{_pid}"] = _loaded
                     st.rerun()
             if _sce3.button(t("plan_activate_btn"), use_container_width=True, key="btn_activate_sc"):
                 activate_scenario(_pid, _sc_sel_id)
