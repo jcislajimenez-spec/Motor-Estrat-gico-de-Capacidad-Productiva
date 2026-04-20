@@ -2272,9 +2272,17 @@ if st.session_state.active_tab == "📊 Planificación":
                     st.session_state.line_model[_pid] = _loaded["line_model"]
                     st.session_state.line_demand[_pid] = _loaded["line_demand"]
                     st.session_state.line_bench_variant[_pid] = _loaded["line_bench_variant"]
-                    for _k in list(st.session_state.keys()):
-                        if _k.startswith(f"sel_combined_{_pid}_") or _k.startswith(f"demand_{_pid}_"):
-                            del st.session_state[_k]
+                    # SET widget keys explicitly — more reliable than DELETE for Streamlit rerun
+                    for _lid, _mdl in _loaded["line_model"].items():
+                        _var = _loaded["line_bench_variant"].get(_lid, "")
+                        if _mdl in _DA_VALUES:
+                            if _var not in _VARIANT_LABELS:
+                                _var = _da_default_variant.get(_mdl, _VARIANT_LABELS[0])
+                            st.session_state[f"sel_combined_{_pid}_{_lid}"] = f"{_mdl} · {_var}"
+                        elif _mdl:
+                            st.session_state[f"sel_combined_{_pid}_{_lid}"] = _mdl
+                    for _lid, _dem in _loaded["line_demand"].items():
+                        st.session_state[f"demand_{_pid}_{_lid}"] = float(_dem)
                     st.success(t("plan_load_ok"))
                     st.rerun()
             if _sce3.button(t("plan_activate_btn"), use_container_width=True, key="btn_activate_sc"):
@@ -2289,7 +2297,7 @@ if st.session_state.active_tab == "📊 Planificación":
     _sc_name = _sc_col1.text_input(
         t("plan_save_name_label"),
         value=t("plan_save_name_default"),
-        key="scenario_name_input",
+        key=f"scenario_name_input_{_pid}",
     )
     if _sc_col2.button(t("plan_save_btn"), use_container_width=True):
         if _has_db():
