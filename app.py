@@ -170,6 +170,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "global_mod_detail_hours": "**Horas estimadas:**",
         "global_mod_delete":      "🗑️ Eliminar",
         "global_model_selected":  "**Modelo seleccionado:**",
+        "global_escenario_label": "Escenario de capacidad:",
+        "global_turnos_label":    "Turnos (simulación global):",
+        "global_caption_esc":     "Escenario:",
+        "global_caption_turns":   "Turnos:",
+        "global_disp_prefix":     "Disp.",
+        "global_chart_capvsdisp": "Capacidad vs Disponibilidad por Planta (h/año)",
+        "global_chart_legend_cap":  "Capacidad",
+        "global_chart_legend_disp": "Disponibilidad",
+        "global_chart_distrib":   "Distribución de Capacidad ({esc}) - h/año",
         # Mix — panel derecho
         "mix_ceiling_label":      "**Techo estructural planta:**",
         "mix_max_hours_year":     "**Horas máximas/año (estructura):**",
@@ -324,6 +333,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "global_mod_detail_hours": "**Estimated hours:**",
         "global_mod_delete":      "🗑️ Delete",
         "global_model_selected":  "**Selected model:**",
+        "global_escenario_label": "Capacity scenario:",
+        "global_turnos_label":    "Shifts (global simulation):",
+        "global_caption_esc":     "Scenario:",
+        "global_caption_turns":   "Shifts:",
+        "global_disp_prefix":     "Avail.",
+        "global_chart_capvsdisp": "Capacity vs Availability by Plant (h/year)",
+        "global_chart_legend_cap":  "Capacity",
+        "global_chart_legend_disp": "Availability",
+        "global_chart_distrib":   "Capacity Distribution ({esc}) - h/year",
         # Mix — right panel
         "mix_ceiling_label":      "**Plant structural ceiling:**",
         "mix_max_hours_year":     "**Max hours/year (structure):**",
@@ -478,6 +496,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "global_mod_detail_hours": "**Ordu estimatuak:**",
         "global_mod_delete":      "🗑️ Ezabatu",
         "global_model_selected":  "**Hautatutako eredua:**",
+        "global_escenario_label": "Ahalmen-eszenarioa:",
+        "global_turnos_label":    "Txandak (simulazio globala):",
+        "global_caption_esc":     "Eszenarioa:",
+        "global_caption_turns":   "Txandak:",
+        "global_disp_prefix":     "Erab.",
+        "global_chart_capvsdisp": "Ahalmena vs Erabilgarritasuna Plantaka (h/urte)",
+        "global_chart_legend_cap":  "Ahalmena",
+        "global_chart_legend_disp": "Erabilgarritasuna",
+        "global_chart_distrib":   "Ahalmen-banaketa ({esc}) - h/urte",
         # Mix — eskuineko panela
         "mix_ceiling_label":      "**Plantaren teto estrukturala:**",
         "mix_max_hours_year":     "**Ordu maximoak/urte (egitura):**",
@@ -1548,7 +1575,7 @@ if st.session_state.active_tab == "🌐 Global":
     col_esc1, col_esc2, col_esc3 = st.columns([1, 1, 2])
     with col_esc1:
         escenario = st.radio(
-            "Escenario de capacidad:",
+            t("global_escenario_label"),
             ["Máximo", "Promedio", "Mínimo"],
             index=1,  # Promedio por defecto
             horizontal=True,
@@ -1556,7 +1583,7 @@ if st.session_state.active_tab == "🌐 Global":
         )
     with col_esc2:
         turnos_option = st.radio(
-            "Turnos (simulación global):",
+            t("global_turnos_label"),
             ["Config. actual", "1 turno", "2 turnos", "3 turnos"],
             index=0,
             horizontal=True,
@@ -1586,7 +1613,7 @@ if st.session_state.active_tab == "🌐 Global":
     # 2️⃣ RESUMEN GLOBAL DE CAPACIDAD
     # =====================================================
     st.markdown(t("global_capacity_header"))
-    st.caption(f"Escenario: **{escenario}**" + (f" | Turnos: **{shifts_override}**" if shifts_override else ""))
+    st.caption(f"{t('global_caption_esc')} **{escenario}**" + (f" | {t('global_caption_turns')} **{shifts_override}**" if shifts_override else ""))
     
     # Construir DataFrame de resumen
     resumen_rows = []
@@ -1647,7 +1674,7 @@ if st.session_state.active_tab == "🌐 Global":
         with disp_cols[col_idx]:
             default_disp = st.session_state.global_disponibilidad.get(r["plant_name"], r["max_h_year"] * 1.2)
             disp_value = st.number_input(
-                f"Disp. {r['plant_name']} (h/año)",
+                f"{t('global_disp_prefix')} {r['plant_name']} (h/año)",
                 min_value=0.0,
                 value=float(default_disp),
                 step=1000.0,
@@ -1717,11 +1744,11 @@ if st.session_state.active_tab == "🌐 Global":
     caps = [r["Capacidad (h/año)"] for r in cap_disp_rows]
     disps = [r["Disponibilidad (h/año)"] for r in cap_disp_rows]
     
-    fig_cap_disp.add_bar(x=plants_no_total, y=caps, name="Capacidad", marker_color="#A6192E")
-    fig_cap_disp.add_bar(x=plants_no_total, y=disps, name="Disponibilidad", marker_color="#2E75B6")
+    fig_cap_disp.add_bar(x=plants_no_total, y=caps, name=t("global_chart_legend_cap"), marker_color="#A6192E")
+    fig_cap_disp.add_bar(x=plants_no_total, y=disps, name=t("global_chart_legend_disp"), marker_color="#2E75B6")
     fig_cap_disp.update_layout(
         barmode="group",
-        title="Capacidad vs Disponibilidad por Planta (h/año)",
+        title=t("global_chart_capvsdisp"),
         height=400,
     )
     st.plotly_chart(fig_cap_disp, use_container_width=True, key="chart_cap_disp_global")
@@ -1869,7 +1896,7 @@ if st.session_state.active_tab == "🌐 Global":
                 marker=dict(colors=px.colors.qualitative.Set2),
             ))
             fig_pie.update_layout(
-                title=f"Distribución de Capacidad ({escenario}) - h/año",
+                title=t("global_chart_distrib").format(esc=escenario),
                 height=400,
             )
             st.plotly_chart(fig_pie, use_container_width=True, key="chart_pie_global")
