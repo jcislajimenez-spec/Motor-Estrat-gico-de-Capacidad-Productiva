@@ -2507,9 +2507,12 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state.line_bench_variant.get(_pid, {}),
             )
             rename_scenario(_sc_sel_id, _name_to_save)
-            # Deferred name ensures the field shows the saved name after rerun;
-            # rerun forces list_scenarios to re-fetch so the dropdown label updates too.
             st.session_state[f"_deferred_sc_name_{_pid}"] = _name_to_save
+            # Pop the selectbox key so Streamlit treats the next render as a fresh
+            # initialization — this forces the frontend to re-render the header label
+            # with the new name from format_func, even though the selected id is the same.
+            st.session_state.pop(f"scenario_select_{_pid}", None)
+            st.session_state[f"_deferred_sc_select_{_pid}"] = _sc_sel_id
             st.toast(t("plan_save_changes_ok"))
             st.rerun()
     if _sc_col3.button(t("plan_save_new_btn"), use_container_width=True):
