@@ -1068,17 +1068,17 @@ def delete_scenario(scenario_id: int) -> None:
         c.close()
 
 
-def duplicate_scenario(scenario_id: int, plant_id: int) -> None:
-    """Creates a non-active copy of a scenario for the same plant."""
+def duplicate_scenario(scenario_id: int, plant_id: int) -> tuple[int, str] | tuple[None, None]:
+    """Creates a non-active copy of a scenario. Returns (new_id, copy_name) or (None, None) on failure."""
     if not _has_db():
-        return
+        return None, None
     c = get_connection()
     try:
         with c.cursor() as cur:
             cur.execute('SELECT name FROM "scenarios" WHERE id = %s', (scenario_id,))
             row = cur.fetchone()
             if not row:
-                return
+                return None, None
             copy_name = f"{row[0]} (copia)"
             cur.execute(
                 'INSERT INTO "scenarios" (plant_id, name, is_active) VALUES (%s, %s, FALSE) RETURNING id',
@@ -1091,6 +1091,7 @@ def duplicate_scenario(scenario_id: int, plant_id: int) -> None:
                 (new_id, scenario_id)
             )
         c.commit()
+        return new_id, copy_name
     finally:
         c.close()
 
@@ -1110,6 +1111,19 @@ def update_scenario_lines(scenario_id: int, line_model: dict, line_demand: dict,
                     'VALUES (%s, %s, %s, %s, %s)',
                     (scenario_id, lid, line_model.get(lid, ""), line_demand.get(lid, 0), line_bench_variant.get(lid, ""))
                 )
+        c.commit()
+    finally:
+        c.close()
+
+
+def rename_scenario(scenario_id: int, name: str) -> None:
+    """Updates only the name of an existing scenario."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('UPDATE "scenarios" SET name = %s WHERE id = %s', (name, scenario_id))
         c.commit()
     finally:
         c.close()
@@ -2390,19 +2404,35 @@ if st.session_state.active_tab == "📊 Planificación":
     # --- Scenario management ---
     st.divider()
     _sc_sel_id = None
+    _sc_name_map: dict = {}
     if _has_db():
         _sc_list = list_scenarios(_pid)
         if _sc_list:
+            _sc_name_map = {s["id"]: s["name"] for s in _sc_list}
             st.markdown(f"**{t('plan_scenarios_header')}**")
             _sc_label_map = {
                 s["id"]: (f"{s['name']}  {t('plan_active_marker')}" if s["is_active"] else s["name"])
                 for s in _sc_list
             }
             _sc_is_active_map = {s["id"]: s["is_active"] for s in _sc_list}
-            # Apply deferred selection (set by delete handler on previous run, before widget instantiation)
+
+            # Apply deferred selection (set by delete/duplicate/save-as-new on previous run)
             _defer_sel_key = f"_deferred_sc_select_{_pid}"
             if _defer_sel_key in st.session_state:
                 st.session_state[f"scenario_select_{_pid}"] = st.session_state.pop(_defer_sel_key)
+
+            # Sync name field: deferred name wins; otherwise sync when selection changes
+            _defer_name_key = f"_deferred_sc_name_{_pid}"
+            if _defer_name_key in st.session_state:
+                st.session_state[f"scenario_name_input_{_pid}"] = st.session_state.pop(_defer_name_key)
+            else:
+                _cur_sel = st.session_state.get(f"scenario_select_{_pid}")
+                _prev_sel = st.session_state.get(f"_prev_sc_sel_{_pid}")
+                if _cur_sel != _prev_sel and _cur_sel in _sc_name_map:
+                    st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map[_cur_sel]
+            # Track current selection so next render can detect changes
+            st.session_state[f"_prev_sc_sel_{_pid}"] = st.session_state.get(f"scenario_select_{_pid}")
+
             _sce1, _sce2, _sce3, _sce4, _sce5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
                 t("plan_scenarios_header"),
@@ -2424,14 +2454,16 @@ if st.session_state.active_tab == "📊 Planificación":
                     st.session_state[f"_pending_scenario_{_pid}"] = _activated
                 st.rerun()
             if _sce4.button(t("plan_duplicate_btn"), use_container_width=True, key="btn_duplicate_sc"):
-                duplicate_scenario(_sc_sel_id, _pid)
+                _dup_id, _dup_name = duplicate_scenario(_sc_sel_id, _pid)
+                if _dup_id is not None:
+                    st.session_state[f"_deferred_sc_select_{_pid}"] = _dup_id
+                    st.session_state[f"_deferred_sc_name_{_pid}"] = _dup_name
                 st.rerun()
             if _sce5.button(t("plan_delete_btn"), use_container_width=True, key="btn_delete_sc"):
                 if _sc_is_active_map.get(_sc_sel_id, False):
                     st.warning(t("plan_delete_blocked"))
                 else:
                     delete_scenario(_sc_sel_id)
-                    # Determine next valid selection: prefer active, else first remaining
                     _remaining = [s for s in _sc_list if s["id"] != _sc_sel_id]
                     if _remaining:
                         _next_id = next((s["id"] for s in _remaining if s["is_active"]), _remaining[0]["id"])
@@ -2456,26 +2488,34 @@ if st.session_state.active_tab == "📊 Planificación":
         elif _sc_sel_id is None:
             st.warning(t("plan_save_changes_no_sel"))
         else:
+            _name_to_save = _sc_name.strip() or t("plan_save_name_default")
             update_scenario_lines(
                 _sc_sel_id,
                 st.session_state.line_model.get(_pid, {}),
                 st.session_state.line_demand.get(_pid, {}),
                 st.session_state.line_bench_variant.get(_pid, {}),
             )
-            st.success(t("plan_save_changes_ok"))
+            rename_scenario(_sc_sel_id, _name_to_save)
+            # Deferred name ensures the field shows the saved name after rerun;
+            # rerun forces list_scenarios to re-fetch so the dropdown label updates too.
+            st.session_state[f"_deferred_sc_name_{_pid}"] = _name_to_save
+            st.toast(t("plan_save_changes_ok"))
+            st.rerun()
     if _sc_col3.button(t("plan_save_new_btn"), use_container_width=True):
         if not _has_db():
             st.info(t("plan_save_no_db"))
         else:
+            _used_name = _sc_name.strip() or t("plan_save_name_default")
             _new_id = create_scenario_inactive(
                 _pid,
-                _sc_name.strip() or t("plan_save_name_default"),
+                _used_name,
                 st.session_state.line_model.get(_pid, {}),
                 st.session_state.line_demand.get(_pid, {}),
                 st.session_state.line_bench_variant.get(_pid, {}),
             )
             if _new_id is not None:
                 st.session_state[f"_deferred_sc_select_{_pid}"] = _new_id
+                st.session_state[f"_deferred_sc_name_{_pid}"] = _used_name
             st.success(t("plan_save_ok"))
             st.rerun()
 
