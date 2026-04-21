@@ -204,6 +204,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_btn":        "Borrar",
         "plan_delete_ok":         "Escenario eliminado.",
         "plan_delete_blocked":    "No se puede borrar el escenario activo. Activa otro primero.",
+        "plan_duplicate_btn":     "Duplicar",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -383,6 +384,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_btn":        "Delete",
         "plan_delete_ok":         "Scenario deleted.",
         "plan_delete_blocked":    "Cannot delete the active scenario. Set another as default first.",
+        "plan_duplicate_btn":     "Duplicate",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -562,6 +564,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_btn":        "Ezabatu",
         "plan_delete_ok":         "Eszenatokia ezabatu da.",
         "plan_delete_blocked":    "Ezin da aktiboen eszenatokia ezabatu. Beste bat lehenetsi lehenik.",
+        "plan_duplicate_btn":     "Bikoiztu",
     },
 }
 
@@ -1048,6 +1051,33 @@ def delete_scenario(scenario_id: int) -> None:
     try:
         with c.cursor() as cur:
             cur.execute('DELETE FROM "scenarios" WHERE id = %s AND is_active = FALSE', (scenario_id,))
+        c.commit()
+    finally:
+        c.close()
+
+
+def duplicate_scenario(scenario_id: int, plant_id: int) -> None:
+    """Creates a non-active copy of a scenario for the same plant."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('SELECT name FROM "scenarios" WHERE id = %s', (scenario_id,))
+            row = cur.fetchone()
+            if not row:
+                return
+            copy_name = f"{row[0]} (copia)"
+            cur.execute(
+                'INSERT INTO "scenarios" (plant_id, name, is_active) VALUES (%s, %s, FALSE) RETURNING id',
+                (plant_id, copy_name)
+            )
+            new_id = cur.fetchone()[0]
+            cur.execute(
+                'INSERT INTO "scenario_lines" (scenario_id, line_id, model, demand, bench_variant) '
+                'SELECT %s, line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
+                (new_id, scenario_id)
+            )
         c.commit()
     finally:
         c.close()
@@ -2315,7 +2345,7 @@ if st.session_state.active_tab == "📊 Planificación":
             _defer_sel_key = f"_deferred_sc_select_{_pid}"
             if _defer_sel_key in st.session_state:
                 st.session_state[f"scenario_select_{_pid}"] = st.session_state.pop(_defer_sel_key)
-            _sce1, _sce2, _sce3, _sce4 = st.columns([3, 1, 1, 1], vertical_alignment="bottom")
+            _sce1, _sce2, _sce3, _sce4, _sce5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
                 t("plan_scenarios_header"),
                 options=list(_sc_label_map.keys()),
@@ -2335,7 +2365,10 @@ if st.session_state.active_tab == "📊 Planificación":
                     _activated["_msg"] = "plan_activate_ok"
                     st.session_state[f"_pending_scenario_{_pid}"] = _activated
                 st.rerun()
-            if _sce4.button(t("plan_delete_btn"), use_container_width=True, key="btn_delete_sc"):
+            if _sce4.button(t("plan_duplicate_btn"), use_container_width=True, key="btn_duplicate_sc"):
+                duplicate_scenario(_sc_sel_id, _pid)
+                st.rerun()
+            if _sce5.button(t("plan_delete_btn"), use_container_width=True, key="btn_delete_sc"):
                 if _sc_is_active_map.get(_sc_sel_id, False):
                     st.warning(t("plan_delete_blocked"))
                 else:
