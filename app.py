@@ -1154,6 +1154,14 @@ def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_de
         c.close()
 
 
+def _on_scenario_select_change(pid) -> None:
+    """on_change callback for the scenario selectbox. Syncs the name field to the newly selected scenario."""
+    _sel = st.session_state.get(f"scenario_select_{pid}")
+    _nmap = st.session_state.get(f"_sc_name_map_{pid}", {})
+    if _sel in _nmap:
+        st.session_state[f"scenario_name_input_{pid}"] = _nmap[_sel]
+
+
 def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     out = df.copy()
     for c in cols:
@@ -2416,22 +2424,23 @@ if st.session_state.active_tab == "📊 Planificación":
             }
             _sc_is_active_map = {s["id"]: s["is_active"] for s in _sc_list}
 
+            # Make name map available to the on_change callback (read by _on_scenario_select_change)
+            st.session_state[f"_sc_name_map_{_pid}"] = _sc_name_map
+
             # Apply deferred selection (set by delete/duplicate/save-as-new on previous run)
             _defer_sel_key = f"_deferred_sc_select_{_pid}"
             if _defer_sel_key in st.session_state:
                 st.session_state[f"scenario_select_{_pid}"] = st.session_state.pop(_defer_sel_key)
 
-            # Sync name field: deferred name wins; otherwise sync when selection changes
+            # Apply deferred name (set by duplicate/save-as-new/save-changes on previous run)
             _defer_name_key = f"_deferred_sc_name_{_pid}"
             if _defer_name_key in st.session_state:
                 st.session_state[f"scenario_name_input_{_pid}"] = st.session_state.pop(_defer_name_key)
-            else:
-                _cur_sel = st.session_state.get(f"scenario_select_{_pid}")
-                _prev_sel = st.session_state.get(f"_prev_sc_sel_{_pid}")
-                if _cur_sel != _prev_sel and _cur_sel in _sc_name_map:
-                    st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map[_cur_sel]
-            # Track current selection so next render can detect changes
-            st.session_state[f"_prev_sc_sel_{_pid}"] = st.session_state.get(f"scenario_select_{_pid}")
+            elif f"scenario_name_input_{_pid}" not in st.session_state:
+                # First render only: initialize field from selected scenario's name
+                _init_sel = st.session_state.get(f"scenario_select_{_pid}")
+                if _init_sel in _sc_name_map:
+                    st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map[_init_sel]
 
             _sce1, _sce2, _sce3, _sce4, _sce5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
@@ -2440,6 +2449,8 @@ if st.session_state.active_tab == "📊 Planificación":
                 format_func=lambda sid: _sc_label_map[sid],
                 key=f"scenario_select_{_pid}",
                 label_visibility="collapsed",
+                on_change=_on_scenario_select_change,
+                args=(_pid,),
             )
             if _sce2.button(t("plan_load_btn"), use_container_width=True, key="btn_load_sc"):
                 _loaded = load_scenario_by_id(_sc_sel_id)
