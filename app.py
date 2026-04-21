@@ -1,5 +1,7 @@
+import io
 import os
 import sys
+from datetime import datetime
 import streamlit as st
 import pandas as pd
 from PIL import Image
@@ -109,6 +111,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_benches_by_type":    "### Bancos disponibles por tipo",
         # Resultados
         "res_no_results_yet":     "No hay resultados aún. Selecciona modelos/demanda en Planificación.",
+        "res_export_btn":         "⬇️ Exportar a Excel",
         "res_chart_header":       "## 📊 Representación gráfica de Demanda vs Capacidad",
         "res_no_data":            "No hay datos suficientes (revisa estaciones o tiempos).",
         # Mix
@@ -293,6 +296,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_benches_by_type":    "### Available benches by type",
         # Results
         "res_no_results_yet":     "No results yet. Select models/demand in Planning.",
+        "res_export_btn":         "⬇️ Export to Excel",
         "res_chart_header":       "## 📊 Demand vs Capacity chart",
         "res_no_data":            "Insufficient data (check stations or times).",
         # Mix
@@ -477,6 +481,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_benches_by_type":    "### Eskuragarri dauden bankuak motaren arabera",
         # Emaitzak
         "res_no_results_yet":     "Oraindik emaitzarik ez. Hautatu ereduak/eskaria Planifikazioan.",
+        "res_export_btn":         "⬇️ Excel-era esportatu",
         "res_chart_header":       "## 📊 Eskaera vs Ahalmena grafikoa",
         "res_no_data":            "Datu nahikorik ez (egiaztatu estazioak edo denborak).",
         # Mix
@@ -3502,6 +3507,34 @@ if st.session_state.active_tab == "📈 Resultados":
         total_display_df = summary_df.copy()
         total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
         st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
+
+        # --- Exportación Excel ---
+        _export_df = total_display_df[display_cols].copy()
+        _export_df = _export_df.rename(columns={
+            "nave": "Nave", "line": "Línea", "model": "Modelo", "bottleneck": "Cuello de botella"
+        })
+        _sel_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+        _sc_name_export = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_sel_sc_id, "")
+        _export_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _export_filename = f"capacidad_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+        _buf = io.BytesIO()
+        with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
+            _meta = pd.DataFrame([
+                {"Campo": "Planta", "Valor": selected_plant_name},
+                {"Campo": "Escenario", "Valor": _sc_name_export},
+                {"Campo": "Exportado", "Valor": _export_ts},
+            ])
+            _meta.to_excel(_writer, sheet_name="Info", index=False)
+            _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
+        _buf.seek(0)
+
+        st.download_button(
+            label=t("res_export_btn"),
+            data=_buf,
+            file_name=_export_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
         # -----------------------------------------------------------------
         # SECCIÓN: Análisis de bancos de prueba (fase 1 informativa)
