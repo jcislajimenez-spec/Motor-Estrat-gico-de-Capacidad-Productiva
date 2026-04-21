@@ -1115,10 +1115,10 @@ def update_scenario_lines(scenario_id: int, line_model: dict, line_demand: dict,
         c.close()
 
 
-def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_demand: dict, line_bench_variant: dict) -> None:
-    """Creates a new scenario with is_active=FALSE (does not touch existing active scenario)."""
+def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_demand: dict, line_bench_variant: dict) -> int | None:
+    """Creates a new scenario with is_active=FALSE (does not touch existing active scenario). Returns the new id."""
     if not _has_db():
-        return
+        return None
     c = get_connection()
     try:
         with c.cursor() as cur:
@@ -1135,6 +1135,7 @@ def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_de
                     (new_id, lid, line_model.get(lid, ""), line_demand.get(lid, 0), line_bench_variant.get(lid, ""))
                 )
         c.commit()
+        return new_id
     finally:
         c.close()
 
@@ -2466,13 +2467,15 @@ if st.session_state.active_tab == "📊 Planificación":
         if not _has_db():
             st.info(t("plan_save_no_db"))
         else:
-            create_scenario_inactive(
+            _new_id = create_scenario_inactive(
                 _pid,
                 _sc_name.strip() or t("plan_save_name_default"),
                 st.session_state.line_model.get(_pid, {}),
                 st.session_state.line_demand.get(_pid, {}),
                 st.session_state.line_bench_variant.get(_pid, {}),
             )
+            if _new_id is not None:
+                st.session_state[f"_deferred_sc_select_{_pid}"] = _new_id
             st.success(t("plan_save_ok"))
             st.rerun()
 
