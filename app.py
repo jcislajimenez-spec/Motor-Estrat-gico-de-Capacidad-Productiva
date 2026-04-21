@@ -1571,8 +1571,8 @@ if "line_demand" not in st.session_state:
 if "line_bench_variant" not in st.session_state:
     st.session_state.line_bench_variant = {}
 _pid_init = st.session_state["plant_id"]
-if _pid_init not in st.session_state.line_model:
-    # First visit for this plant: try to restore from active scenario
+if _pid_init != st.session_state.get("_last_pid"):
+    # Plant changed (first visit or return) — always reload active scenario from DB
     _scenario = load_active_scenario(_pid_init)
     if _scenario:
         st.session_state.line_model[_pid_init] = _scenario["line_model"]
@@ -1584,9 +1584,13 @@ if _pid_init not in st.session_state.line_model:
         _scenario["_msg"] = None
         st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
     else:
-        st.session_state.line_model[_pid_init] = {}
-        st.session_state.line_demand[_pid_init] = {}
-        st.session_state.line_bench_variant[_pid_init] = {}
+        if _pid_init not in st.session_state.line_model:
+            st.session_state.line_model[_pid_init] = {}
+        if _pid_init not in st.session_state.line_demand:
+            st.session_state.line_demand[_pid_init] = {}
+        if _pid_init not in st.session_state.line_bench_variant:
+            st.session_state.line_bench_variant[_pid_init] = {}
+    st.session_state["_last_pid"] = _pid_init
 if _pid_init not in st.session_state.line_demand:
     st.session_state.line_demand[_pid_init] = {}
 if _pid_init not in st.session_state.line_bench_variant:
