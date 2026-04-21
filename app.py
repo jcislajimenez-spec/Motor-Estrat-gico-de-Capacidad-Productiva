@@ -2311,6 +2311,10 @@ if st.session_state.active_tab == "📊 Planificación":
                 for s in _sc_list
             }
             _sc_is_active_map = {s["id"]: s["is_active"] for s in _sc_list}
+            # Apply deferred selection (set by delete handler on previous run, before widget instantiation)
+            _defer_sel_key = f"_deferred_sc_select_{_pid}"
+            if _defer_sel_key in st.session_state:
+                st.session_state[f"scenario_select_{_pid}"] = st.session_state.pop(_defer_sel_key)
             _sce1, _sce2, _sce3, _sce4 = st.columns([3, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
                 t("plan_scenarios_header"),
@@ -2336,6 +2340,11 @@ if st.session_state.active_tab == "📊 Planificación":
                     st.warning(t("plan_delete_blocked"))
                 else:
                     delete_scenario(_sc_sel_id)
+                    # Determine next valid selection: prefer active, else first remaining
+                    _remaining = [s for s in _sc_list if s["id"] != _sc_sel_id]
+                    if _remaining:
+                        _next_id = next((s["id"] for s in _remaining if s["is_active"]), _remaining[0]["id"])
+                        st.session_state[f"_deferred_sc_select_{_pid}"] = _next_id
                     sc_key = f"scenario_select_{_pid}"
                     if st.session_state.get(sc_key) == _sc_sel_id:
                         st.session_state.pop(sc_key, None)
