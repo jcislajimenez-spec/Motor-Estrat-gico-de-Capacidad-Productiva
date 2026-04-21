@@ -201,6 +201,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_activate_ok":       "Establecido como escenario por defecto.",
         "plan_no_scenarios":      "No hay escenarios guardados para esta planta.",
         "plan_active_marker":     "✓ activo",
+        "plan_delete_btn":        "Borrar",
+        "plan_delete_ok":         "Escenario eliminado.",
+        "plan_delete_blocked":    "No se puede borrar el escenario activo. Activa otro primero.",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -377,6 +380,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_activate_ok":       "Set as default scenario.",
         "plan_no_scenarios":      "No saved scenarios for this plant.",
         "plan_active_marker":     "✓ active",
+        "plan_delete_btn":        "Delete",
+        "plan_delete_ok":         "Scenario deleted.",
+        "plan_delete_blocked":    "Cannot delete the active scenario. Set another as default first.",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -553,6 +559,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_activate_ok":       "Eszenatoki lehenetsi gisa ezarri da.",
         "plan_no_scenarios":      "Ez dago gordetako eszenatokiik planta honentzat.",
         "plan_active_marker":     "✓ aktibo",
+        "plan_delete_btn":        "Ezabatu",
+        "plan_delete_ok":         "Eszenatokia ezabatu da.",
+        "plan_delete_blocked":    "Ezin da aktiboen eszenatokia ezabatu. Beste bat lehenetsi lehenik.",
     },
 }
 
@@ -1026,6 +1035,19 @@ def activate_scenario(plant_id: int, scenario_id: int) -> None:
         with c.cursor() as cur:
             cur.execute('UPDATE "scenarios" SET is_active = FALSE WHERE plant_id = %s', (plant_id,))
             cur.execute('UPDATE "scenarios" SET is_active = TRUE WHERE id = %s', (scenario_id,))
+        c.commit()
+    finally:
+        c.close()
+
+
+def delete_scenario(scenario_id: int) -> None:
+    """Deletes a non-active scenario and its lines. DB guard: only deletes if is_active=FALSE."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('DELETE FROM "scenarios" WHERE id = %s AND is_active = FALSE', (scenario_id,))
         c.commit()
     finally:
         c.close()
@@ -2288,7 +2310,8 @@ if st.session_state.active_tab == "📊 Planificación":
                 s["id"]: (f"{s['name']}  {t('plan_active_marker')}" if s["is_active"] else s["name"])
                 for s in _sc_list
             }
-            _sce1, _sce2, _sce3 = st.columns([3, 1, 1], vertical_alignment="bottom")
+            _sc_is_active_map = {s["id"]: s["is_active"] for s in _sc_list}
+            _sce1, _sce2, _sce3, _sce4 = st.columns([3, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
                 t("plan_scenarios_header"),
                 options=list(_sc_label_map.keys()),
@@ -2308,6 +2331,15 @@ if st.session_state.active_tab == "📊 Planificación":
                     _activated["_msg"] = "plan_activate_ok"
                     st.session_state[f"_pending_scenario_{_pid}"] = _activated
                 st.rerun()
+            if _sce4.button(t("plan_delete_btn"), use_container_width=True, key="btn_delete_sc"):
+                if _sc_is_active_map.get(_sc_sel_id, False):
+                    st.warning(t("plan_delete_blocked"))
+                else:
+                    delete_scenario(_sc_sel_id)
+                    sc_key = f"scenario_select_{_pid}"
+                    if st.session_state.get(sc_key) == _sc_sel_id:
+                        st.session_state.pop(sc_key, None)
+                    st.rerun()
         else:
             st.caption(t("plan_no_scenarios"))
 
