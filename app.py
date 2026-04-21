@@ -1580,6 +1580,9 @@ if _pid_init not in st.session_state.line_model:
         st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
         # Sync selector to the loaded scenario so UI and session_state agree
         st.session_state[f"scenario_select_{_pid_init}"] = _scenario["scenario_id"]
+        # Queue widget key hydration — pending-load block applies before widgets render
+        _scenario["_msg"] = None
+        st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
     else:
         st.session_state.line_model[_pid_init] = {}
         st.session_state.line_demand[_pid_init] = {}
@@ -2169,7 +2172,9 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state[f"sel_combined_{_pid}_{_lid}"] = _mdl
         for _lid, _dem in _pending["line_demand"].items():
             st.session_state[f"demand_{_pid}_{_lid}"] = float(_dem)
-        st.success(t(_pending.get("_msg", "plan_load_ok")))
+        _pending_msg = _pending.get("_msg", "plan_load_ok")
+        if _pending_msg:
+            st.success(t(_pending_msg))
 
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
         st.markdown(f"#### NAVE {nave}")
