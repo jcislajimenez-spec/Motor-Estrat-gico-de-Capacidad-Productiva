@@ -112,6 +112,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # Resultados
         "res_no_results_yet":     "No hay resultados aún. Selecciona modelos/demanda en Planificación.",
         "res_export_btn":         "⬇️ Exportar a Excel",
+        "res_compare_header":     "### 🔀 Comparativa entre escenarios",
+        "res_compare_select":     "Escenario de comparación",
+        "res_compare_none":       "(Sin comparación)",
+        "res_compare_export_btn": "⬇️ Exportar comparativa a Excel",
+        "res_compare_no_data":    "No se pudo cargar el escenario de comparación.",
         "res_chart_header":       "## 📊 Representación gráfica de Demanda vs Capacidad",
         "res_no_data":            "No hay datos suficientes (revisa estaciones o tiempos).",
         # Mix
@@ -297,6 +302,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # Results
         "res_no_results_yet":     "No results yet. Select models/demand in Planning.",
         "res_export_btn":         "⬇️ Export to Excel",
+        "res_compare_header":     "### 🔀 Scenario comparison",
+        "res_compare_select":     "Comparison scenario",
+        "res_compare_none":       "(No comparison)",
+        "res_compare_export_btn": "⬇️ Export comparison to Excel",
+        "res_compare_no_data":    "Could not load comparison scenario.",
         "res_chart_header":       "## 📊 Demand vs Capacity chart",
         "res_no_data":            "Insufficient data (check stations or times).",
         # Mix
@@ -482,6 +492,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # Emaitzak
         "res_no_results_yet":     "Oraindik emaitzarik ez. Hautatu ereduak/eskaria Planifikazioan.",
         "res_export_btn":         "⬇️ Excel-era esportatu",
+        "res_compare_header":     "### 🔀 Eszenatokien konparaketa",
+        "res_compare_select":     "Konparaketa eszenatokia",
+        "res_compare_none":       "(Konparaketarik gabe)",
+        "res_compare_export_btn": "⬇️ Konparaketa Excel-era esportatu",
+        "res_compare_no_data":    "Ezin izan da konparaketa eszenatokia kargatu.",
         "res_chart_header":       "## 📊 Eskaera vs Ahalmena grafikoa",
         "res_no_data":            "Datu nahikorik ez (egiaztatu estazioak edo denborak).",
         # Mix
@@ -3535,6 +3550,112 @@ if st.session_state.active_tab == "📈 Resultados":
             file_name=_export_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+        # --- Comparativa entre escenarios ---
+        if _has_db():
+            _cmp_sc_list = list_scenarios(plant_id)
+            if _cmp_sc_list and len(_cmp_sc_list) > 1:
+                st.markdown(t("res_compare_header"))
+
+                _cmp_id_map = {s["id"]: s["name"] for s in _cmp_sc_list if s["id"] != _sel_sc_id}
+                _cmp_options = [None] + list(_cmp_id_map.keys())
+                _cmp_labels = {None: t("res_compare_none")}
+                _cmp_labels.update(_cmp_id_map)
+
+                _cmp_sel = st.selectbox(
+                    t("res_compare_select"),
+                    options=_cmp_options,
+                    format_func=lambda sid: _cmp_labels.get(sid, ""),
+                    key=f"res_compare_sc_{plant_id}",
+                    label_visibility="collapsed",
+                )
+
+                if _cmp_sel is not None:
+                    _cmp_sc_data = load_scenario_by_id(_cmp_sel)
+                    if _cmp_sc_data is None:
+                        st.warning(t("res_compare_no_data"))
+                    else:
+                        def _build_summary_df(line_model_d: dict, line_demand_d: dict) -> pd.DataFrame:
+                            _rows = []
+                            for _lid in all_line_ids:
+                                _parts = _lid.split("-", 1)
+                                _nave = _parts[0] if len(_parts) == 2 else "N1"
+                                _bline = _parts[1] if len(_parts) == 2 else _parts[0]
+                                _mdl = line_model_d.get(_lid)
+                                if not _mdl:
+                                    continue
+                                _dem_w = float(line_demand_d.get(_lid, 0.0))
+                                _, _, _cap_w = compute_line_detail(_lid, _mdl, times_df, stations_df, hours_eff)
+                                _sat = (_dem_w / _cap_w * 100.0) if _cap_w > 0 else 0.0
+                                _def = max(0.0, _dem_w - _cap_w)
+                                _ctm = cycle_time_by_model.get(_mdl, 0.0)
+                                _rows.append({
+                                    "nave": _nave, "line": _bline, "line_id": _lid, "model": _mdl,
+                                    "Demanda (UDS/SEM)": _dem_w,
+                                    "Capacidad (UDS/SEM)": _cap_w,
+                                    "Saturación (%)": _sat,
+                                    "Déficit (UDS/SEM)": _def,
+                                    "Demanda (UDS/AÑO)": _dem_w * weeks_equiv,
+                                    "Capacidad (UDS/AÑO)": _cap_w * weeks_equiv,
+                                    "Demanda (h/SEM)": _dem_w * _ctm,
+                                    "Capacidad (h/SEM)": _cap_w * _ctm,
+                                    "Demanda (h/AÑO)": _dem_w * _ctm * weeks_equiv,
+                                    "Capacidad (h/AÑO)": _cap_w * _ctm * weeks_equiv,
+                                })
+                            return pd.DataFrame(_rows)
+
+                        _cmp_model_d = _cmp_sc_data["line_model"]
+                        _cmp_demand_d = _cmp_sc_data["line_demand"]
+                        _cmp_df = _build_summary_df(_cmp_model_d, _cmp_demand_d)
+
+                        _num_cols = [
+                            "Demanda (UDS/SEM)", "Capacidad (UDS/SEM)", "Saturación (%)", "Déficit (UDS/SEM)",
+                            "Demanda (UDS/AÑO)", "Capacidad (UDS/AÑO)",
+                            "Demanda (h/SEM)", "Capacidad (h/SEM)",
+                            "Demanda (h/AÑO)", "Capacidad (h/AÑO)",
+                        ]
+                        _base_key_df = summary_df[["line_id"] + _num_cols].set_index("line_id")
+                        _cmp_key_df  = _cmp_df[["line_id"] + _num_cols].set_index("line_id") if not _cmp_df.empty else pd.DataFrame(columns=_num_cols)
+                        _union_idx = _base_key_df.index.union(_cmp_key_df.index)
+                        _base_aligned = _base_key_df.reindex(_union_idx, fill_value=0.0)
+                        _cmp_aligned  = _cmp_key_df.reindex(_union_idx, fill_value=0.0)
+                        _diff_df_rows = []
+                        for _lid in _union_idx:
+                            _parts = _lid.split("-", 1)
+                            _row = {"nave": _parts[0] if len(_parts) == 2 else "N1", "line": _parts[1] if len(_parts) == 2 else _parts[0]}
+                            for _col in _num_cols:
+                                _row[_col] = _cmp_aligned.at[_lid, _col] - _base_aligned.at[_lid, _col]
+                            _diff_df_rows.append(_row)
+                        _diff_df = pd.DataFrame(_diff_df_rows)
+
+                        _rename_map = {"nave": "Nave", "line": "Línea", "model": "Modelo"}
+                        _base_export = summary_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
+                        _cmp_export  = (_cmp_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
+                                        if not _cmp_df.empty else pd.DataFrame())
+                        _diff_export = (_diff_df[["nave", "line"] + _num_cols].rename(columns={"nave": "Nave", "line": "Línea"})
+                                        if not _diff_df.empty else pd.DataFrame())
+
+                        _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
+                        _cmp_filename = f"comparativa_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+                        _cmp_buf = io.BytesIO()
+                        with pd.ExcelWriter(_cmp_buf, engine="openpyxl") as _cw:
+                            pd.DataFrame([
+                                {"Campo": "Planta", "Valor": selected_plant_name},
+                                {"Campo": "Escenario base", "Valor": _sc_name_export},
+                                {"Campo": "Escenario comparación", "Valor": _cmp_sc_name},
+                                {"Campo": "Exportado", "Valor": _export_ts},
+                            ]).to_excel(_cw, sheet_name="Info", index=False)
+                            _base_export.to_excel(_cw, sheet_name="Base", index=False)
+                            _cmp_export.to_excel(_cw, sheet_name="Comparación", index=False)
+                            _diff_export.to_excel(_cw, sheet_name="Diferencias", index=False)
+                        _cmp_buf.seek(0)
+
+                        st.download_button(
+                            label=t("res_compare_export_btn"),
+                            data=_cmp_buf,
+                            file_name=_cmp_filename,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
 
         # -----------------------------------------------------------------
         # SECCIÓN: Análisis de bancos de prueba (fase 1 informativa)
