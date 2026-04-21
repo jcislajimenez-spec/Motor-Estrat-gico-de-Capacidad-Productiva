@@ -205,6 +205,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_ok":         "Escenario eliminado.",
         "plan_delete_blocked":    "No se puede borrar el escenario activo. Activa otro primero.",
         "plan_duplicate_btn":     "Duplicar",
+        "plan_save_changes_btn":  "Guardar cambios",
+        "plan_save_new_btn":      "Guardar como nuevo",
+        "plan_save_changes_no_sel": "Selecciona un escenario antes de guardar cambios.",
+        "plan_save_changes_ok":   "Cambios guardados en el escenario.",
     },
     "en": {
         "app_title":          "Strategic Production Capacity Engine",
@@ -385,6 +389,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_ok":         "Scenario deleted.",
         "plan_delete_blocked":    "Cannot delete the active scenario. Set another as default first.",
         "plan_duplicate_btn":     "Duplicate",
+        "plan_save_changes_btn":  "Save changes",
+        "plan_save_new_btn":      "Save as new",
+        "plan_save_changes_no_sel": "Select a scenario before saving changes.",
+        "plan_save_changes_ok":   "Changes saved to scenario.",
     },
     "eu": {
         "app_title":          "Ekoizpen-ahalmenaren Motor Estrategikoa",
@@ -565,6 +573,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_delete_ok":         "Eszenatokia ezabatu da.",
         "plan_delete_blocked":    "Ezin da aktiboen eszenatokia ezabatu. Beste bat lehenetsi lehenik.",
         "plan_duplicate_btn":     "Bikoiztu",
+        "plan_save_changes_btn":  "Aldaketak gorde",
+        "plan_save_new_btn":      "Berri gisa gorde",
+        "plan_save_changes_no_sel": "Hautatu eszenatoki bat aldaketak gorde aurretik.",
+        "plan_save_changes_ok":   "Aldaketak eszenatokian gorde dira.",
     },
 }
 
@@ -1078,6 +1090,50 @@ def duplicate_scenario(scenario_id: int, plant_id: int) -> None:
                 'SELECT %s, line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
                 (new_id, scenario_id)
             )
+        c.commit()
+    finally:
+        c.close()
+
+
+def update_scenario_lines(scenario_id: int, line_model: dict, line_demand: dict, line_bench_variant: dict) -> None:
+    """Replaces lines of an existing scenario without changing name or is_active."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute('DELETE FROM "scenario_lines" WHERE scenario_id = %s', (scenario_id,))
+            all_lids = set(line_model.keys()) | set(line_demand.keys()) | set(line_bench_variant.keys())
+            for lid in all_lids:
+                cur.execute(
+                    'INSERT INTO "scenario_lines" (scenario_id, line_id, model, demand, bench_variant) '
+                    'VALUES (%s, %s, %s, %s, %s)',
+                    (scenario_id, lid, line_model.get(lid, ""), line_demand.get(lid, 0), line_bench_variant.get(lid, ""))
+                )
+        c.commit()
+    finally:
+        c.close()
+
+
+def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_demand: dict, line_bench_variant: dict) -> None:
+    """Creates a new scenario with is_active=FALSE (does not touch existing active scenario)."""
+    if not _has_db():
+        return
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'INSERT INTO "scenarios" (plant_id, name, is_active) VALUES (%s, %s, FALSE) RETURNING id',
+                (plant_id, name)
+            )
+            new_id = cur.fetchone()[0]
+            all_lids = set(line_model.keys()) | set(line_demand.keys()) | set(line_bench_variant.keys())
+            for lid in all_lids:
+                cur.execute(
+                    'INSERT INTO "scenario_lines" (scenario_id, line_id, model, demand, bench_variant) '
+                    'VALUES (%s, %s, %s, %s, %s)',
+                    (new_id, lid, line_model.get(lid, ""), line_demand.get(lid, 0), line_bench_variant.get(lid, ""))
+                )
         c.commit()
     finally:
         c.close()
@@ -2332,6 +2388,7 @@ if st.session_state.active_tab == "📊 Planificación":
 
     # --- Scenario management ---
     st.divider()
+    _sc_sel_id = None
     if _has_db():
         _sc_list = list_scenarios(_pid)
         if _sc_list:
@@ -2385,16 +2442,31 @@ if st.session_state.active_tab == "📊 Planificación":
         else:
             st.caption(t("plan_no_scenarios"))
 
-    # --- Save (name + button on same line) ---
-    _sc_col1, _sc_col2 = st.columns([2, 1], vertical_alignment="bottom")
+    # --- Save ---
+    _sc_col1, _sc_col2, _sc_col3 = st.columns([2, 1, 1], vertical_alignment="bottom")
     _sc_name = _sc_col1.text_input(
         t("plan_save_name_label"),
         value=t("plan_save_name_default"),
         key=f"scenario_name_input_{_pid}",
     )
-    if _sc_col2.button(t("plan_save_btn"), use_container_width=True):
-        if _has_db():
-            save_scenario(
+    if _sc_col2.button(t("plan_save_changes_btn"), use_container_width=True):
+        if not _has_db():
+            st.info(t("plan_save_no_db"))
+        elif _sc_sel_id is None:
+            st.warning(t("plan_save_changes_no_sel"))
+        else:
+            update_scenario_lines(
+                _sc_sel_id,
+                st.session_state.line_model.get(_pid, {}),
+                st.session_state.line_demand.get(_pid, {}),
+                st.session_state.line_bench_variant.get(_pid, {}),
+            )
+            st.success(t("plan_save_changes_ok"))
+    if _sc_col3.button(t("plan_save_new_btn"), use_container_width=True):
+        if not _has_db():
+            st.info(t("plan_save_no_db"))
+        else:
+            create_scenario_inactive(
                 _pid,
                 _sc_name.strip() or t("plan_save_name_default"),
                 st.session_state.line_model.get(_pid, {}),
@@ -2402,8 +2474,7 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state.line_bench_variant.get(_pid, {}),
             )
             st.success(t("plan_save_ok"))
-        else:
-            st.info(t("plan_save_no_db"))
+            st.rerun()
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
