@@ -3733,7 +3733,19 @@ if st.session_state.active_tab == "📈 Resultados":
                             "Dem. Evaluado", "Cap. Evaluado", "Sat. Evaluado (%)", "Déf. Evaluado",
                             "Cambio cap.", "Cambio sat. (pts)", "Cambio déf.", "Lectura",
                         ]
-                        _comp_df_out = pd.DataFrame(_comp_rows + [_total_comp_row])[_export_cols]
+                        _comp_df_out = pd.DataFrame(_comp_rows + [_total_comp_row])[_export_cols].rename(columns={
+                            "Dem. Partida":    "Demanda partida (uds/sem)",
+                            "Cap. Partida":    "Capacidad partida (uds/sem)",
+                            "Sat. Partida (%)":"Saturación partida (%)",
+                            "Déf. Partida":    "Déficit partida (uds/sem)",
+                            "Dem. Evaluado":   "Demanda evaluado (uds/sem)",
+                            "Cap. Evaluado":   "Capacidad evaluado (uds/sem)",
+                            "Sat. Evaluado (%)":"Saturación evaluado (%)",
+                            "Déf. Evaluado":   "Déficit evaluado (uds/sem)",
+                            "Cambio cap.":     "Cambio capacidad (uds/sem) [+más/-menos]",
+                            "Cambio sat. (pts)":"Cambio saturación (pts) [+más presión/-menos]",
+                            "Cambio déf.":     "Cambio déficit (uds/sem) [+empeora/-mejora]",
+                        })
 
                         # Hojas PARTIDA y EVALUADO
                         def _fmt_simple_df(df_in):
@@ -3879,6 +3891,42 @@ if st.session_state.active_tab == "📈 Resultados":
                                 _r += 1
 
                             _r += 1
+                            # Lectura ejecutiva
+                            _rc(_r, 1, "LECTURA EJECUTIVA", font=_BOLD11)
+                            _r += 1
+                            _max_imp = max(_comp_rows, key=lambda r: abs(r["_dsat"]), default=None)
+                            if _max_imp and abs(_max_imp["_dsat"]) >= 1.0:
+                                _li = f"{_max_imp['Nave']}-{_max_imp['Línea']}"
+                                _dir = "subida" if _max_imp["_dsat"] > 0 else "bajada"
+                                _msg1 = f"La mayor {_dir} de saturación se concentra en la línea {_li}."
+                            else:
+                                _msg1 = "No hay cambios de saturación relevantes en ninguna línea."
+                            _n_aparece = sum(1 for r in _comp_rows if r["_ord"] == 0)
+                            _n_crece = sum(1 for r in _comp_rows if r["_ord"] == 1)
+                            if _n_aparece > 0:
+                                _msg2 = f"Aparece déficit nuevo en {_n_aparece} línea(s)."
+                            elif _n_crece > 0:
+                                _msg2 = f"El déficit crece en {_n_crece} línea(s) ya afectadas."
+                            else:
+                                _msg2 = "No aparece déficit nuevo."
+                            if _n_emp == 0 and _n_mej == 0:
+                                _msg3 = "El cambio no tiene impacto relevante en ninguna línea."
+                            elif _n_emp > _n_mej:
+                                _msg3 = f"El escenario evaluado empeora {_n_emp} línea(s) y mejora {_n_mej}. Balance negativo."
+                            elif _n_mej > _n_emp:
+                                _msg3 = f"El escenario evaluado mejora {_n_mej} línea(s) y empeora {_n_emp}. Balance positivo."
+                            else:
+                                _msg3 = f"Empeoran {_n_emp} línea(s) y mejoran {_n_mej}. Balance neutro."
+                            for _tag, _msg in [
+                                ("Impacto principal", _msg1),
+                                ("Riesgo clave", _msg2),
+                                ("Lectura global", _msg3),
+                            ]:
+                                _rc(_r, 1, _tag, font=_BOLD, fill=_GRAY)
+                                _rc(_r, 2, _msg)
+                                _r += 1
+
+                            _r += 1
                             # Síntesis numérica
                             _rc(_r, 1, "SÍNTESIS DEL CAMBIO", font=_BOLD11)
                             _r += 1
@@ -3892,6 +3940,28 @@ if st.session_state.active_tab == "📈 Resultados":
                             ]:
                                 _rc(_r, 1, _lbl, font=_BOLD, fill=_GRAY)
                                 _rc(_r, 2, _val)
+                                _r += 1
+
+                            # Leyenda de interpretación
+                            _r += 1
+                            _rc(_r, 1, "CÓMO LEER ESTA COMPARACIÓN", font=_BOLD11)
+                            _r += 1
+                            for _lbl, _exp in [
+                                ("Líneas que empeoran",
+                                 "aparece o crece el déficit, o sube la saturación más de 3 puntos"),
+                                ("Líneas que mejoran",
+                                 "desaparece o baja el déficit, o reduce la saturación más de 3 puntos"),
+                                ("Sin cambio relevante",
+                                 "la variación es pequeña y no hay déficit nuevo"),
+                                ("Cambio en capacidad",
+                                 "positivo = más capacidad en el evaluado · negativo = menos capacidad"),
+                                ("Cambio en déficit",
+                                 "positivo = más déficit (empeora) · negativo = menos déficit (mejora)"),
+                                ("Cambio en saturación",
+                                 "positivo = más presión sobre la línea · negativo = menos presión"),
+                            ]:
+                                _rc(_r, 1, _lbl, font=_BOLD, fill=_GRAY)
+                                _rc(_r, 2, _exp)
                                 _r += 1
 
                             # Tabla líneas que empeoran
