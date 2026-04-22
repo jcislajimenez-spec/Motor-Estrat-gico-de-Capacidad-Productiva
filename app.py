@@ -119,6 +119,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_compare_no_data":    "No se pudo cargar el escenario de comparación.",
         "res_chart_header":       "## 📊 Representación gráfica de Demanda vs Capacidad",
         "res_no_data":            "No hay datos suficientes (revisa estaciones o tiempos).",
+        "res_panel_n_deficit":    "Líneas con déficit",
+        "res_panel_max_sat":      "Saturación máxima",
+        "res_panel_n_critical":   "Líneas ≥ 90 % saturación",
+        "res_panel_bottleneck":   "Cuello principal",
+        "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -309,6 +314,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_compare_no_data":    "Could not load comparison scenario.",
         "res_chart_header":       "## 📊 Demand vs Capacity chart",
         "res_no_data":            "Insufficient data (check stations or times).",
+        "res_panel_n_deficit":    "Lines with deficit",
+        "res_panel_max_sat":      "Maximum saturation",
+        "res_panel_n_critical":   "Lines ≥ 90 % saturation",
+        "res_panel_bottleneck":   "Main bottleneck",
+        "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -499,6 +509,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_compare_no_data":    "Ezin izan da konparaketa eszenatokia kargatu.",
         "res_chart_header":       "## 📊 Eskaera vs Ahalmena grafikoa",
         "res_no_data":            "Datu nahikorik ez (egiaztatu estazioak edo denborak).",
+        "res_panel_n_deficit":    "Lerroak defizitarekin",
+        "res_panel_max_sat":      "Saturazio maximoa",
+        "res_panel_n_critical":   "Lerroak ≥ 90 % saturazio",
+        "res_panel_bottleneck":   "Eztarri nagusia",
+        "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -3452,6 +3467,20 @@ if st.session_state.active_tab == "📈 Resultados":
             if c in summary_df.columns:
                 summary_df[c] = pd.to_numeric(summary_df[c], errors="coerce")
 
+        # Ordenar por criticidad antes de añadir TOTAL
+        _def_s = pd.to_numeric(summary_df.get("Déficit (UDS/SEM)", 0), errors="coerce").fillna(0.0)
+        _sat_s = pd.to_numeric(summary_df.get("Saturación (%)", 0), errors="coerce").fillna(0.0)
+        summary_df["_prio"] = np.where(
+            _def_s > 0, 0,
+            np.where(_sat_s >= 90, 1, np.where(_sat_s >= 70, 2, 3))
+        )
+        summary_df = (
+            summary_df
+            .sort_values(["_prio", "Déficit (UDS/SEM)", "Saturación (%)"], ascending=[True, False, False])
+            .drop(columns=["_prio"])
+            .reset_index(drop=True)
+        )
+
         total_row = {c: float(summary_df[c].sum(skipna=True)) if c in summary_df.columns else 0.0 for c in _sum_cols}
         total_row.update({
             "nave": "",
@@ -3499,12 +3528,17 @@ if st.session_state.active_tab == "📈 Resultados":
         s = s.map(sat_color, subset=["Saturación (%)"])
         s = s.map(lambda _: "color: red; font-weight: 700;", subset=["bottleneck"])
 
-        # Detectar fila TOTAL por columna 'line' (ya que display_cols no incluye line_id)
-        def _style_total(row):
+        def _style_row(row):
             if str(row.get("line", "")) == "TOTAL":
                 return ["font-weight: bold; font-size: 16px; background-color: #f0f0f0;"] * len(row)
+            _dv = pd.to_numeric(row.get("Déficit (UDS/SEM)", 0), errors="coerce")
+            _sv = pd.to_numeric(row.get("Saturación (%)", 0), errors="coerce")
+            if pd.notna(_dv) and _dv > 0:
+                return ["background-color: #FFE4E4;"] * len(row)
+            if pd.notna(_sv) and _sv >= 90:
+                return ["background-color: #FFF3CD;"] * len(row)
             return [""] * len(row)
-        s = s.apply(_style_total, axis=1)
+        s = s.apply(_style_row, axis=1)
 
         return s
 
@@ -3519,6 +3553,31 @@ if st.session_state.active_tab == "📈 Resultados":
             "Demanda (h/SEM)", "Capacidad (h/SEM)",
             "Demanda (h/AÑO)", "Capacidad (h/AÑO)"
         ]
+        # ── Panel de lectura rápida ───────────────────────────────────────────
+        _lo = summary_df[summary_df["line_id"] != "TOTAL"]
+        _def_v = pd.to_numeric(_lo["Déficit (UDS/SEM)"], errors="coerce").fillna(0.0)
+        _sat_v = pd.to_numeric(_lo["Saturación (%)"], errors="coerce").fillna(0.0)
+        _n_def = int((_def_v > 0).sum())
+        _n_crit = int((_sat_v >= 90).sum())
+        if not _sat_v.empty:
+            _mx_idx = _sat_v.idxmax()
+            _mx_sat = _sat_v[_mx_idx]
+            _mx_line = str(_lo.loc[_mx_idx, "line"]) if "line" in _lo.columns else "—"
+        else:
+            _mx_sat, _mx_line = 0.0, "—"
+        _crit_lo = _lo[(_def_v > 0) | (_sat_v >= 90)]
+        _main_bn = (
+            str(_crit_lo.iloc[0]["bottleneck"])
+            if not _crit_lo.empty and "bottleneck" in _crit_lo.columns and pd.notna(_crit_lo.iloc[0]["bottleneck"])
+            else "—"
+        )
+        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
+        _pm1.metric(t("res_panel_n_deficit"), _n_def)
+        _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
+        _pm3.metric(t("res_panel_n_critical"), _n_crit)
+        _pm4.metric(t("res_panel_bottleneck"), _main_bn)
+        st.caption(t("res_sorted_note"))
+
         total_display_df = summary_df.copy()
         total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
         st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
