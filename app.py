@@ -3646,18 +3646,54 @@ if st.session_state.active_tab == "📈 Resultados":
                         else:
                             _diff_export = pd.DataFrame()
 
-                        # Number format helper: integers show without decimals, reals with max 2
-                        _NUM_FMT = '#,##0.##'
-                        def _apply_num_fmt(ws, col_names):
-                            _hdr = {cell.value: cell.column for cell in ws[1]}
-                            for _cname in col_names:
-                                _cidx = _hdr.get(_cname)
+                        from openpyxl.styles import Font, PatternFill, Alignment
+
+                        def _style_info_ws(ws):
+                            _bold = Font(bold=True)
+                            _gray = PatternFill("solid", fgColor="D9D9D9")
+                            _center = Alignment(horizontal="center", vertical="center")
+                            for cell in ws[1]:
+                                cell.font = _bold
+                                cell.fill = _gray
+                                cell.alignment = _center
+                            for row in ws.iter_rows(min_row=2):
+                                row[0].font = _bold
+                            ws.column_dimensions["A"].width = 22
+                            ws.column_dimensions["B"].width = 38
+
+                        def _style_data_ws(ws, hdr_color, num_col_names, has_total_row=False):
+                            _bold = Font(bold=True)
+                            _hdr_fill = PatternFill("solid", fgColor=hdr_color)
+                            _center = Alignment(horizontal="center", vertical="center")
+                            _right = Alignment(horizontal="right")
+                            for cell in ws[1]:
+                                cell.font = _bold
+                                cell.fill = _hdr_fill
+                                cell.alignment = _center
+                            ws.freeze_panes = "A2"
+                            ws.auto_filter.ref = ws.dimensions
+                            for col in ws.columns:
+                                _max_w = max((len(str(cell.value or "")) for cell in col), default=8)
+                                ws.column_dimensions[col[0].column_letter].width = min(max(_max_w + 3, 10), 28)
+                            if has_total_row:
+                                for cell in ws[ws.max_row]:
+                                    cell.font = _bold
+                            _hdr_map = {cell.value: cell.column for cell in ws[1]}
+                            for _cname in num_col_names:
+                                _cidx = _hdr_map.get(_cname)
                                 if _cidx is None:
                                     continue
                                 for _r in ws.iter_rows(min_row=2, min_col=_cidx, max_col=_cidx):
                                     for _cell in _r:
-                                        if isinstance(_cell.value, (int, float)):
-                                            _cell.number_format = _NUM_FMT
+                                        if isinstance(_cell.value, (int, float)) and _cell.value is not None:
+                                            _v = round(_cell.value, 2)
+                                            if _v % 1 == 0:
+                                                _cell.value = int(_v)
+                                                _cell.number_format = '#,##0'
+                                            else:
+                                                _cell.value = _v
+                                                _cell.number_format = '#,##0.##'
+                                            _cell.alignment = _right
 
                         _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
                         _cmp_filename = f"comparativa_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
@@ -3669,12 +3705,13 @@ if st.session_state.active_tab == "📈 Resultados":
                                 {"Campo": "Escenario comparación", "Valor": _cmp_sc_name},
                                 {"Campo": "Exportado", "Valor": _export_ts},
                             ]).to_excel(_cw, sheet_name="Info", index=False)
+                            _style_info_ws(_cw.sheets["Info"])
                             _base_export.to_excel(_cw, sheet_name="Base", index=False)
-                            _apply_num_fmt(_cw.sheets["Base"], _num_cols)
+                            _style_data_ws(_cw.sheets["Base"], "BDD7EE", _num_cols)
                             _cmp_export.to_excel(_cw, sheet_name="Comparación", index=False)
-                            _apply_num_fmt(_cw.sheets["Comparación"], _num_cols)
+                            _style_data_ws(_cw.sheets["Comparación"], "C6EFCE", _num_cols)
                             _diff_export.to_excel(_cw, sheet_name="Diferencias", index=False)
-                            _apply_num_fmt(_cw.sheets["Diferencias"], _num_cols)
+                            _style_data_ws(_cw.sheets["Diferencias"], "FFEB9C", _num_cols, has_total_row=True)
                         _cmp_buf.seek(0)
 
                         st.download_button(
