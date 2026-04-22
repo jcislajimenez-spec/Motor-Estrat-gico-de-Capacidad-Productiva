@@ -162,7 +162,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_status_inactive":    "Inactivos",
         "cfg_filter_nave":        "Nave",
         "cfg_filter_proc_label":  "Proceso",
-        "cfg_compat_export":      "⬇ Exportar (CSV)",
+        "cfg_compat_export":      "⬇ Exportar compatibilidades",
         # Planificación
         "plan_no_models":         "sin modelos compatibles activos (revisa compatibilidades/modelos).",
         # Resultados — bancos
@@ -357,7 +357,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_status_inactive":    "Inactive",
         "cfg_filter_nave":        "Bay",
         "cfg_filter_proc_label":  "Process",
-        "cfg_compat_export":      "⬇ Export (CSV)",
+        "cfg_compat_export":      "⬇ Export compatibilities",
         # Planning
         "plan_no_models":         "no active compatible models (check compatibilities/models).",
         # Results — benches
@@ -552,7 +552,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "cfg_status_inactive":    "Ez-aktiboak",
         "cfg_filter_nave":        "Nabe",
         "cfg_filter_proc_label":  "Prozesua",
-        "cfg_compat_export":      "⬇ Esportatu (CSV)",
+        "cfg_compat_export":      "⬇ Esportatu bateragarritasunak",
         # Planifikazioa
         "plan_no_models":         "eredu bateragarri aktiborik gabe (egiaztatu bateragarritasunak/ereduak).",
         # Emaitzak — bankuak
@@ -2897,12 +2897,137 @@ la carga visible sin que el trabajo desaparezca de la planta.
                 })
 
     if edited_rows:
-        _compat_csv = pd.DataFrame(edited_rows).assign(plant_id=plant_id).to_csv(index=False, encoding="utf-8-sig")
+        import io as _io
+        from datetime import date as _date
+        from openpyxl import Workbook as _Workbook
+        from openpyxl.styles import Font as _Font, PatternFill as _PFill, Alignment as _Align, Border as _Border, Side as _Side
+
+        def _build_compat_xlsx(rows: list, p_id: int, p_name: str) -> bytes:
+            _df_all = pd.DataFrame(rows).assign(plant_id=p_id)
+            _df_all["line_id"] = _df_all["nave"] + "-" + _df_all["line"]
+
+            _all_lines = sorted(_df_all["line_id"].unique().tolist())
+            _all_mods  = sorted(_df_all["model"].unique().tolist())
+
+            _wb = _Workbook()
+
+            # ---------- HOJA 1: MATRIZ ----------
+            _ws_m = _wb.active
+            _ws_m.title = "MATRIZ"
+
+            _hdr_fill  = _PFill("solid", fgColor="FF1F4E79")
+            _ok_fill   = _PFill("solid", fgColor="FF70AD47")
+            _no_fill   = _PFill("solid", fgColor="FFFFFFFF")
+            _row_fill  = _PFill("solid", fgColor="FFD6E4F0")
+            _bold_w    = _Font(bold=True, color="FFFFFFFF")
+            _bold_b    = _Font(bold=True)
+            _center    = _Align(horizontal="center", vertical="center")
+            _thin_side = _Side(style="thin", color="FFBFBFBF")
+            _thin_brd  = _Border(left=_thin_side, right=_thin_side, top=_thin_side, bottom=_thin_side)
+
+            # fila 0: título
+            _ws_m.merge_cells(start_row=1, start_column=1, end_row=1, end_column=1 + len(_all_mods))
+            _tc = _ws_m.cell(1, 1, f"Compatibilidad modelo ↔ línea  |  Planta: {p_name}  |  {_date.today().strftime('%d/%m/%Y')}")
+            _tc.font = _Font(bold=True, size=13, color="FFFFFFFF")
+            _tc.fill = _PFill("solid", fgColor="FF1F4E79")
+            _tc.alignment = _center
+            _ws_m.row_dimensions[1].height = 22
+
+            # fila 1: cabecera columnas (línea | modelo1 | modelo2 …)
+            _ws_m.cell(2, 1, "Línea").font = _bold_w
+            _ws_m.cell(2, 1).fill = _hdr_fill
+            _ws_m.cell(2, 1).alignment = _center
+            _ws_m.cell(2, 1).border = _thin_brd
+            for _ci, _mod in enumerate(_all_mods, start=2):
+                _c = _ws_m.cell(2, _ci, _mod)
+                _c.font = _bold_w
+                _c.fill = _hdr_fill
+                _c.alignment = _center
+                _c.border = _thin_brd
+            _ws_m.row_dimensions[2].height = 18
+
+            # lookup rápido
+            _compat_set = set(
+                _df_all.loc[_df_all["compatible"] == 1, ["line_id", "model"]]
+                .apply(lambda r: (r["line_id"], r["model"]), axis=1)
+            )
+
+            for _ri, _lid in enumerate(_all_lines, start=3):
+                _row_bg = _row_fill if _ri % 2 == 1 else _PFill("solid", fgColor="FFFFFFFF")
+                _lc = _ws_m.cell(_ri, 1, _lid)
+                _lc.font = _bold_b
+                _lc.fill = _row_bg
+                _lc.alignment = _Align(horizontal="left", vertical="center")
+                _lc.border = _thin_brd
+                for _ci, _mod in enumerate(_all_mods, start=2):
+                    _ok = (_lid, _mod) in _compat_set
+                    _vc = _ws_m.cell(_ri, _ci, "✓" if _ok else "")
+                    _vc.fill = _ok_fill if _ok else _row_bg
+                    _vc.alignment = _center
+                    _vc.border = _thin_brd
+                    if _ok:
+                        _vc.font = _Font(bold=True, color="FFFFFFFF")
+
+            # anchos
+            _ws_m.column_dimensions["A"].width = 18
+            for _ci in range(2, 2 + len(_all_mods)):
+                _ws_m.column_dimensions[
+                    _ws_m.cell(2, _ci).column_letter
+                ].width = max(len(_all_mods[_ci - 2]) + 2, 7)
+            _ws_m.freeze_panes = "B3"
+
+            # ---------- HOJA 2: DETALLE ----------
+            _ws_d = _wb.create_sheet("DETALLE")
+            _df_det = (
+                _df_all[_df_all["compatible"] == 1]
+                [["plant_id", "nave", "line", "line_id", "model"]]
+                .sort_values(["nave", "line", "model"])
+                .reset_index(drop=True)
+            )
+
+            _det_cols = ["plant_id", "nave", "line", "line_id", "model"]
+            _det_hdr_fills = {
+                1: _PFill("solid", fgColor="FF1F4E79"),
+                2: _PFill("solid", fgColor="FF1F4E79"),
+                3: _PFill("solid", fgColor="FF1F4E79"),
+                4: _PFill("solid", fgColor="FF1F4E79"),
+                5: _PFill("solid", fgColor="FF1F4E79"),
+            }
+
+            for _ci, _col in enumerate(_det_cols, start=1):
+                _hc = _ws_d.cell(1, _ci, _col)
+                _hc.font = _bold_w
+                _hc.fill = _det_hdr_fills[_ci]
+                _hc.alignment = _center
+                _hc.border = _thin_brd
+
+            for _ri, _row in _df_det.iterrows():
+                _bg = _row_fill if _ri % 2 == 0 else _PFill("solid", fgColor="FFFFFFFF")
+                for _ci, _col in enumerate(_det_cols, start=1):
+                    _dc = _ws_d.cell(_ri + 2, _ci, str(_row[_col]))
+                    _dc.alignment = _Align(horizontal="left", vertical="center")
+                    _dc.fill = _bg
+                    _dc.border = _thin_brd
+
+            _ws_d.freeze_panes = "A2"
+            _ws_d.auto_filter.ref = _ws_d.dimensions
+            for _ci, _col in enumerate(_det_cols, start=1):
+                _ws_d.column_dimensions[
+                    _ws_d.cell(1, _ci).column_letter
+                ].width = max(len(_col) + 4, 12)
+
+            _buf = _io.BytesIO()
+            _wb.save(_buf)
+            return _buf.getvalue()
+
+        _plant_name = selected_plant if isinstance(selected_plant, str) else str(plant_id)
+        _today_str  = _date.today().strftime("%Y%m%d")
+        _xlsx_bytes = _build_compat_xlsx(edited_rows, plant_id, _plant_name)
         st.download_button(
             label=t("cfg_compat_export"),
-            data=_compat_csv,
-            file_name=f"compatibilidad_planta_{plant_id}.csv",
-            mime="text/csv",
+            data=_xlsx_bytes,
+            file_name=f"compatibilidad_{_plant_name}_{_today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="btn_download_compat",
         )
 
