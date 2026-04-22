@@ -3020,7 +3020,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
             _wb.save(_buf)
             return _buf.getvalue()
 
-        _plant_name = selected_plant if isinstance(selected_plant, str) else str(plant_id)
+        _plant_name = selected_plant_name if isinstance(selected_plant_name, str) else str(plant_id)
         _today_str  = _date.today().strftime("%Y%m%d")
         _xlsx_bytes = _build_compat_xlsx(edited_rows, plant_id, _plant_name)
         st.download_button(
