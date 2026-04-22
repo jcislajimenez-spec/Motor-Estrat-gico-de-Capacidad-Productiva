@@ -124,6 +124,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Líneas ≥ 90 % saturación",
         "res_panel_bottleneck":   "Cuello principal",
         "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
+        "res_shifts_expander":    "⚙ Turnos por línea",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -319,6 +320,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Lines ≥ 90 % saturation",
         "res_panel_bottleneck":   "Main bottleneck",
         "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
+        "res_shifts_expander":    "⚙ Shifts per line",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -514,6 +516,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Lerroak ≥ 90 % saturazio",
         "res_panel_bottleneck":   "Eztarri nagusia",
         "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
+        "res_shifts_expander":    "⚙ Txandak lerro bakoitzeko",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -3499,7 +3502,21 @@ def _precompute_all_bases_for_tab4(
 
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
-    st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
+
+    # ── Bloque 8A: resolver de horas efectivas por línea ──────────────────
+    # Estructura real en session_state (sincronizada después del expander):
+    #   st.session_state["line_params_override"][line_id] = {
+    #       "shifts": int,       ← activo en esta fase
+    #       "availability": None, ← reservado para Bloque 10
+    #       "efficiency": None,   ← reservado para Bloque 10
+    #   }
+    st.session_state.setdefault("line_params_override", {})
+
+    def _resolve_hours_eff(lid: str) -> float:
+        _ov = st.session_state["line_params_override"].get(lid, {})
+        _s = int(_ov.get("shifts") or shifts)
+        # availability y efficiency globales en esta fase (Bloque 10 los extenderá)
+        return hours_week * _s * availability * efficiency
 
     summary_rows = []
     detail_by_line = {}
@@ -3515,6 +3532,60 @@ if st.session_state.active_tab == "📈 Resultados":
     _tc = times_df.copy()
     _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
     cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
+
+    # ── UI: override de turnos por línea ───────────────────────────────────
+    _planned_line_ids = [
+        lid for lid in all_line_ids
+        if st.session_state.line_model.get(st.session_state["plant_id"], {}).get(lid)
+    ]
+    _active_ov_lines = [
+        lid for lid in _planned_line_ids
+        if int(st.session_state.get(f"shifts_ov_{plant_id}_{lid}", shifts)) != shifts
+    ]
+    _expander_label = t("res_shifts_expander")
+    if _active_ov_lines:
+        _expander_label += f"  —  ✏ {len(_active_ov_lines)} override(s) activo(s)"
+    with st.expander(_expander_label, expanded=bool(_active_ov_lines)):
+        if _planned_line_ids:
+            _ov_ncols = min(len(_planned_line_ids), 4)
+            _ov_cols = st.columns(_ov_ncols)
+            for _oi, _lid in enumerate(_planned_line_ids):
+                _cur_s = int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts))
+                _is_ov = _cur_s != shifts
+                _inp_label = f"{'✏ ' if _is_ov else ''}{_lid}"
+                _ov_cols[_oi % _ov_ncols].number_input(
+                    _inp_label,
+                    min_value=1, max_value=5, value=shifts, step=1,
+                    key=f"shifts_ov_{plant_id}_{_lid}",
+                    help=f"Turno global: {shifts}. Cambia para aplicar override a esta línea.",
+                )
+            if _active_ov_lines:
+                st.caption(
+                    f"✏ Override activo en: **{', '.join(_active_ov_lines)}** "
+                    f"(turno global: {shifts}). El resto hereda el valor global."
+                )
+            else:
+                st.caption(f"Todas las líneas usan el turno global ({shifts} turno(s)). Modifica cualquier valor para activar un override.")
+        else:
+            st.caption("Sin líneas planificadas. Selecciona modelos en Planificación.")
+
+    # Sincronizar la estructura real de line_params_override desde los widgets
+    for _lid in _planned_line_ids:
+        _s_val = int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts))
+        st.session_state["line_params_override"][_lid] = {
+            "shifts": _s_val,
+            "availability": None,   # reservado — Bloque 10
+            "efficiency": None,     # reservado — Bloque 10
+        }
+
+    # Caption de horas efectivas — adaptado si hay overrides activos
+    if _active_ov_lines:
+        st.caption(
+            f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')} "
+            f"(referencia global). Las horas efectivas varían por línea según los turnos configurados arriba."
+        )
+    else:
+        st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
 
     for line_id in all_line_ids:
 
@@ -3540,7 +3611,7 @@ if st.session_state.active_tab == "📈 Resultados":
             .get(line_id, 0.0)
         )
 
-        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model, times_df, stations_df, hours_eff)
+        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model, times_df, stations_df, _resolve_hours_eff(line_id))
 
         saturation = 0.0
         deficit = 0.0
