@@ -125,6 +125,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Cuello principal",
         "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
         "res_shifts_expander":    "⚙ Turnos por línea",
+        "res_hh_pct_col":         "% Carga HH",
+        "res_hh_load_caption":    "📊 Carga HH/sem — {top_line} concentra el {top_pct} % de la carga humana del plan ({top_hh} HH/sem). Total plan: {total_hh} HH/sem. *Horas requeridas por la demanda planificada. No representa plantilla disponible ni FTE asignados.*",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -321,6 +323,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Main bottleneck",
         "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
         "res_shifts_expander":    "⚙ Shifts per line",
+        "res_hh_pct_col":         "% HH Load",
+        "res_hh_load_caption":    "📊 HH/week load — {top_line} concentrates {top_pct} % of the plan's human workload ({top_hh} HH/week). Plan total: {total_hh} HH/week. *Hours required by planned demand. Does not represent available headcount or assigned FTE.*",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -517,6 +521,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Eztarri nagusia",
         "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
         "res_shifts_expander":    "⚙ Txandak lerro bakoitzeko",
+        "res_hh_pct_col":         "% HH Karga",
+        "res_hh_load_caption":    "📊 HH/aste karga — {top_line} planak giza kargaren {top_pct} % biltzen du ({top_hh} HH/aste). Plan osoa: {total_hh} HH/aste. *Plangintza-eskaiak eskatutako orduak. Ez da eskuragarri dagoen langileen edo esleitutako FTEen adierazgarria.*",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -3692,6 +3698,18 @@ if st.session_state.active_tab == "📈 Resultados":
             if c not in summary_df.columns:
                 summary_df[c] = ""
 
+        # Bloque 9 — peso relativo de carga humana por línea
+        _hh_col = "Demanda (h/SEM)"
+        _total_hh_plan = float(summary_df[_hh_col].sum(skipna=True))
+        if _total_hh_plan > 0:
+            summary_df[t("res_hh_pct_col")] = (
+                summary_df[_hh_col] / _total_hh_plan * 100.0
+            )
+        else:
+            summary_df[t("res_hh_pct_col")] = float("nan")
+
+        total_row[t("res_hh_pct_col")] = float("nan")   # no aplica en fila TOTAL
+
         summary_df = pd.concat([summary_df, pd.DataFrame([total_row])], ignore_index=True)
 
     def style_summary(df: pd.DataFrame):
@@ -3709,10 +3727,13 @@ if st.session_state.active_tab == "📈 Resultados":
 
         styled["Saturación (%)"] = pd.to_numeric(styled["Saturación (%)"], errors="coerce")
 
-        s = styled.style.format({
-            **{c: "{:.1f}" for c in fmt_cols_1 if c in styled.columns},
-            "Saturación (%)": "{:.1f} %"
-        })
+        _hh_pct_col_name = t("res_hh_pct_col")
+        _fmt_dict = {c: "{:.1f}" for c in fmt_cols_1 if c in styled.columns}
+        _fmt_dict["Saturación (%)"] = "{:.1f} %"
+        if _hh_pct_col_name in styled.columns:
+            styled[_hh_pct_col_name] = pd.to_numeric(styled[_hh_pct_col_name], errors="coerce")
+            _fmt_dict[_hh_pct_col_name] = "{:.1f} %"
+        s = styled.style.format(_fmt_dict)
 
         def sat_color(val):
             try:
@@ -3741,14 +3762,17 @@ if st.session_state.active_tab == "📈 Resultados":
     if summary_df.empty:
         st.info(t("res_no_results_yet"))
     else:
+        _hh_pct_col = t("res_hh_pct_col")
         display_cols = [
             "nave", "line", "model",
             "Demanda (UDS/SEM)", "Capacidad (UDS/SEM)", "Saturación (%)", "Déficit (UDS/SEM)",
             "bottleneck",
             "Demanda (UDS/AÑO)", "Capacidad (UDS/AÑO)",
-            "Demanda (h/SEM)", "Capacidad (h/SEM)",
+            "Demanda (h/SEM)", _hh_pct_col, "Capacidad (h/SEM)",
             "Demanda (h/AÑO)", "Capacidad (h/AÑO)"
         ]
+        display_cols = [c for c in display_cols if c in summary_df.columns]
+
         # ── Panel de lectura rápida ───────────────────────────────────────────
         _lo = summary_df[summary_df["line_id"] != "TOTAL"]
         _def_v = pd.to_numeric(_lo["Déficit (UDS/SEM)"], errors="coerce").fillna(0.0)
@@ -3773,6 +3797,23 @@ if st.session_state.active_tab == "📈 Resultados":
         _pm3.metric(t("res_panel_n_critical"), _n_crit)
         _pm4.metric(t("res_panel_bottleneck"), _main_bn)
         st.caption(t("res_sorted_note"))
+
+        # ── Bloque 9: lectura de carga humana ─────────────────────────────────
+        _hh_v = pd.to_numeric(_lo["Demanda (h/SEM)"], errors="coerce").fillna(0.0)
+        _total_hh_v = float(_hh_v.sum())
+        if _total_hh_v > 0 and not _hh_v.empty:
+            _top_hh_idx = _hh_v.idxmax()
+            _top_hh_line = str(_lo.loc[_top_hh_idx, "line"]) if "line" in _lo.columns else "—"
+            _top_hh_val = float(_hh_v[_top_hh_idx])
+            _top_hh_pct = _top_hh_val / _total_hh_v * 100.0
+            st.caption(
+                t("res_hh_load_caption").format(
+                    top_line=_top_hh_line,
+                    top_pct=_fmt_num(_top_hh_pct),
+                    top_hh=_fmt_num(_top_hh_val),
+                    total_hh=_fmt_num(_total_hh_v),
+                )
+            )
 
         total_display_df = summary_df.copy()
         total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
