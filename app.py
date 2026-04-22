@@ -3614,7 +3614,9 @@ if st.session_state.active_tab == "📈 Resultados":
                             "Demanda (h/SEM)", "Capacidad (h/SEM)",
                             "Demanda (h/AÑO)", "Capacidad (h/AÑO)",
                         ]
-                        _base_key_df = summary_df[["line_id"] + _num_cols].set_index("line_id")
+                        # Exclude TOTAL aggregate row from base before computing diffs
+                        _base_lines_df = summary_df[summary_df["line_id"] != "TOTAL"]
+                        _base_key_df = _base_lines_df[["line_id"] + _num_cols].set_index("line_id")
                         _cmp_key_df  = _cmp_df[["line_id"] + _num_cols].set_index("line_id") if not _cmp_df.empty else pd.DataFrame(columns=_num_cols)
                         _union_idx = _base_key_df.index.union(_cmp_key_df.index)
                         _base_aligned = _base_key_df.reindex(_union_idx, fill_value=0.0)
@@ -3632,8 +3634,30 @@ if st.session_state.active_tab == "📈 Resultados":
                         _base_export = summary_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
                         _cmp_export  = (_cmp_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
                                         if not _cmp_df.empty else pd.DataFrame())
-                        _diff_export = (_diff_df[["nave", "line"] + _num_cols].rename(columns={"nave": "Nave", "line": "Línea"})
-                                        if not _diff_df.empty else pd.DataFrame())
+                        if not _diff_df.empty:
+                            _diff_export = _diff_df[["nave", "line"] + _num_cols].rename(columns={"nave": "Nave", "line": "Línea"})
+                            # TOTAL row: sum of line diffs; Saturación (%) intentionally left blank (ratio, not summable)
+                            _diff_total = {"Nave": "", "Línea": "TOTAL"}
+                            for _col in _num_cols:
+                                _diff_total[_col] = None if _col == "Saturación (%)" else _diff_export[_col].sum()
+                            _diff_export = pd.concat(
+                                [_diff_export, pd.DataFrame([_diff_total])], ignore_index=True
+                            )
+                        else:
+                            _diff_export = pd.DataFrame()
+
+                        # Number format helper: integers show without decimals, reals with max 2
+                        _NUM_FMT = '#,##0.##'
+                        def _apply_num_fmt(ws, col_names):
+                            _hdr = {cell.value: cell.column for cell in ws[1]}
+                            for _cname in col_names:
+                                _cidx = _hdr.get(_cname)
+                                if _cidx is None:
+                                    continue
+                                for _r in ws.iter_rows(min_row=2, min_col=_cidx, max_col=_cidx):
+                                    for _cell in _r:
+                                        if isinstance(_cell.value, (int, float)):
+                                            _cell.number_format = _NUM_FMT
 
                         _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
                         _cmp_filename = f"comparativa_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
@@ -3646,8 +3670,11 @@ if st.session_state.active_tab == "📈 Resultados":
                                 {"Campo": "Exportado", "Valor": _export_ts},
                             ]).to_excel(_cw, sheet_name="Info", index=False)
                             _base_export.to_excel(_cw, sheet_name="Base", index=False)
+                            _apply_num_fmt(_cw.sheets["Base"], _num_cols)
                             _cmp_export.to_excel(_cw, sheet_name="Comparación", index=False)
+                            _apply_num_fmt(_cw.sheets["Comparación"], _num_cols)
                             _diff_export.to_excel(_cw, sheet_name="Diferencias", index=False)
+                            _apply_num_fmt(_cw.sheets["Diferencias"], _num_cols)
                         _cmp_buf.seek(0)
 
                         st.download_button(
