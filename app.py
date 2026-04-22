@@ -3761,6 +3761,7 @@ if st.session_state.active_tab == "📈 Resultados":
                             )
 
                         # ── Datos para RESUMEN ────────────────────────────────
+                        _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
                         _n_tot = len(_comp_rows)
                         _n_emp = sum(1 for r in _comp_rows if r["_ord"] in (0, 1, 4))
                         _n_mej = sum(1 for r in _comp_rows if r["_ord"] in (2, 3, 5))
@@ -3781,7 +3782,6 @@ if st.session_state.active_tab == "📈 Resultados":
                         _nc_rows = [r for r in _comp_rows if r["_ord"] == 6]
 
                         # ── Construir Excel ───────────────────────────────────
-                        _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
                         _cmp_filename = f"comparativa_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
                         _cmp_buf = io.BytesIO()
 
