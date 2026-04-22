@@ -3648,9 +3648,22 @@ if st.session_state.active_tab == "📈 Resultados":
 
                         from openpyxl.styles import Font, PatternFill, Alignment
 
+                        def _fmt_export_df(df, num_cols):
+                            """Pre-format numeric columns as clean strings using _fmt_num.
+                            Sidesteps Excel locale number_format issues entirely."""
+                            df = df.copy()
+                            for _col in num_cols:
+                                if _col not in df.columns:
+                                    continue
+                                df[_col] = df[_col].apply(
+                                    lambda v: "" if (v is None or (isinstance(v, float) and pd.isna(v)))
+                                    else _fmt_num(v)
+                                )
+                            return df
+
                         def _style_info_ws(ws):
                             _bold = Font(bold=True)
-                            _gray = PatternFill("solid", fgColor="D9D9D9")
+                            _gray = PatternFill("solid", fgColor="FFD9D9D9")
                             _center = Alignment(horizontal="center", vertical="center")
                             for cell in ws[1]:
                                 cell.font = _bold
@@ -3685,14 +3698,7 @@ if st.session_state.active_tab == "📈 Resultados":
                                     continue
                                 for _r in ws.iter_rows(min_row=2, min_col=_cidx, max_col=_cidx):
                                     for _cell in _r:
-                                        if isinstance(_cell.value, (int, float)) and _cell.value is not None:
-                                            _v = round(_cell.value, 2)
-                                            if _v % 1 == 0:
-                                                _cell.value = int(_v)
-                                                _cell.number_format = '#,##0'
-                                            else:
-                                                _cell.value = _v
-                                                _cell.number_format = '#,##0.##'
+                                        if _cell.value not in (None, ""):
                                             _cell.alignment = _right
 
                         _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
@@ -3706,12 +3712,12 @@ if st.session_state.active_tab == "📈 Resultados":
                                 {"Campo": "Exportado", "Valor": _export_ts},
                             ]).to_excel(_cw, sheet_name="Info", index=False)
                             _style_info_ws(_cw.sheets["Info"])
-                            _base_export.to_excel(_cw, sheet_name="Base", index=False)
-                            _style_data_ws(_cw.sheets["Base"], "BDD7EE", _num_cols)
-                            _cmp_export.to_excel(_cw, sheet_name="Comparación", index=False)
-                            _style_data_ws(_cw.sheets["Comparación"], "C6EFCE", _num_cols)
-                            _diff_export.to_excel(_cw, sheet_name="Diferencias", index=False)
-                            _style_data_ws(_cw.sheets["Diferencias"], "FFEB9C", _num_cols, has_total_row=True)
+                            _fmt_export_df(_base_export, _num_cols).to_excel(_cw, sheet_name="Base", index=False)
+                            _style_data_ws(_cw.sheets["Base"], "FFBDD7EE", _num_cols)
+                            _fmt_export_df(_cmp_export, _num_cols).to_excel(_cw, sheet_name="Comparación", index=False)
+                            _style_data_ws(_cw.sheets["Comparación"], "FFC6EFCE", _num_cols)
+                            _fmt_export_df(_diff_export, _num_cols).to_excel(_cw, sheet_name="Diferencias", index=False)
+                            _style_data_ws(_cw.sheets["Diferencias"], "FFFFEB9C", _num_cols, has_total_row=True)
                         _cmp_buf.seek(0)
 
                         st.download_button(
