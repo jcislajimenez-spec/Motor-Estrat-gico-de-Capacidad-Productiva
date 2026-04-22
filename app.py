@@ -3604,120 +3604,359 @@ if st.session_state.active_tab == "📈 Resultados":
                                 })
                             return pd.DataFrame(_rows)
 
+                        from openpyxl.styles import Font, PatternFill, Alignment
+
+                        # ── Helpers de formato ────────────────────────────────
+                        def _fnes(v) -> str:
+                            """Número formateado para Excel español: entero sin decimal, float máx 2 con coma."""
+                            s = _fmt_num(v).replace(".", ",")
+                            return s.rstrip(",")
+
+                        def _fnes_signed(v) -> str:
+                            """Como _fnes pero con + explícito en positivos."""
+                            s = _fnes(v)
+                            try:
+                                if v > 0:
+                                    return "+" + s
+                            except TypeError:
+                                pass
+                            return s
+
+                        def _lectura_linea(def_a, def_b, sat_a, sat_b):
+                            """Devuelve (texto, orden_impacto). Menor orden = más crítico."""
+                            if def_a == 0 and def_b > 0:
+                                return "aparece déficit", 0
+                            if def_a > 0 and def_b > def_a:
+                                return "el déficit crece", 1
+                            if def_a > 0 and 0 < def_b < def_a:
+                                return "el déficit se reduce", 2
+                            if def_a > 0 and def_b == 0:
+                                return "desaparece el déficit", 3
+                            _ds = sat_b - sat_a
+                            if _ds >= 3.0:
+                                return "sube la carga", 4
+                            if _ds <= -3.0:
+                                return "reduce la carga", 5
+                            return "sin cambio relevante", 6
+
+                        def _xl_hdr(ws, hdr_fills: dict, freeze=True, autofilter=True):
+                            """Aplica estilo de cabecera. hdr_fills = {col_1based: PatternFill}"""
+                            _bold = Font(bold=True)
+                            _center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                            _default_fill = PatternFill("solid", fgColor="FFD9D9D9")
+                            for cell in ws[1]:
+                                cell.font = _bold
+                                cell.fill = hdr_fills.get(cell.column, _default_fill)
+                                cell.alignment = _center
+                            if freeze:
+                                ws.freeze_panes = "A2"
+                            if autofilter:
+                                ws.auto_filter.ref = ws.dimensions
+                            for col in ws.columns:
+                                _mw = max((len(str(c.value or "")) for c in col), default=8)
+                                ws.column_dimensions[col[0].column_letter].width = min(max(_mw + 3, 10), 32)
+
+                        # ── Datos de comparación ──────────────────────────────
                         _cmp_model_d = _cmp_sc_data["line_model"]
                         _cmp_demand_d = _cmp_sc_data["line_demand"]
                         _cmp_df = _build_summary_df(_cmp_model_d, _cmp_demand_d)
 
-                        _num_cols = [
-                            "Demanda (UDS/SEM)", "Capacidad (UDS/SEM)", "Saturación (%)", "Déficit (UDS/SEM)",
-                            "Demanda (UDS/AÑO)", "Capacidad (UDS/AÑO)",
-                            "Demanda (h/SEM)", "Capacidad (h/SEM)",
-                            "Demanda (h/AÑO)", "Capacidad (h/AÑO)",
-                        ]
-                        # Exclude TOTAL aggregate row from base before computing diffs
+                        _cols_base = ["Demanda (UDS/SEM)", "Capacidad (UDS/SEM)", "Saturación (%)", "Déficit (UDS/SEM)"]
                         _base_lines_df = summary_df[summary_df["line_id"] != "TOTAL"]
-                        _base_key_df = _base_lines_df[["line_id"] + _num_cols].set_index("line_id")
-                        _cmp_key_df  = _cmp_df[["line_id"] + _num_cols].set_index("line_id") if not _cmp_df.empty else pd.DataFrame(columns=_num_cols)
-                        _union_idx = _base_key_df.index.union(_cmp_key_df.index)
-                        _base_aligned = _base_key_df.reindex(_union_idx, fill_value=0.0)
-                        _cmp_aligned  = _cmp_key_df.reindex(_union_idx, fill_value=0.0)
-                        _diff_df_rows = []
+                        _base_idx = _base_lines_df[["line_id"] + _cols_base].set_index("line_id")
+                        _cmp_idx = (
+                            _cmp_df[["line_id"] + _cols_base].set_index("line_id")
+                            if not _cmp_df.empty else pd.DataFrame(columns=_cols_base)
+                        )
+                        _union_idx = _base_idx.index.union(_cmp_idx.index)
+                        _base_al = _base_idx.reindex(_union_idx, fill_value=0.0)
+                        _cmp_al = _cmp_idx.reindex(_union_idx, fill_value=0.0)
+                        _bm = (_base_lines_df.set_index("line_id")["model"].to_dict()
+                               if "model" in _base_lines_df.columns else {})
+                        _cm = (_cmp_df.set_index("line_id")["model"].to_dict()
+                               if not _cmp_df.empty and "model" in _cmp_df.columns else {})
+
+                        # ── Filas de la COMPARATIVA ───────────────────────────
+                        _comp_rows = []
                         for _lid in _union_idx:
-                            _parts = _lid.split("-", 1)
-                            _row = {"nave": _parts[0] if len(_parts) == 2 else "N1", "line": _parts[1] if len(_parts) == 2 else _parts[0]}
-                            for _col in _num_cols:
-                                _row[_col] = _cmp_aligned.at[_lid, _col] - _base_aligned.at[_lid, _col]
-                            _diff_df_rows.append(_row)
-                        _diff_df = pd.DataFrame(_diff_df_rows)
+                            _pts = _lid.split("-", 1)
+                            _nave = _pts[0] if len(_pts) == 2 else "N1"
+                            _bl = _pts[1] if len(_pts) == 2 else _pts[0]
+                            _da = _base_al.at[_lid, "Demanda (UDS/SEM)"]
+                            _ca = _base_al.at[_lid, "Capacidad (UDS/SEM)"]
+                            _sa = _base_al.at[_lid, "Saturación (%)"]
+                            _fa = _base_al.at[_lid, "Déficit (UDS/SEM)"]
+                            _db = _cmp_al.at[_lid, "Demanda (UDS/SEM)"]
+                            _cb = _cmp_al.at[_lid, "Capacidad (UDS/SEM)"]
+                            _sb = _cmp_al.at[_lid, "Saturación (%)"]
+                            _fb = _cmp_al.at[_lid, "Déficit (UDS/SEM)"]
+                            _ma = _bm.get(_lid, "")
+                            _mb = _cm.get(_lid, "")
+                            _modelo = _ma if _ma == _mb else f"{_ma or '—'} → {_mb or '—'}"
+                            _lec, _ord = _lectura_linea(_fa, _fb, _sa, _sb)
+                            _comp_rows.append({
+                                "Nave": _nave, "Línea": _bl, "Modelo": _modelo,
+                                "Dem. Partida": _fnes(_da), "Cap. Partida": _fnes(_ca),
+                                "Sat. Partida (%)": _fnes(_sa), "Déf. Partida": _fnes(_fa),
+                                "Dem. Evaluado": _fnes(_db), "Cap. Evaluado": _fnes(_cb),
+                                "Sat. Evaluado (%)": _fnes(_sb), "Déf. Evaluado": _fnes(_fb),
+                                "Cambio cap.": _fnes_signed(_cb - _ca),
+                                "Cambio sat. (pts)": _fnes_signed(_sb - _sa),
+                                "Cambio déf.": _fnes_signed(_fb - _fa),
+                                "Lectura": _lec,
+                                "_ord": _ord, "_dsat": _sb - _sa, "_fa": _fa, "_fb": _fb,
+                            })
 
-                        _rename_map = {"nave": "Nave", "line": "Línea", "model": "Modelo"}
-                        _base_export = summary_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
-                        _cmp_export  = (_cmp_df[["nave", "line", "model"] + _num_cols].rename(columns=_rename_map)
-                                        if not _cmp_df.empty else pd.DataFrame())
-                        if not _diff_df.empty:
-                            _diff_export = _diff_df[["nave", "line"] + _num_cols].rename(columns={"nave": "Nave", "line": "Línea"})
-                            # TOTAL row: sum of line diffs; Saturación (%) intentionally left blank (ratio, not summable)
-                            _diff_total = {"Nave": "", "Línea": "TOTAL"}
-                            for _col in _num_cols:
-                                _diff_total[_col] = None if _col == "Saturación (%)" else _diff_export[_col].sum()
-                            _diff_export = pd.concat(
-                                [_diff_export, pd.DataFrame([_diff_total])], ignore_index=True
+                        _comp_rows.sort(key=lambda r: (r["_ord"], -abs(r["_dsat"])))
+
+                        # Fila TOTAL para COMPARATIVA
+                        _tca = _base_al["Capacidad (UDS/SEM)"].sum()
+                        _tcb = _cmp_al["Capacidad (UDS/SEM)"].sum()
+                        _tda = _base_al["Demanda (UDS/SEM)"].sum()
+                        _tdb = _cmp_al["Demanda (UDS/SEM)"].sum()
+                        _tfa = _base_al["Déficit (UDS/SEM)"].sum()
+                        _tfb = _cmp_al["Déficit (UDS/SEM)"].sum()
+                        _total_comp_row = {
+                            "Nave": "", "Línea": "TOTAL", "Modelo": "",
+                            "Dem. Partida": _fnes(_tda), "Cap. Partida": _fnes(_tca),
+                            "Sat. Partida (%)": "", "Déf. Partida": _fnes(_tfa),
+                            "Dem. Evaluado": _fnes(_tdb), "Cap. Evaluado": _fnes(_tcb),
+                            "Sat. Evaluado (%)": "", "Déf. Evaluado": _fnes(_tfb),
+                            "Cambio cap.": _fnes_signed(_tcb - _tca),
+                            "Cambio sat. (pts)": "", "Cambio déf.": _fnes_signed(_tfb - _tfa),
+                            "Lectura": "", "_ord": 99, "_dsat": 0, "_fa": 0, "_fb": 0,
+                        }
+
+                        _export_cols = [
+                            "Nave", "Línea", "Modelo",
+                            "Dem. Partida", "Cap. Partida", "Sat. Partida (%)", "Déf. Partida",
+                            "Dem. Evaluado", "Cap. Evaluado", "Sat. Evaluado (%)", "Déf. Evaluado",
+                            "Cambio cap.", "Cambio sat. (pts)", "Cambio déf.", "Lectura",
+                        ]
+                        _comp_df_out = pd.DataFrame(_comp_rows + [_total_comp_row])[_export_cols]
+
+                        # Hojas PARTIDA y EVALUADO
+                        def _fmt_simple_df(df_in):
+                            _df = df_in.copy()
+                            for _c in _cols_base:
+                                if _c in _df.columns:
+                                    _df[_c] = _df[_c].apply(
+                                        lambda v: "" if (v is None or (isinstance(v, float) and pd.isna(v)))
+                                        else _fnes(v)
+                                    )
+                            return _df
+
+                        _pcols = ["nave", "line", "model"] + _cols_base
+                        _partida_out = _fmt_simple_df(
+                            _base_lines_df[_pcols].rename(
+                                columns={"nave": "Nave", "line": "Línea", "model": "Modelo"}
                             )
-                        else:
-                            _diff_export = pd.DataFrame()
-
-                        from openpyxl.styles import Font, PatternFill, Alignment
-
-                        def _fmt_export_df(df, num_cols):
-                            """Pre-format numeric columns as clean strings using _fmt_num.
-                            Sidesteps Excel locale number_format issues entirely."""
-                            df = df.copy()
-                            for _col in num_cols:
-                                if _col not in df.columns:
-                                    continue
-                                df[_col] = df[_col].apply(
-                                    lambda v: "" if (v is None or (isinstance(v, float) and pd.isna(v)))
-                                    else _fmt_num(v)
+                        )
+                        _eval_out = pd.DataFrame()
+                        if not _cmp_df.empty:
+                            _eval_out = _fmt_simple_df(
+                                _cmp_df[_pcols].rename(
+                                    columns={"nave": "Nave", "line": "Línea", "model": "Modelo"}
                                 )
-                            return df
+                            )
 
-                        def _style_info_ws(ws):
-                            _bold = Font(bold=True)
-                            _gray = PatternFill("solid", fgColor="FFD9D9D9")
-                            _center = Alignment(horizontal="center", vertical="center")
-                            for cell in ws[1]:
-                                cell.font = _bold
-                                cell.fill = _gray
-                                cell.alignment = _center
-                            for row in ws.iter_rows(min_row=2):
-                                row[0].font = _bold
-                            ws.column_dimensions["A"].width = 22
-                            ws.column_dimensions["B"].width = 38
+                        # ── Datos para RESUMEN ────────────────────────────────
+                        _n_tot = len(_comp_rows)
+                        _n_emp = sum(1 for r in _comp_rows if r["_ord"] in (0, 1, 4))
+                        _n_mej = sum(1 for r in _comp_rows if r["_ord"] in (2, 3, 5))
+                        _n_nc = sum(1 for r in _comp_rows if r["_ord"] == 6)
+                        _frase_res = (
+                            f"Al pasar de '{_sc_name_export}' a '{_cmp_sc_name}': "
+                            f"{_n_emp} línea(s) empeoran y {_n_mej} línea(s) mejoran."
+                        )
+                        _mejora_prio = {3: 0, 2: 1, 5: 2}
+                        _emp_rows = sorted(
+                            [r for r in _comp_rows if r["_ord"] in (0, 1, 4)],
+                            key=lambda r: (r["_ord"], -abs(r["_dsat"]))
+                        )
+                        _mej_rows = sorted(
+                            [r for r in _comp_rows if r["_ord"] in (2, 3, 5)],
+                            key=lambda r: (_mejora_prio.get(r["_ord"], 9), -abs(r["_dsat"]))
+                        )
+                        _nc_rows = [r for r in _comp_rows if r["_ord"] == 6]
 
-                        def _style_data_ws(ws, hdr_color, num_col_names, has_total_row=False):
-                            _bold = Font(bold=True)
-                            _hdr_fill = PatternFill("solid", fgColor=hdr_color)
-                            _center = Alignment(horizontal="center", vertical="center")
-                            _right = Alignment(horizontal="right")
-                            for cell in ws[1]:
-                                cell.font = _bold
-                                cell.fill = _hdr_fill
-                                cell.alignment = _center
-                            ws.freeze_panes = "A2"
-                            ws.auto_filter.ref = ws.dimensions
-                            for col in ws.columns:
-                                _max_w = max((len(str(cell.value or "")) for cell in col), default=8)
-                                ws.column_dimensions[col[0].column_letter].width = min(max(_max_w + 3, 10), 28)
-                            if has_total_row:
-                                for cell in ws[ws.max_row]:
-                                    cell.font = _bold
-                            _hdr_map = {cell.value: cell.column for cell in ws[1]}
-                            for _cname in num_col_names:
-                                _cidx = _hdr_map.get(_cname)
-                                if _cidx is None:
-                                    continue
-                                for _r in ws.iter_rows(min_row=2, min_col=_cidx, max_col=_cidx):
-                                    for _cell in _r:
-                                        if _cell.value not in (None, ""):
-                                            _cell.alignment = _right
-
+                        # ── Construir Excel ───────────────────────────────────
                         _cmp_sc_name = _cmp_id_map.get(_cmp_sel, "")
                         _cmp_filename = f"comparativa_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
                         _cmp_buf = io.BytesIO()
+
+                        _BLUE = PatternFill("solid", fgColor="FFBDD7EE")
+                        _GREEN = PatternFill("solid", fgColor="FFC6EFCE")
+                        _YELL = PatternFill("solid", fgColor="FFFFEB9C")
+                        _PURP = PatternFill("solid", fgColor="FFD9D2E9")
+                        _GRAY = PatternFill("solid", fgColor="FFD9D9D9")
+                        _RED_ROW = PatternFill("solid", fgColor="FFFFC7CE")
+                        _GRN_ROW = PatternFill("solid", fgColor="FFE2EFDA")
+                        _EMP_SEC = PatternFill("solid", fgColor="FFFFC7CE")
+                        _MEJ_SEC = PatternFill("solid", fgColor="FFC6EFCE")
+                        _NC_SEC = PatternFill("solid", fgColor="FFFFF2CC")
+                        _BOLD14 = Font(bold=True, size=14)
+                        _BOLD11 = Font(bold=True, size=11)
+                        _BOLD = Font(bold=True)
+                        _RIGHT = Alignment(horizontal="right")
+                        _CENTER = Alignment(horizontal="center", vertical="center")
+
                         with pd.ExcelWriter(_cmp_buf, engine="openpyxl") as _cw:
-                            pd.DataFrame([
-                                {"Campo": "Planta", "Valor": selected_plant_name},
-                                {"Campo": "Escenario base", "Valor": _sc_name_export},
-                                {"Campo": "Escenario comparación", "Valor": _cmp_sc_name},
-                                {"Campo": "Exportado", "Valor": _export_ts},
-                            ]).to_excel(_cw, sheet_name="Info", index=False)
-                            _style_info_ws(_cw.sheets["Info"])
-                            _fmt_export_df(_base_export, _num_cols).to_excel(_cw, sheet_name="Base", index=False)
-                            _style_data_ws(_cw.sheets["Base"], "FFBDD7EE", _num_cols)
-                            _fmt_export_df(_cmp_export, _num_cols).to_excel(_cw, sheet_name="Comparación", index=False)
-                            _style_data_ws(_cw.sheets["Comparación"], "FFC6EFCE", _num_cols)
-                            _fmt_export_df(_diff_export, _num_cols).to_excel(_cw, sheet_name="Diferencias", index=False)
-                            _style_data_ws(_cw.sheets["Diferencias"], "FFFFEB9C", _num_cols, has_total_row=True)
+
+                            # ── Hoja COMPARATIVA ──────────────────────────────
+                            _comp_df_out.to_excel(_cw, sheet_name="COMPARATIVA", index=False)
+                            _ws_comp = _cw.sheets["COMPARATIVA"]
+                            _fills_comp = {}
+                            for _ci in range(1, 16):
+                                if _ci <= 3:
+                                    _fills_comp[_ci] = _GRAY
+                                elif _ci <= 7:
+                                    _fills_comp[_ci] = _BLUE
+                                elif _ci <= 11:
+                                    _fills_comp[_ci] = _GREEN
+                                elif _ci <= 14:
+                                    _fills_comp[_ci] = _YELL
+                                else:
+                                    _fills_comp[_ci] = _PURP
+                            _xl_hdr(_ws_comp, _fills_comp)
+                            # Fila TOTAL en negrita
+                            for _cell in _ws_comp[_ws_comp.max_row]:
+                                _cell.font = _BOLD
+                            # Resaltar filas críticas y alinear números
+                            for _row_cells in _ws_comp.iter_rows(min_row=2, max_row=_ws_comp.max_row - 1):
+                                _lec_val = _row_cells[14].value if len(_row_cells) > 14 else ""
+                                if _lec_val == "aparece déficit":
+                                    for _c in _row_cells:
+                                        _c.fill = _RED_ROW
+                                elif _lec_val == "desaparece el déficit":
+                                    for _c in _row_cells:
+                                        _c.fill = _GRN_ROW
+                                for _c in _row_cells[3:14]:  # columnas numéricas
+                                    if _c.value not in (None, ""):
+                                        _c.alignment = _RIGHT
+
+                            # ── Hoja PARTIDA ──────────────────────────────────
+                            _partida_out.to_excel(_cw, sheet_name="PARTIDA", index=False)
+                            _xl_hdr(_cw.sheets["PARTIDA"],
+                                    {i: _BLUE for i in range(1, len(_partida_out.columns) + 1)})
+
+                            # ── Hoja EVALUADO ─────────────────────────────────
+                            if not _eval_out.empty:
+                                _eval_out.to_excel(_cw, sheet_name="EVALUADO", index=False)
+                                _xl_hdr(_cw.sheets["EVALUADO"],
+                                        {i: _GREEN for i in range(1, len(_eval_out.columns) + 1)})
+
+                            # ── Hoja RESUMEN (primera, vía openpyxl directo) ──
+                            if "Sheet" in _cw.book.sheetnames:
+                                del _cw.book["Sheet"]
+                            _ws_res = _cw.book.create_sheet("RESUMEN", 0)
+
+                            def _rc(r, c, val, font=None, fill=None, align=None):
+                                _cell = _ws_res.cell(row=r, column=c, value=val)
+                                if font:
+                                    _cell.font = font
+                                if fill:
+                                    _cell.fill = fill
+                                if align:
+                                    _cell.alignment = align
+                                return _cell
+
+                            _r = 1
+                            # Frase narrativa
+                            _rc(_r, 1, _frase_res, font=_BOLD14)
+                            _ws_res.merge_cells(start_row=_r, start_column=1, end_row=_r, end_column=6)
+                            _r += 2
+
+                            # Bloque de contexto
+                            for _lbl, _val in [
+                                ("Planta", selected_plant_name),
+                                ("Escenario de partida", _sc_name_export),
+                                ("Escenario evaluado", _cmp_sc_name),
+                                ("Exportado", _export_ts),
+                            ]:
+                                _rc(_r, 1, _lbl, font=_BOLD, fill=_GRAY)
+                                _rc(_r, 2, _val)
+                                _r += 1
+
+                            _r += 1
+                            # Síntesis numérica
+                            _rc(_r, 1, "SÍNTESIS DEL CAMBIO", font=_BOLD11)
+                            _r += 1
+                            for _lbl, _val in [
+                                ("Líneas analizadas", str(_n_tot)),
+                                ("Líneas que empeoran", str(_n_emp)),
+                                ("Líneas que mejoran", str(_n_mej)),
+                                ("Sin cambio relevante", str(_n_nc)),
+                                ("Cambio en capacidad total (uds/sem)", _fnes_signed(_tcb - _tca)),
+                                ("Cambio en déficit total (uds/sem)", _fnes_signed(_tfb - _tfa)),
+                            ]:
+                                _rc(_r, 1, _lbl, font=_BOLD, fill=_GRAY)
+                                _rc(_r, 2, _val)
+                                _r += 1
+
+                            # Tabla líneas que empeoran
+                            if _emp_rows:
+                                _r += 1
+                                _rc(_r, 1, "LÍNEAS QUE EMPEORAN", font=_BOLD11, fill=_EMP_SEC)
+                                _ws_res.merge_cells(start_row=_r, start_column=1,
+                                                    end_row=_r, end_column=7)
+                                _r += 1
+                                for _ci, _h in enumerate(
+                                    ["Nave", "Línea", "Sat. partida (%)", "Sat. evaluado (%)",
+                                     "Déf. partida", "Déf. evaluado", "Qué ocurre"], start=1
+                                ):
+                                    _rc(_r, _ci, _h, font=_BOLD, fill=_EMP_SEC)
+                                _r += 1
+                                for _rw in _emp_rows:
+                                    for _ci, _v in enumerate([
+                                        _rw["Nave"], _rw["Línea"],
+                                        _rw["Sat. Partida (%)"], _rw["Sat. Evaluado (%)"],
+                                        _rw["Déf. Partida"], _rw["Déf. Evaluado"],
+                                        _rw["Lectura"],
+                                    ], start=1):
+                                        _rc(_r, _ci, _v)
+                                    _r += 1
+
+                            # Tabla líneas que mejoran
+                            if _mej_rows:
+                                _r += 1
+                                _rc(_r, 1, "LÍNEAS QUE MEJORAN", font=_BOLD11, fill=_MEJ_SEC)
+                                _ws_res.merge_cells(start_row=_r, start_column=1,
+                                                    end_row=_r, end_column=7)
+                                _r += 1
+                                for _ci, _h in enumerate(
+                                    ["Nave", "Línea", "Sat. partida (%)", "Sat. evaluado (%)",
+                                     "Déf. partida", "Déf. evaluado", "Qué ocurre"], start=1
+                                ):
+                                    _rc(_r, _ci, _h, font=_BOLD, fill=_MEJ_SEC)
+                                _r += 1
+                                for _rw in _mej_rows:
+                                    for _ci, _v in enumerate([
+                                        _rw["Nave"], _rw["Línea"],
+                                        _rw["Sat. Partida (%)"], _rw["Sat. Evaluado (%)"],
+                                        _rw["Déf. Partida"], _rw["Déf. Evaluado"],
+                                        _rw["Lectura"],
+                                    ], start=1):
+                                        _rc(_r, _ci, _v)
+                                    _r += 1
+
+                            # Lista sin cambio relevante
+                            if _nc_rows:
+                                _r += 1
+                                _rc(_r, 1, "SIN CAMBIO RELEVANTE", font=_BOLD11, fill=_NC_SEC)
+                                _r += 1
+                                for _rw in _nc_rows:
+                                    _rc(_r, 1, _rw["Nave"])
+                                    _rc(_r, 2, _rw["Línea"])
+                                    _rc(_r, 3, _rw["Modelo"])
+                                    _r += 1
+
+                            # Anchos columna RESUMEN
+                            _ws_res.column_dimensions["A"].width = 32
+                            _ws_res.column_dimensions["B"].width = 28
+                            for _cl in ["C", "D", "E", "F", "G"]:
+                                _ws_res.column_dimensions[_cl].width = 18
+
                         _cmp_buf.seek(0)
 
                         st.download_button(
