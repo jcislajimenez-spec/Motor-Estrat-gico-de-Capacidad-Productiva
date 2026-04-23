@@ -125,7 +125,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Cuello principal",
         "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
         "res_shifts_expander":    "⚙ Turnos por línea",
-        "res_fte_info":            "📋 El plan actual exige **{total_fte} personas equivalentes** en proceso.\nLa mayor carga se concentra en **{top_line}** con **{top_fte} personas eq.** ({top_pct} % del plan).\n\n*Personas eq. = HH proceso/sem ÷ horas/sem por persona ({hw} h). Incluye tiempos de proceso completos (no distingue labor de máquina). No representa plantilla asignada ni FTE confirmados.*",
+        "res_fte_info":            "📋 El plan actual exige **{total_fte} personas equivalentes** bajo las condiciones actuales de planta.\nLa mayor carga se concentra en **{top_line}** con **{top_fte} personas eq.** ({top_pct} % del plan).\n\n*Personas eq. = HH proceso/sem ÷ (horas/sem × disponibilidad × eficiencia) = HH proceso/sem ÷ {denom} h. Los turnos no entran: una persona no trabaja dos turnos a la vez. No representa plantilla asignada ni FTE confirmados.*",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -322,7 +322,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Main bottleneck",
         "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
         "res_shifts_expander":    "⚙ Shifts per line",
-        "res_fte_info":            "📋 The current plan requires **{total_fte} equivalent people** in process.\nThe highest load is concentrated in **{top_line}** with **{top_fte} FTE equiv.** ({top_pct} % of plan).\n\n*FTE equiv. = process HH/week ÷ hours/week per person ({hw} h). Includes full process times (labor and machine not separated). Does not represent assigned headcount or confirmed FTE.*",
+        "res_fte_info":            "📋 The current plan requires **{total_fte} equivalent people** under current plant conditions.\nThe highest load is concentrated in **{top_line}** with **{top_fte} FTE equiv.** ({top_pct} % of plan).\n\n*FTE equiv. = process HH/week ÷ (hours/week × availability × efficiency) = HH/week ÷ {denom} h. Shifts are excluded: one person cannot work two shifts simultaneously. Does not represent assigned headcount or confirmed FTE.*",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -519,7 +519,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_bottleneck":   "Eztarri nagusia",
         "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
         "res_shifts_expander":    "⚙ Txandak lerro bakoitzeko",
-        "res_fte_info":            "📋 Uneko planak prozesuetan **{total_fte} baliokide pertsona** eskatzen ditu.\nKarga handiena **{top_line}** lerroan kontzentratzen da: **{top_fte} pertsona bald.** (planaren {top_pct} %).\n\n*Pertsona bald. = prozesuko HH/aste ÷ aste bakoitzeko ordu/pertsona ({hw} h). Prozesu-denbora osoak biltzen ditu (lana eta makina bereiztu gabe). Ez da esleitutako langile-taldea ezta baieztatutako FTErik.*",
+        "res_fte_info":            "📋 Uneko planak **{total_fte} baliokide pertsona** eskatzen ditu egungo planta-baldintzekin.\nKarga handiena **{top_line}** lerroan kontzentratzen da: **{top_fte} pertsona bald.** (planaren {top_pct} %).\n\n*Pertsona bald. = prozesuko HH/aste ÷ (ordu/aste × erabilgarritasuna × efizientzia) = HH/aste ÷ {denom} h. Txandak ez dira sartzen: pertsona batek ezin ditu bi txanda aldi berean egin. Ez da esleitutako langile-taldea ezta baieztatutako FTErik.*",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -3633,9 +3633,10 @@ if st.session_state.active_tab == "📈 Resultados":
         dem_hours_week = demand_week * total_cycle_time_model
         dem_hours_year = dem_hours_week * weeks_equiv
 
-        # Bloque 9 — personas equivalentes: HH proceso/sem ÷ horas/sem por persona
-        # Denominador: hours_week (jornada de una persona), NO hours_eff (mete shifts/eff)
-        people_eq = dem_hours_week / hours_week if hours_week > 0 else 0.0
+        # Bloque 9 — personas equivalentes reales bajo condiciones actuales de planta
+        # Denominador: hours_week × availability × efficiency (SIN shifts — una persona no trabaja dos turnos)
+        _fte_denom = hours_week * availability * efficiency
+        people_eq = dem_hours_week / _fte_denom if _fte_denom > 0 else 0.0
 
         summary_rows.append({
             "nave": nave,
@@ -3796,13 +3797,14 @@ if st.session_state.active_tab == "📈 Resultados":
                 _top_fte_line = str(_lo.loc[_top_fte_idx, "line"]) if "line" in _lo.columns else "—"
                 _top_fte_val = float(_fte_v[_top_fte_idx])
                 _top_fte_pct = _top_fte_val / _total_fte * 100.0
+                _fte_denom_display = hours_week * availability * efficiency
                 st.info(
                     t("res_fte_info").format(
                         total_fte=_fmt_num(_total_fte),
                         top_line=_top_fte_line,
                         top_fte=_fmt_num(_top_fte_val),
                         top_pct=_fmt_num(_top_fte_pct),
-                        hw=_fmt_num(hours_week),
+                        denom=_fmt_num(_fte_denom_display),
                     )
                 )
 
