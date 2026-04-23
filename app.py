@@ -124,8 +124,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Líneas ≥ 90 % saturación",
         "res_panel_bottleneck":   "Cuello principal",
         "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
-        "res_shifts_expander":    "⚙ Turnos por línea",
-        "res_fte_info":            "📋 El plan actual exige **{total_fte} personas equivalentes** bajo las condiciones actuales de planta.\nLa mayor carga se concentra en **{top_line}** con **{top_fte} personas eq.** ({top_pct} % del plan).\n\n*Personas eq. = HH proceso/sem ÷ (horas/sem × disponibilidad × eficiencia) = HH proceso/sem ÷ {denom} h. Los turnos no entran: una persona no trabaja dos turnos a la vez. No representa plantilla asignada ni FTE confirmados.*",
+        "res_params_expander":    "⚙ Parámetros por línea",
+        "res_fte_info":            "📋 El plan actual exige **{total_fte} personas equivalentes** bajo las condiciones actuales de planta.\nLa mayor carga se concentra en **{top_line}** con **{top_fte} personas eq.** ({top_pct} % del plan).\n\n*Personas eq. = HH proceso/sem ÷ (horas/sem × disponibilidad × eficiencia) de cada línea. Los turnos no entran: una persona no trabaja dos turnos a la vez. No representa plantilla asignada ni FTE confirmados.*",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -321,8 +321,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Lines ≥ 90 % saturation",
         "res_panel_bottleneck":   "Main bottleneck",
         "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
-        "res_shifts_expander":    "⚙ Shifts per line",
-        "res_fte_info":            "📋 The current plan requires **{total_fte} equivalent people** under current plant conditions.\nThe highest load is concentrated in **{top_line}** with **{top_fte} FTE equiv.** ({top_pct} % of plan).\n\n*FTE equiv. = process HH/week ÷ (hours/week × availability × efficiency) = HH/week ÷ {denom} h. Shifts are excluded: one person cannot work two shifts simultaneously. Does not represent assigned headcount or confirmed FTE.*",
+        "res_params_expander":    "⚙ Parameters per line",
+        "res_fte_info":            "📋 The current plan requires **{total_fte} equivalent people** under current plant conditions.\nThe highest load is concentrated in **{top_line}** with **{top_fte} FTE equiv.** ({top_pct} % of plan).\n\n*FTE equiv. = process HH/week ÷ (hours/week × availability × efficiency) per line. Shifts are excluded: one person cannot work two shifts simultaneously. Does not represent assigned headcount or confirmed FTE.*",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -518,8 +518,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_panel_n_critical":   "Lerroak ≥ 90 % saturazio",
         "res_panel_bottleneck":   "Eztarri nagusia",
         "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
-        "res_shifts_expander":    "⚙ Txandak lerro bakoitzeko",
-        "res_fte_info":            "📋 Uneko planak **{total_fte} baliokide pertsona** eskatzen ditu egungo planta-baldintzekin.\nKarga handiena **{top_line}** lerroan kontzentratzen da: **{top_fte} pertsona bald.** (planaren {top_pct} %).\n\n*Pertsona bald. = prozesuko HH/aste ÷ (ordu/aste × erabilgarritasuna × efizientzia) = HH/aste ÷ {denom} h. Txandak ez dira sartzen: pertsona batek ezin ditu bi txanda aldi berean egin. Ez da esleitutako langile-taldea ezta baieztatutako FTErik.*",
+        "res_params_expander":    "⚙ Parametroak lerro bakoitzeko",
+        "res_fte_info":            "📋 Uneko planak **{total_fte} baliokide pertsona** eskatzen ditu egungo planta-baldintzekin.\nKarga handiena **{top_line}** lerroan kontzentratzen da: **{top_fte} pertsona bald.** (planaren {top_pct} %).\n\n*Pertsona bald. = prozesuko HH/aste ÷ (ordu/aste × erabilgarritasuna × efizientzia) lerro bakoitzeko. Txandak ez dira sartzen: pertsona batek ezin ditu bi txanda aldi berean egin. Ez da esleitutako langile-taldea ezta baieztatutako FTErik.*",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -3506,20 +3506,22 @@ def _precompute_all_bases_for_tab4(
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
 
-    # ── Bloque 8A: resolver de horas efectivas por línea ──────────────────
-    # Estructura real en session_state (sincronizada después del expander):
+    # ── Bloques 8A + 10: resolver de horas efectivas por línea ───────────────
+    # Estructura en session_state:
     #   st.session_state["line_params_override"][line_id] = {
-    #       "shifts": int,       ← activo en esta fase
-    #       "availability": None, ← reservado para Bloque 10
-    #       "efficiency": None,   ← reservado para Bloque 10
+    #       "shifts":       int   | None → hereda global
+    #       "availability": float | None → hereda global
+    #       "efficiency":   float | None → hereda global
     #   }
     st.session_state.setdefault("line_params_override", {})
 
     def _resolve_hours_eff(lid: str) -> float:
         _ov = st.session_state["line_params_override"].get(lid, {})
-        _s = int(_ov.get("shifts") or shifts)
-        # availability y efficiency globales en esta fase (Bloque 10 los extenderá)
-        return hours_week * _s * availability * efficiency
+        # is not None: evita que 0.0 falsamente herede el global
+        _s = int(_ov["shifts"])        if _ov.get("shifts")        is not None else shifts
+        _a = float(_ov["availability"]) if _ov.get("availability")  is not None else availability
+        _e = float(_ov["efficiency"])   if _ov.get("efficiency")    is not None else efficiency
+        return hours_week * _s * _a * _e
 
     summary_rows = []
     detail_by_line = {}
@@ -3536,56 +3538,82 @@ if st.session_state.active_tab == "📈 Resultados":
     _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
     cycle_time_by_model = _tc.groupby("model")["cycle_time"].sum().to_dict()
 
-    # ── UI: override de turnos por línea ───────────────────────────────────
+    # ── UI: override de parámetros por línea (Bloques 8A + 10) ───────────────
     _planned_line_ids = [
         lid for lid in all_line_ids
         if st.session_state.line_model.get(st.session_state["plant_id"], {}).get(lid)
     ]
-    _active_ov_lines = [
-        lid for lid in _planned_line_ids
-        if int(st.session_state.get(f"shifts_ov_{plant_id}_{lid}", shifts)) != shifts
-    ]
-    _expander_label = t("res_shifts_expander")
+
+    def _line_has_override(lid: str) -> bool:
+        _s_v  = int(st.session_state.get(f"shifts_ov_{plant_id}_{lid}", shifts))
+        _a_v  = float(st.session_state.get(f"avail_ov_{plant_id}_{lid}", availability))
+        _e_v  = float(st.session_state.get(f"eff_ov_{plant_id}_{lid}", efficiency))
+        return (_s_v != shifts) or (abs(_a_v - availability) > 1e-6) or (abs(_e_v - efficiency) > 1e-6)
+
+    _active_ov_lines = [lid for lid in _planned_line_ids if _line_has_override(lid)]
+
+    _expander_label = t("res_params_expander")
     if _active_ov_lines:
         _expander_label += f"  —  ✏ {len(_active_ov_lines)} override(s) activo(s)"
     with st.expander(_expander_label, expanded=bool(_active_ov_lines)):
         if _planned_line_ids:
-            _ov_ncols = min(len(_planned_line_ids), 4)
-            _ov_cols = st.columns(_ov_ncols)
-            for _oi, _lid in enumerate(_planned_line_ids):
-                _cur_s = int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts))
-                _is_ov = _cur_s != shifts
-                _inp_label = f"{'✏ ' if _is_ov else ''}{_lid}"
-                _ov_cols[_oi % _ov_ncols].number_input(
-                    _inp_label,
-                    min_value=1, max_value=5, value=shifts, step=1,
+            # Cabecera de columnas
+            _ph, _sh, _ah, _eh = st.columns([1.8, 0.8, 1, 1])
+            _ph.caption("**Línea**")
+            _sh.caption("**Turnos**")
+            _ah.caption("**Disponibilidad**")
+            _eh.caption("**Eficiencia**")
+            st.divider()
+            # Una fila por línea
+            for _lid in _planned_line_ids:
+                _is_ov = _line_has_override(_lid)
+                _pc, _sc, _ac, _ec = st.columns([1.8, 0.8, 1, 1])
+                _pc.write(f"{'✏ ' if _is_ov else ''}{_lid}")
+                _sc.number_input(
+                    "t", min_value=1, max_value=5, value=shifts, step=1,
                     key=f"shifts_ov_{plant_id}_{_lid}",
-                    help=f"Turno global: {shifts}. Cambia para aplicar override a esta línea.",
+                    help=f"Global: {shifts}",
+                    label_visibility="collapsed",
                 )
+                _ac.number_input(
+                    "a", min_value=0.0, max_value=1.0, value=availability, step=0.01,
+                    key=f"avail_ov_{plant_id}_{_lid}",
+                    help=f"Global: {availability}",
+                    label_visibility="collapsed",
+                )
+                _ec.number_input(
+                    "e", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
+                    key=f"eff_ov_{plant_id}_{_lid}",
+                    help=f"Global: {efficiency}",
+                    label_visibility="collapsed",
+                )
+            st.divider()
             if _active_ov_lines:
                 st.caption(
-                    f"✏ Override activo en: **{', '.join(_active_ov_lines)}** "
-                    f"(turno global: {shifts}). El resto hereda el valor global."
+                    f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
+                    f"Resto hereda global (turnos: {shifts}, disp.: {availability}, ef.: {efficiency})."
                 )
             else:
-                st.caption(f"Todas las líneas usan el turno global ({shifts} turno(s)). Modifica cualquier valor para activar un override.")
+                st.caption(
+                    f"Todas las líneas usan los valores globales "
+                    f"(turnos: {shifts}, disponibilidad: {availability}, eficiencia: {efficiency})."
+                )
         else:
             st.caption("Sin líneas planificadas. Selecciona modelos en Planificación.")
 
-    # Sincronizar la estructura real de line_params_override desde los widgets
+    # Sincronizar line_params_override desde los valores de widget
     for _lid in _planned_line_ids:
-        _s_val = int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts))
         st.session_state["line_params_override"][_lid] = {
-            "shifts": _s_val,
-            "availability": None,   # reservado — Bloque 10
-            "efficiency": None,     # reservado — Bloque 10
+            "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts)),
+            "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_lid}", availability)),
+            "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_lid}", efficiency)),
         }
 
-    # Caption de horas efectivas — adaptado si hay overrides activos
+    # Caption de horas efectivas
     if _active_ov_lines:
         st.caption(
             f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')} "
-            f"(referencia global). Las horas efectivas varían por línea según los turnos configurados arriba."
+            f"(referencia global). Turnos, disponibilidad y eficiencia pueden variar por línea."
         )
     else:
         st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
@@ -3633,9 +3661,12 @@ if st.session_state.active_tab == "📈 Resultados":
         dem_hours_week = demand_week * total_cycle_time_model
         dem_hours_year = dem_hours_week * weeks_equiv
 
-        # Bloque 9 — personas equivalentes reales bajo condiciones actuales de planta
+        # Bloque 9/10 — personas equivalentes con disponibilidad/eficiencia por línea
         # Denominador: hours_week × availability × efficiency (SIN shifts — una persona no trabaja dos turnos)
-        _fte_denom = hours_week * availability * efficiency
+        _ov_loop = st.session_state["line_params_override"].get(line_id, {})
+        _a_line = float(_ov_loop["availability"]) if _ov_loop.get("availability") is not None else availability
+        _e_line = float(_ov_loop["efficiency"])   if _ov_loop.get("efficiency")   is not None else efficiency
+        _fte_denom = hours_week * _a_line * _e_line
         people_eq = dem_hours_week / _fte_denom if _fte_denom > 0 else 0.0
 
         summary_rows.append({
@@ -3797,14 +3828,12 @@ if st.session_state.active_tab == "📈 Resultados":
                 _top_fte_line = str(_lo.loc[_top_fte_idx, "line"]) if "line" in _lo.columns else "—"
                 _top_fte_val = float(_fte_v[_top_fte_idx])
                 _top_fte_pct = _top_fte_val / _total_fte * 100.0
-                _fte_denom_display = hours_week * availability * efficiency
                 st.info(
                     t("res_fte_info").format(
                         total_fte=_fmt_num(_total_fte),
                         top_line=_top_fte_line,
                         top_fte=_fmt_num(_top_fte_val),
                         top_pct=_fmt_num(_top_fte_pct),
-                        denom=_fmt_num(_fte_denom_display),
                     )
                 )
 
