@@ -3507,20 +3507,19 @@ if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
 
     # ── Bloques 8A + 10: resolver de horas efectivas por línea ───────────────
-    # Estructura en session_state:
-    #   st.session_state["line_params_override"][line_id] = {
-    #       "shifts":       int   | None → hereda global
-    #       "availability": float | None → hereda global
-    #       "efficiency":   float | None → hereda global
-    #   }
+    # Estructura en session_state["line_params_override"][line_id]:
+    #   {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
+    # enabled=False → hereda SIEMPRE el global actual (nunca usa valores locales)
+    # enabled=True  → usa valores locales del widget
     st.session_state.setdefault("line_params_override", {})
 
     def _resolve_hours_eff(lid: str) -> float:
         _ov = st.session_state["line_params_override"].get(lid, {})
-        # is not None: evita que 0.0 falsamente herede el global
-        _s = int(_ov["shifts"])        if _ov.get("shifts")        is not None else shifts
-        _a = float(_ov["availability"]) if _ov.get("availability")  is not None else availability
-        _e = float(_ov["efficiency"])   if _ov.get("efficiency")    is not None else efficiency
+        if not _ov.get("enabled", False):
+            return hours_eff  # hereda global completo
+        _s = int(_ov.get("shifts", shifts))
+        _a = float(_ov.get("availability", availability))
+        _e = float(_ov.get("efficiency", efficiency))
         return hours_week * _s * _a * _e
 
     summary_rows = []
@@ -3544,50 +3543,75 @@ if st.session_state.active_tab == "📈 Resultados":
         if st.session_state.line_model.get(st.session_state["plant_id"], {}).get(lid)
     ]
 
-    def _line_has_override(lid: str) -> bool:
-        _s_v  = int(st.session_state.get(f"shifts_ov_{plant_id}_{lid}", shifts))
-        _a_v  = float(st.session_state.get(f"avail_ov_{plant_id}_{lid}", availability))
-        _e_v  = float(st.session_state.get(f"eff_ov_{plant_id}_{lid}", efficiency))
-        return (_s_v != shifts) or (abs(_a_v - availability) > 1e-6) or (abs(_e_v - efficiency) > 1e-6)
+    # Fase 1 — Hidratación: inicializa widget keys desde line_params_override (fuente de verdad)
+    # Solo escribe si la clave NO existe aún → respeta interacciones recientes del usuario
+    for _lid in _planned_line_ids:
+        _ov_saved = st.session_state["line_params_override"].get(_lid, {})
+        _ov_saved_en = bool(_ov_saved.get("enabled", False))
+        if f"ov_en_{plant_id}_{_lid}" not in st.session_state:
+            st.session_state[f"ov_en_{plant_id}_{_lid}"] = _ov_saved_en
+        if _ov_saved_en:
+            for _wk, _wv in [
+                (f"shifts_ov_{plant_id}_{_lid}",  int(_ov_saved.get("shifts", shifts))),
+                (f"avail_ov_{plant_id}_{_lid}",   float(_ov_saved.get("availability", availability))),
+                (f"eff_ov_{plant_id}_{_lid}",     float(_ov_saved.get("efficiency", efficiency))),
+            ]:
+                if _wk not in st.session_state:
+                    st.session_state[_wk] = _wv
 
-    _active_ov_lines = [lid for lid in _planned_line_ids if _line_has_override(lid)]
+    # Fase 2 — Limpieza: borra claves de valor para líneas con override OFF
+    # Opera sobre widget state ya hidratado → garantiza que los sliders muestren global
+    for _lid in _planned_line_ids:
+        if not st.session_state.get(f"ov_en_{plant_id}_{_lid}", False):
+            for _wk in [f"shifts_ov_{plant_id}_{_lid}", f"avail_ov_{plant_id}_{_lid}", f"eff_ov_{plant_id}_{_lid}"]:
+                st.session_state.pop(_wk, None)
+
+    _active_ov_lines = [
+        lid for lid in _planned_line_ids
+        if st.session_state.get(f"ov_en_{plant_id}_{lid}", False)
+    ]
 
     _expander_label = t("res_params_expander")
     if _active_ov_lines:
-        _expander_label += f"  —  ✏ {len(_active_ov_lines)} override(s) activo(s)"
+        _expander_label += f"  —  ✏ {len(_active_ov_lines)} activo(s)"
     with st.expander(_expander_label, expanded=bool(_active_ov_lines)):
         if _planned_line_ids:
-            # Cabecera de columnas
-            _ph, _sh, _ah, _eh = st.columns([1.8, 0.8, 1, 1])
+            _ch, _ph, _sh, _ah, _eh = st.columns([0.4, 1.6, 0.7, 1.5, 1.5])
+            _ch.caption("**Ov.**")
             _ph.caption("**Línea**")
             _sh.caption("**Turnos**")
-            _ah.caption("**Disponibilidad**")
-            _eh.caption("**Eficiencia**")
-            st.divider()
-            # Una fila por línea
+            _ah.caption(f"**Disponib.** *(global: {availability})*")
+            _eh.caption(f"**Eficiencia** *(global: {efficiency})*")
             for _lid in _planned_line_ids:
-                _is_ov = _line_has_override(_lid)
-                _pc, _sc, _ac, _ec = st.columns([1.8, 0.8, 1, 1])
-                _pc.write(f"{'✏ ' if _is_ov else ''}{_lid}")
+                _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
+                _cc, _pc, _sc, _ac, _ec = st.columns([0.4, 1.6, 0.7, 1.5, 1.5])
+                _cc.checkbox(
+                    "ov", value=_en,
+                    key=f"ov_en_{plant_id}_{_lid}",
+                    label_visibility="collapsed",
+                )
+                _pc.write(f"{'✏ ' if _en else ''}{_lid}")
                 _sc.number_input(
                     "t", min_value=1, max_value=5, value=shifts, step=1,
                     key=f"shifts_ov_{plant_id}_{_lid}",
                     help=f"Global: {shifts}",
                     label_visibility="collapsed",
+                    disabled=not _en,
                 )
-                _ac.number_input(
+                _ac.slider(
                     "a", min_value=0.0, max_value=1.0, value=availability, step=0.01,
                     key=f"avail_ov_{plant_id}_{_lid}",
                     help=f"Global: {availability}",
                     label_visibility="collapsed",
+                    disabled=not _en,
                 )
-                _ec.number_input(
+                _ec.slider(
                     "e", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
                     key=f"eff_ov_{plant_id}_{_lid}",
                     help=f"Global: {efficiency}",
                     label_visibility="collapsed",
+                    disabled=not _en,
                 )
-            st.divider()
             if _active_ov_lines:
                 st.caption(
                     f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
@@ -3595,25 +3619,30 @@ if st.session_state.active_tab == "📈 Resultados":
                 )
             else:
                 st.caption(
-                    f"Todas las líneas usan los valores globales "
+                    f"Todas las líneas heredan el global "
                     f"(turnos: {shifts}, disponibilidad: {availability}, eficiencia: {efficiency})."
                 )
         else:
             st.caption("Sin líneas planificadas. Selecciona modelos en Planificación.")
 
-    # Sincronizar line_params_override desde los valores de widget
+    # Sincronizar line_params_override con estado explícito enabled/disabled
     for _lid in _planned_line_ids:
-        st.session_state["line_params_override"][_lid] = {
-            "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts)),
-            "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_lid}", availability)),
-            "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_lid}", efficiency)),
-        }
+        _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
+        if _en:
+            st.session_state["line_params_override"][_lid] = {
+                "enabled":      True,
+                "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts)),
+                "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_lid}", availability)),
+                "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_lid}", efficiency)),
+            }
+        else:
+            st.session_state["line_params_override"][_lid] = {"enabled": False}
 
     # Caption de horas efectivas
     if _active_ov_lines:
         st.caption(
             f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')} "
-            f"(referencia global). Turnos, disponibilidad y eficiencia pueden variar por línea."
+            f"(referencia global). Parámetros pueden variar por línea."
         )
     else:
         st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
@@ -3664,8 +3693,12 @@ if st.session_state.active_tab == "📈 Resultados":
         # Bloque 9/10 — personas equivalentes con disponibilidad/eficiencia por línea
         # Denominador: hours_week × availability × efficiency (SIN shifts — una persona no trabaja dos turnos)
         _ov_loop = st.session_state["line_params_override"].get(line_id, {})
-        _a_line = float(_ov_loop["availability"]) if _ov_loop.get("availability") is not None else availability
-        _e_line = float(_ov_loop["efficiency"])   if _ov_loop.get("efficiency")   is not None else efficiency
+        if _ov_loop.get("enabled", False):
+            _a_line = float(_ov_loop.get("availability", availability))
+            _e_line = float(_ov_loop.get("efficiency", efficiency))
+        else:
+            _a_line = availability
+            _e_line = efficiency
         _fte_denom = hours_week * _a_line * _e_line
         people_eq = dem_hours_week / _fte_denom if _fte_denom > 0 else 0.0
 
