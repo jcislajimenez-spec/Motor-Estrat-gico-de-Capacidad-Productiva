@@ -3576,42 +3576,54 @@ if st.session_state.active_tab == "📈 Resultados":
         _expander_label += f"  —  ✏ {len(_active_ov_lines)} activo(s)"
     with st.expander(_expander_label, expanded=bool(_active_ov_lines)):
         if _planned_line_ids:
-            _ch, _ph, _sh, _ah, _eh = st.columns([0.4, 1.6, 0.7, 1.5, 1.5])
-            _ch.caption("**Ov.**")
-            _ph.caption("**Línea**")
-            _sh.caption("**Turnos**")
-            _ah.caption(f"**Disponib.** *(global: {availability})*")
-            _eh.caption(f"**Eficiencia** *(global: {efficiency})*")
-            for _lid in _planned_line_ids:
-                _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
-                _cc, _pc, _sc, _ac, _ec = st.columns([0.4, 1.6, 0.7, 1.5, 1.5])
-                _cc.checkbox(
-                    "ov", value=_en,
-                    key=f"ov_en_{plant_id}_{_lid}",
-                    label_visibility="collapsed",
-                )
-                _pc.write(f"{'✏ ' if _en else ''}{_lid}")
-                _sc.number_input(
-                    "t", min_value=1, max_value=5, value=shifts, step=1,
-                    key=f"shifts_ov_{plant_id}_{_lid}",
-                    help=f"Global: {shifts}",
-                    label_visibility="collapsed",
-                    disabled=not _en,
-                )
-                _ac.slider(
-                    "a", min_value=0.0, max_value=1.0, value=availability, step=0.01,
-                    key=f"avail_ov_{plant_id}_{_lid}",
-                    help=f"Global: {availability}",
-                    label_visibility="collapsed",
-                    disabled=not _en,
-                )
-                _ec.slider(
-                    "e", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
-                    key=f"eff_ov_{plant_id}_{_lid}",
-                    help=f"Global: {efficiency}",
-                    label_visibility="collapsed",
-                    disabled=not _en,
-                )
+            import math as _math
+            _chunk = _math.ceil(len(_planned_line_ids) / 3)
+            _groups = [
+                _planned_line_ids[0:_chunk],
+                _planned_line_ids[_chunk:_chunk * 2],
+                _planned_line_ids[_chunk * 2:],
+            ]
+            _col_a, _col_b, _col_c = st.columns(3)
+            for _grp_col, _grp_lids in zip((_col_a, _col_b, _col_c), _groups):
+                if not _grp_lids:
+                    continue
+                with _grp_col:
+                    _hc, _hn, _hs, _ha, _he = st.columns([0.5, 2.0, 0.9, 1.8, 1.8])
+                    _hc.caption("**Ov.**")
+                    _hn.caption("**Línea**")
+                    _hs.caption("**T.**")
+                    _ha.caption(f"**D** *({availability})*")
+                    _he.caption(f"**E** *({efficiency})*")
+                    for _lid in _grp_lids:
+                        _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
+                        _cc, _pc, _sc, _ac, _ec = st.columns([0.5, 2.0, 0.9, 1.8, 1.8])
+                        _cc.checkbox(
+                            "ov", value=_en,
+                            key=f"ov_en_{plant_id}_{_lid}",
+                            label_visibility="collapsed",
+                        )
+                        _pc.write(f"{'✏ ' if _en else ''}{_lid}")
+                        _sc.number_input(
+                            "t", min_value=1, max_value=5, value=shifts, step=1,
+                            key=f"shifts_ov_{plant_id}_{_lid}",
+                            help=f"Global: {shifts}",
+                            label_visibility="collapsed",
+                            disabled=not _en,
+                        )
+                        _ac.slider(
+                            "a", min_value=0.0, max_value=1.0, value=availability, step=0.01,
+                            key=f"avail_ov_{plant_id}_{_lid}",
+                            help=f"Global: {availability}",
+                            label_visibility="collapsed",
+                            disabled=not _en,
+                        )
+                        _ec.slider(
+                            "e", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
+                            key=f"eff_ov_{plant_id}_{_lid}",
+                            help=f"Global: {efficiency}",
+                            label_visibility="collapsed",
+                            disabled=not _en,
+                        )
             if _active_ov_lines:
                 st.caption(
                     f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
