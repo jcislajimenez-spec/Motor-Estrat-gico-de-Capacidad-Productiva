@@ -3588,42 +3588,43 @@ if st.session_state.active_tab == "📈 Resultados":
                 if not _grp_lids:
                     continue
                 with _grp_col:
-                    _hc, _hn, _hs, _ha, _he = st.columns([0.5, 2.0, 0.9, 1.8, 1.8])
-                    _hc.caption("**Ov.**")
-                    _hn.caption("**Línea**")
-                    _hs.caption("**T.**")
-                    _ha.caption(f"**D** *({availability})*")
-                    _he.caption(f"**E** *({efficiency})*")
                     for _lid in _grp_lids:
                         _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
-                        _cc, _pc, _sc, _ac, _ec = st.columns([0.5, 2.0, 0.9, 1.8, 1.8])
-                        _cc.checkbox(
-                            "ov", value=_en,
-                            key=f"ov_en_{plant_id}_{_lid}",
-                            label_visibility="collapsed",
-                        )
-                        _pc.write(f"{'✏ ' if _en else ''}{_lid}")
-                        _sc.number_input(
-                            "t", min_value=1, max_value=5, value=shifts, step=1,
-                            key=f"shifts_ov_{plant_id}_{_lid}",
-                            help=f"Global: {shifts}",
-                            label_visibility="collapsed",
-                            disabled=not _en,
-                        )
-                        _ac.slider(
-                            "a", min_value=0.0, max_value=1.0, value=availability, step=0.01,
-                            key=f"avail_ov_{plant_id}_{_lid}",
-                            help=f"Global: {availability}",
-                            label_visibility="collapsed",
-                            disabled=not _en,
-                        )
-                        _ec.slider(
-                            "e", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
-                            key=f"eff_ov_{plant_id}_{_lid}",
-                            help=f"Global: {efficiency}",
-                            label_visibility="collapsed",
-                            disabled=not _en,
-                        )
+                        if _en:
+                            # Línea con override: cabecera con checkbox + nombre
+                            _rc, _rn = st.columns([0.5, 3.5])
+                            _rc.checkbox(
+                                "ov", value=True,
+                                key=f"ov_en_{plant_id}_{_lid}",
+                                label_visibility="collapsed",
+                            )
+                            _rn.markdown(f"**✏ {_lid}**")
+                            # Controles en dos columnas: turnos | disponib. | eficiencia
+                            _rs, _ra, _re = st.columns([1, 2, 2])
+                            _rs.number_input(
+                                "Turnos", min_value=1, max_value=5, value=shifts, step=1,
+                                key=f"shifts_ov_{plant_id}_{_lid}",
+                                help=f"Global: {shifts}",
+                            )
+                            _ra.slider(
+                                "Disponib.", min_value=0.0, max_value=1.0, value=availability, step=0.01,
+                                key=f"avail_ov_{plant_id}_{_lid}",
+                                help=f"Global: {availability}",
+                            )
+                            _re.slider(
+                                "Eficiencia", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
+                                key=f"eff_ov_{plant_id}_{_lid}",
+                                help=f"Global: {efficiency}",
+                            )
+                        else:
+                            # Línea sin override: fila compacta, sin sliders
+                            _rc, _rn = st.columns([0.5, 3.5])
+                            _rc.checkbox(
+                                "ov", value=False,
+                                key=f"ov_en_{plant_id}_{_lid}",
+                                label_visibility="collapsed",
+                            )
+                            _rn.caption(_lid)
             if _active_ov_lines:
                 st.caption(
                     f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
