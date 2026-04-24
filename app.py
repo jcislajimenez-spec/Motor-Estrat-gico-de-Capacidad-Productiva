@@ -1121,6 +1121,70 @@ def save_line_overrides(plant_id: int, overrides: dict) -> bool:
         c.close()
 
 
+def load_scenario_line_overrides(scenario_id: int) -> dict:
+    """Returns {line_id: {enabled, shifts, availability, efficiency}} for a scenario."""
+    if not _has_db():
+        return {}
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT line_id, enabled, shifts, availability, efficiency '
+                'FROM "scenario_line_overrides" WHERE scenario_id = %s',
+                (scenario_id,)
+            )
+            rows = cur.fetchall()
+        return {
+            r[0]: {
+                "enabled":      bool(r[1]),
+                "shifts":       int(r[2]),
+                "availability": float(r[3]),
+                "efficiency":   float(r[4]),
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
+    finally:
+        c.close()
+
+
+def save_scenario_line_overrides(scenario_id: int, overrides: dict) -> bool:
+    """Upsert line overrides for a scenario. overrides = {line_id: {enabled, shifts, availability, efficiency}}."""
+    if not _has_db():
+        return False
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            for line_id, ov in overrides.items():
+                cur.execute(
+                    '''
+                    INSERT INTO "scenario_line_overrides"
+                        (scenario_id, line_id, enabled, shifts, availability, efficiency)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (scenario_id, line_id) DO UPDATE SET
+                        enabled      = EXCLUDED.enabled,
+                        shifts       = EXCLUDED.shifts,
+                        availability = EXCLUDED.availability,
+                        efficiency   = EXCLUDED.efficiency
+                    ''',
+                    (
+                        scenario_id,
+                        line_id,
+                        bool(ov.get("enabled", False)),
+                        int(ov.get("shifts", 1)),
+                        float(ov.get("availability", 1.0)),
+                        float(ov.get("efficiency", 1.0)),
+                    )
+                )
+        c.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        c.close()
+
+
 def load_scenario_by_id(scenario_id: int) -> dict | None:
     """Loads line data for a specific scenario id."""
     if not _has_db():
@@ -1192,6 +1256,13 @@ def duplicate_scenario(scenario_id: int, plant_id: int) -> tuple[int, str] | tup
             cur.execute(
                 'INSERT INTO "scenario_lines" (scenario_id, line_id, model, demand, bench_variant) '
                 'SELECT %s, line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
+                (new_id, scenario_id)
+            )
+            cur.execute(
+                'INSERT INTO "scenario_line_overrides" '
+                '(scenario_id, line_id, enabled, shifts, availability, efficiency) '
+                'SELECT %s, line_id, enabled, shifts, availability, efficiency '
+                'FROM "scenario_line_overrides" WHERE scenario_id = %s',
                 (new_id, scenario_id)
             )
         c.commit()
@@ -3570,19 +3641,28 @@ if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
 
     # ── Bloques 8A + 10: resolver de horas efectivas por línea ───────────────
-    # Estructura en session_state["line_params_override"][plant_id][line_id]:
+    # Estructura en session_state["line_params_override"][plant_id][scenario_key][line_id]:
     #   {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
-    # Anidado por plant_id para evitar contaminación entre plantas con line_ids iguales.
+    # Anidado por (plant_id, scenario_key) para evitar contaminación entre plantas y escenarios.
     # enabled=False → hereda SIEMPRE el global actual (nunca usa valores locales)
     # enabled=True  → usa valores locales del widget
+    _active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+    _ov_sc_key = _active_sc_id if _active_sc_id is not None else 0
     st.session_state.setdefault("line_params_override", {})
     st.session_state["line_params_override"].setdefault(plant_id, {})
-    _plant_ov = st.session_state["line_params_override"][plant_id]
+    st.session_state["line_params_override"][plant_id].setdefault(_ov_sc_key, {})
+    _plant_ov = st.session_state["line_params_override"][plant_id][_ov_sc_key]
 
-    # Carga overrides desde DB una vez por planta por sesión
-    _ov_load_key = f"_line_ov_loaded_{plant_id}"
+    # Carga overrides desde DB una vez por escenario activo por sesión
+    # Prioridad: scenario_line_overrides → line_overrides (fallback por planta)
+    _ov_load_key = f"_line_ov_loaded_{plant_id}_{_ov_sc_key}"
     if not st.session_state.get(_ov_load_key, False):
-        _db_ov = load_line_overrides(plant_id)
+        if _active_sc_id:
+            _db_ov = load_scenario_line_overrides(_active_sc_id)
+            if not _db_ov:
+                _db_ov = load_line_overrides(plant_id)
+        else:
+            _db_ov = load_line_overrides(plant_id)
         for _lid, _ov_row in _db_ov.items():
             _plant_ov[_lid] = _ov_row
         st.session_state[_ov_load_key] = True
@@ -3622,13 +3702,13 @@ if st.session_state.active_tab == "📈 Resultados":
     for _lid in _planned_line_ids:
         _ov_saved = _plant_ov.get(_lid, {})
         _ov_saved_en = bool(_ov_saved.get("enabled", False))
-        if f"ov_en_{plant_id}_{_lid}" not in st.session_state:
-            st.session_state[f"ov_en_{plant_id}_{_lid}"] = _ov_saved_en
+        if f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}" not in st.session_state:
+            st.session_state[f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}"] = _ov_saved_en
         if _ov_saved_en:
             for _wk, _wv in [
-                (f"shifts_ov_{plant_id}_{_lid}",  int(_ov_saved.get("shifts", shifts))),
-                (f"avail_ov_{plant_id}_{_lid}",   float(_ov_saved.get("availability", availability))),
-                (f"eff_ov_{plant_id}_{_lid}",     float(_ov_saved.get("efficiency", efficiency))),
+                (f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}",  int(_ov_saved.get("shifts", shifts))),
+                (f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}",   float(_ov_saved.get("availability", availability))),
+                (f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}",     float(_ov_saved.get("efficiency", efficiency))),
             ]:
                 if _wk not in st.session_state:
                     st.session_state[_wk] = _wv
@@ -3636,13 +3716,13 @@ if st.session_state.active_tab == "📈 Resultados":
     # Fase 2 — Limpieza: borra claves de valor para líneas con override OFF
     # Opera sobre widget state ya hidratado → garantiza que los sliders muestren global
     for _lid in _planned_line_ids:
-        if not st.session_state.get(f"ov_en_{plant_id}_{_lid}", False):
-            for _wk in [f"shifts_ov_{plant_id}_{_lid}", f"avail_ov_{plant_id}_{_lid}", f"eff_ov_{plant_id}_{_lid}"]:
+        if not st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}", False):
+            for _wk in [f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}", f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}", f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}"]:
                 st.session_state.pop(_wk, None)
 
     _active_ov_lines = [
         lid for lid in _planned_line_ids
-        if st.session_state.get(f"ov_en_{plant_id}_{lid}", False)
+        if st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{lid}", False)
     ]
 
     _expander_label = t("res_params_expander")
@@ -3663,13 +3743,13 @@ if st.session_state.active_tab == "📈 Resultados":
                     continue
                 with _grp_col:
                     for _lid in _grp_lids:
-                        _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
+                        _en = st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}", False)
                         if _en:
                             # Línea con override: cabecera con checkbox + nombre
                             _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
                                 "ov", value=True,
-                                key=f"ov_en_{plant_id}_{_lid}",
+                                key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
                                 label_visibility="collapsed",
                             )
                             _rn.markdown(
@@ -3680,17 +3760,17 @@ if st.session_state.active_tab == "📈 Resultados":
                             _rs, _ra, _re = st.columns([1, 2, 2])
                             _rs.number_input(
                                 "Turnos", min_value=1, max_value=5, value=shifts, step=1,
-                                key=f"shifts_ov_{plant_id}_{_lid}",
+                                key=f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {shifts}",
                             )
                             _ra.slider(
                                 "Disponib.", min_value=0.0, max_value=1.0, value=availability, step=0.01,
-                                key=f"avail_ov_{plant_id}_{_lid}",
+                                key=f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {availability}",
                             )
                             _re.slider(
                                 "Eficiencia", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
-                                key=f"eff_ov_{plant_id}_{_lid}",
+                                key=f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {efficiency}",
                             )
                         else:
@@ -3698,7 +3778,7 @@ if st.session_state.active_tab == "📈 Resultados":
                             _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
                                 "ov", value=False,
-                                key=f"ov_en_{plant_id}_{_lid}",
+                                key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
                                 label_visibility="collapsed",
                             )
                             _rn.markdown(
@@ -3720,13 +3800,13 @@ if st.session_state.active_tab == "📈 Resultados":
 
     # Sincronizar line_params_override con estado explícito enabled/disabled
     for _lid in _planned_line_ids:
-        _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
+        _en = st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}", False)
         if _en:
             _plant_ov[_lid] = {
                 "enabled":      True,
-                "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts)),
-                "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_lid}", availability)),
-                "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_lid}", efficiency)),
+                "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}", shifts)),
+                "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}", availability)),
+                "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}", efficiency)),
             }
         else:
             _plant_ov[_lid] = {"enabled": False}
@@ -3735,7 +3815,11 @@ if st.session_state.active_tab == "📈 Resultados":
     if _has_db() and _planned_line_ids:
         _sv_col, _ = st.columns([1, 3])
         if _sv_col.button("💾 Guardar parámetros por línea", key="btn_save_line_overrides"):
-            if save_line_overrides(plant_id, _plant_ov):
+            if _active_sc_id:
+                _saved_ok = save_scenario_line_overrides(_active_sc_id, _plant_ov)
+            else:
+                _saved_ok = save_line_overrides(plant_id, _plant_ov)
+            if _saved_ok:
                 st.success("Parámetros por línea guardados.")
             else:
                 st.error("Error al guardar. Comprueba la conexión.")
