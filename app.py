@@ -3666,7 +3666,7 @@ if st.session_state.active_tab == "📈 Resultados":
                         _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
                         if _en:
                             # Línea con override: cabecera con checkbox + nombre
-                            _rc, _rn = st.columns([0.5, 3.5])
+                            _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
                                 "ov", value=True,
                                 key=f"ov_en_{plant_id}_{_lid}",
@@ -3692,7 +3692,7 @@ if st.session_state.active_tab == "📈 Resultados":
                             )
                         else:
                             # Línea sin override: fila compacta, sin sliders
-                            _rc, _rn = st.columns([0.5, 3.5])
+                            _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
                                 "ov", value=False,
                                 key=f"ov_en_{plant_id}_{_lid}",
