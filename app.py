@@ -126,6 +126,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_sorted_note":        "Tabla ordenada por criticidad: déficit primero, luego alta saturación.",
         "res_params_expander":    "⚙ Parámetros por línea",
         "res_fte_info":            "📋 El plan actual exige **{total_fte} personas equivalentes** bajo las condiciones actuales de planta.\nLa mayor carga se concentra en **{top_line}** con **{top_fte} personas eq.** ({top_pct} % del plan).\n\n*Personas eq. = HH proceso/sem ÷ (horas/sem × disponibilidad × eficiencia) de cada línea. Los turnos no entran: una persona no trabaja dos turnos a la vez. No representa plantilla asignada ni FTE confirmados.*",
+        "res_save_line_btn":       "💾 Guardar parámetros por línea",
+        "res_save_line_ok":        "Parámetros por línea guardados.",
+        "res_save_line_err":       "Error al guardar. Comprueba la conexión.",
+        "res_proc_no_procs":       "Sin procesos para esta línea.",
+        "res_proc_global_shifts":  "Turnos globales de línea:",
+        "res_proc_save_ok":        "Guardado.",
+        "res_proc_save_err":       "Error al guardar.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -323,6 +330,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_sorted_note":        "Table sorted by criticality: deficit first, then high saturation.",
         "res_params_expander":    "⚙ Parameters per line",
         "res_fte_info":            "📋 The current plan requires **{total_fte} equivalent people** under current plant conditions.\nThe highest load is concentrated in **{top_line}** with **{top_fte} FTE equiv.** ({top_pct} % of plan).\n\n*FTE equiv. = process HH/week ÷ (hours/week × availability × efficiency) per line. Shifts are excluded: one person cannot work two shifts simultaneously. Does not represent assigned headcount or confirmed FTE.*",
+        "res_save_line_btn":       "💾 Save line parameters",
+        "res_save_line_ok":        "Line parameters saved.",
+        "res_save_line_err":       "Error saving. Check connection.",
+        "res_proc_no_procs":       "No processes for this line.",
+        "res_proc_global_shifts":  "Line global shifts:",
+        "res_proc_save_ok":        "Saved.",
+        "res_proc_save_err":       "Error saving.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -520,6 +534,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_sorted_note":        "Taula kritikotasunaren arabera ordenatua: defizita lehenik, gero saturazio altua.",
         "res_params_expander":    "⚙ Parametroak lerro bakoitzeko",
         "res_fte_info":            "📋 Uneko planak **{total_fte} baliokide pertsona** eskatzen ditu egungo planta-baldintzekin.\nKarga handiena **{top_line}** lerroan kontzentratzen da: **{top_fte} pertsona bald.** (planaren {top_pct} %).\n\n*Pertsona bald. = prozesuko HH/aste ÷ (ordu/aste × erabilgarritasuna × efizientzia) lerro bakoitzeko. Txandak ez dira sartzen: pertsona batek ezin ditu bi txanda aldi berean egin. Ez da esleitutako langile-taldea ezta baieztatutako FTErik.*",
+        "res_save_line_btn":       "💾 Lerroko parametroak gorde",
+        "res_save_line_ok":        "Lerroko parametroak gordeta.",
+        "res_save_line_err":       "Errorea gordetzean. Egiaztatu konexioa.",
+        "res_proc_no_procs":       "Lerro honentzat prozesurik ez.",
+        "res_proc_global_shifts":  "Lerroaren turno globalak:",
+        "res_proc_save_ok":        "Gordeta.",
+        "res_proc_save_err":       "Errorea gordetzean.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -2565,7 +2586,9 @@ if st.session_state.active_tab == "📊 Planificación":
         for line_id in nave_line_ids:
             allowed = allowed_by_line.get(line_id, [])
             if not allowed:
-                st.info(f"{line_id}: {t('plan_no_models')}")
+                _cn0, _cn1, _cn2 = st.columns([0.7, 1.8, 1.0])
+                _cn0.markdown(f"**{line_id}**")
+                _cn1.caption(t("plan_no_models"))
                 continue
 
             # Construir lista de opciones combinadas
@@ -3857,13 +3880,13 @@ if st.session_state.active_tab == "📈 Resultados":
     _ex_header_info = (
         f"**{_ex_sc_name}**"
         f"  ·  {len(_planned_line_ids)} líneas"
-        + (f"  ·  ✏ {len(_active_ov_lines)} override(s)" if _active_ov_lines else "")
+        + (f"  ·  ✏ {len(_active_ov_lines)} ajuste(s)" if _active_ov_lines else "")
     )
     _hdr_title_col, _hdr_save_col = st.columns([3, 1])
     _hdr_title_col.subheader(t("tab_res_header"))
     if _has_db() and _planned_line_ids:
         if _hdr_save_col.button(
-            "💾 Guardar parámetros por línea",
+            t("res_save_line_btn"),
             key="btn_save_line_overrides",
             use_container_width=True,
         ):
@@ -3872,9 +3895,9 @@ if st.session_state.active_tab == "📈 Resultados":
             else:
                 _saved_ok = save_line_overrides(plant_id, _plant_ov)
             if _saved_ok:
-                st.success("Parámetros por línea guardados.")
+                st.success(t("res_save_line_ok"))
             else:
-                st.error("Error al guardar. Comprueba la conexión.")
+                st.error(t("res_save_line_err"))
 
     # ── Bloque azul escenario (debajo del título) ─────────────────────────────
     st.info(_ex_header_info)
@@ -3921,9 +3944,9 @@ if st.session_state.active_tab == "📈 Resultados":
                                     _procs_list = _base_df["process"].tolist() if not _base_df.empty else []
                                     _line_global_sh = int(st.session_state.get(f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}", shifts))
                                     if not _procs_list:
-                                        st.caption("Sin procesos para esta línea.")
+                                        st.caption(t("res_proc_no_procs"))
                                     else:
-                                        st.caption(f"Turnos globales de línea: **{_line_global_sh}**")
+                                        st.caption(f"{t('res_proc_global_shifts')} **{_line_global_sh}**")
                                         for _proc in _procs_list:
                                             _pen_key = f"psh_en_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
                                             _pval_key = f"psh_val_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
@@ -3965,9 +3988,9 @@ if st.session_state.active_tab == "📈 Resultados":
                                         ):
                                             _psh_ok = save_scenario_process_shifts(_active_sc_id, _lid, _new_proc_ov)
                                             if _psh_ok:
-                                                st.success("Guardado.")
+                                                st.success(t("res_proc_save_ok"))
                                             else:
-                                                st.error("Error al guardar.")
+                                                st.error(t("res_proc_save_err"))
                             else:
                                 _rp.button(
                                     "⚙ Procesos", disabled=True, use_container_width=True,
