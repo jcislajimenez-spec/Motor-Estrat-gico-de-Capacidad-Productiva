@@ -2626,6 +2626,10 @@ if st.session_state.active_tab == "📊 Planificación":
             if _cur_opt not in _combined_opts:
                 _cur_opt = _combined_opts[0]
 
+            _sel_key = f"sel_combined_{_pid}_{line_id}"
+            if _sel_key not in st.session_state:
+                st.session_state[_sel_key] = _cur_opt
+
             _c0, _c1, _c2 = st.columns([0.7, 1.8, 1.0])
             _c0.markdown(f"**{line_id}**")
 
@@ -2633,8 +2637,7 @@ if st.session_state.active_tab == "📊 Planificación":
                 _sel = st.selectbox(
                     f"Selección ({line_id})",
                     options=_combined_opts,
-                    index=_combined_opts.index(_cur_opt),
-                    key=f"sel_combined_{_pid}_{line_id}",
+                    key=_sel_key,
                     label_visibility="collapsed",
                     help="Para familias D&A elige también la variante de prueba: LV o MV.",
                 )
