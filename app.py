@@ -1058,6 +1058,69 @@ def list_scenarios(plant_id: int) -> list[dict]:
         c.close()
 
 
+def load_line_overrides(plant_id: int) -> dict:
+    """Returns {line_id: {enabled, shifts, availability, efficiency}} for plant_id."""
+    if not _has_db():
+        return {}
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT line_id, enabled, shifts, availability, efficiency '
+                'FROM "line_overrides" WHERE plant_id = %s',
+                (plant_id,)
+            )
+            rows = cur.fetchall()
+        return {
+            r[0]: {
+                "enabled":      bool(r[1]),
+                "shifts":       int(r[2]),
+                "availability": float(r[3]),
+                "efficiency":   float(r[4]),
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
+    finally:
+        c.close()
+
+
+def save_line_overrides(plant_id: int, overrides: dict) -> bool:
+    """Upsert line overrides for plant_id. overrides = {line_id: {enabled, shifts, availability, efficiency}}."""
+    if not _has_db():
+        return False
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            for line_id, ov in overrides.items():
+                cur.execute(
+                    '''
+                    INSERT INTO "line_overrides" (plant_id, line_id, enabled, shifts, availability, efficiency)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (plant_id, line_id) DO UPDATE SET
+                        enabled      = EXCLUDED.enabled,
+                        shifts       = EXCLUDED.shifts,
+                        availability = EXCLUDED.availability,
+                        efficiency   = EXCLUDED.efficiency
+                    ''',
+                    (
+                        plant_id,
+                        line_id,
+                        bool(ov.get("enabled", False)),
+                        int(ov.get("shifts", 1)),
+                        float(ov.get("availability", 1.0)),
+                        float(ov.get("efficiency", 1.0)),
+                    )
+                )
+        c.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        c.close()
+
+
 def load_scenario_by_id(scenario_id: int) -> dict | None:
     """Loads line data for a specific scenario id."""
     if not _has_db():
@@ -3507,14 +3570,25 @@ if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
 
     # ── Bloques 8A + 10: resolver de horas efectivas por línea ───────────────
-    # Estructura en session_state["line_params_override"][line_id]:
+    # Estructura en session_state["line_params_override"][plant_id][line_id]:
     #   {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
+    # Anidado por plant_id para evitar contaminación entre plantas con line_ids iguales.
     # enabled=False → hereda SIEMPRE el global actual (nunca usa valores locales)
     # enabled=True  → usa valores locales del widget
     st.session_state.setdefault("line_params_override", {})
+    st.session_state["line_params_override"].setdefault(plant_id, {})
+    _plant_ov = st.session_state["line_params_override"][plant_id]
+
+    # Carga overrides desde DB una vez por planta por sesión
+    _ov_load_key = f"_line_ov_loaded_{plant_id}"
+    if not st.session_state.get(_ov_load_key, False):
+        _db_ov = load_line_overrides(plant_id)
+        for _lid, _ov_row in _db_ov.items():
+            _plant_ov[_lid] = _ov_row
+        st.session_state[_ov_load_key] = True
 
     def _resolve_hours_eff(lid: str) -> float:
-        _ov = st.session_state["line_params_override"].get(lid, {})
+        _ov = _plant_ov.get(lid, {})
         if not _ov.get("enabled", False):
             return hours_eff  # hereda global completo
         _s = int(_ov.get("shifts", shifts))
@@ -3546,7 +3620,7 @@ if st.session_state.active_tab == "📈 Resultados":
     # Fase 1 — Hidratación: inicializa widget keys desde line_params_override (fuente de verdad)
     # Solo escribe si la clave NO existe aún → respeta interacciones recientes del usuario
     for _lid in _planned_line_ids:
-        _ov_saved = st.session_state["line_params_override"].get(_lid, {})
+        _ov_saved = _plant_ov.get(_lid, {})
         _ov_saved_en = bool(_ov_saved.get("enabled", False))
         if f"ov_en_{plant_id}_{_lid}" not in st.session_state:
             st.session_state[f"ov_en_{plant_id}_{_lid}"] = _ov_saved_en
@@ -3642,14 +3716,23 @@ if st.session_state.active_tab == "📈 Resultados":
     for _lid in _planned_line_ids:
         _en = st.session_state.get(f"ov_en_{plant_id}_{_lid}", False)
         if _en:
-            st.session_state["line_params_override"][_lid] = {
+            _plant_ov[_lid] = {
                 "enabled":      True,
                 "shifts":       int(st.session_state.get(f"shifts_ov_{plant_id}_{_lid}", shifts)),
                 "availability": float(st.session_state.get(f"avail_ov_{plant_id}_{_lid}", availability)),
                 "efficiency":   float(st.session_state.get(f"eff_ov_{plant_id}_{_lid}", efficiency)),
             }
         else:
-            st.session_state["line_params_override"][_lid] = {"enabled": False}
+            _plant_ov[_lid] = {"enabled": False}
+
+    # Botón guardar — después del sync para que persista el estado actual de los widgets
+    if _has_db() and _planned_line_ids:
+        _sv_col, _ = st.columns([1, 3])
+        if _sv_col.button("💾 Guardar parámetros por línea", key="btn_save_line_overrides"):
+            if save_line_overrides(plant_id, _plant_ov):
+                st.success("Parámetros por línea guardados.")
+            else:
+                st.error("Error al guardar. Comprueba la conexión.")
 
     # Caption de horas efectivas
     if _active_ov_lines:
@@ -3705,7 +3788,7 @@ if st.session_state.active_tab == "📈 Resultados":
 
         # Bloque 9/10 — personas equivalentes con disponibilidad/eficiencia por línea
         # Denominador: hours_week × availability × efficiency (SIN shifts — una persona no trabaja dos turnos)
-        _ov_loop = st.session_state["line_params_override"].get(line_id, {})
+        _ov_loop = _plant_ov.get(line_id, {})
         if _ov_loop.get("enabled", False):
             _a_line = float(_ov_loop.get("availability", availability))
             _e_line = float(_ov_loop.get("efficiency", efficiency))
