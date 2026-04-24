@@ -3732,31 +3732,16 @@ def _precompute_all_bases_for_tab4(
 
 
 if st.session_state.active_tab == "📈 Resultados":
-    st.subheader(t("tab_res_header"))
-
-    # ── Overrides por línea (Bloques 8A + 10) ────────────────────────────────
+    # ── State init + resolvers (antes de cualquier render) ───────────────────
     #
     # ESTRUCTURA DE SESIÓN
     #   session_state["line_params_override"][plant_id][scenario_key][line_id]
     #   = {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
     #
-    #   • Anidado por plant_id y scenario_key para que dos plantas o dos escenarios
-    #     con el mismo line_id nunca compartan estado en memoria.
-    #   • scenario_key = scenario_id activo, o 0 si no hay escenario cargado.
-    #
-    # WIDGET KEYS
-    #   ov_en_{plant_id}_{_ov_sc_key}_{line_id}  (y análogos para shifts/avail/eff)
-    #   Incluyen plant_id + scenario_key para que cambiar de escenario genere claves
-    #   distintas → los widgets arrancan limpios sin arrastrar valores anteriores.
-    #
     # PRIORIDAD DE RESOLUCIÓN
     #   1. scenario_line_overrides del escenario activo  (persistencia principal)
     #   2. line_overrides de la planta                   (fallback si escenario vacío)
     #   3. parámetros globales de la planta              (si enabled=False o sin override)
-    #
-    # REGLA FUNCIONAL
-    #   enabled=False → la línea hereda SIEMPRE el global actual
-    #   enabled=True  → usa shifts / availability / efficiency propios
     _active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
     _ov_sc_key = _active_sc_id if _active_sc_id is not None else 0
     st.session_state.setdefault("line_params_override", {})
@@ -3866,6 +3851,33 @@ if st.session_state.active_tab == "📈 Resultados":
         lid for lid in _planned_line_ids
         if st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{lid}", False)
     ]
+
+    # ── Título + botón guardar (misma fila) ───────────────────────────────────
+    _ex_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_active_sc_id, "—")
+    _ex_header_info = (
+        f"**{_ex_sc_name}**"
+        f"  ·  {len(_planned_line_ids)} líneas"
+        + (f"  ·  ✏ {len(_active_ov_lines)} override(s)" if _active_ov_lines else "")
+    )
+    _hdr_title_col, _hdr_save_col = st.columns([3, 1])
+    _hdr_title_col.subheader(t("tab_res_header"))
+    if _has_db() and _planned_line_ids:
+        if _hdr_save_col.button(
+            "💾 Guardar parámetros por línea",
+            key="btn_save_line_overrides",
+            use_container_width=True,
+        ):
+            if _active_sc_id:
+                _saved_ok = save_scenario_line_overrides(_active_sc_id, _plant_ov)
+            else:
+                _saved_ok = save_line_overrides(plant_id, _plant_ov)
+            if _saved_ok:
+                st.success("Parámetros por línea guardados.")
+            else:
+                st.error("Error al guardar. Comprueba la conexión.")
+
+    # ── Bloque azul escenario (debajo del título) ─────────────────────────────
+    st.info(_ex_header_info)
 
     _expander_label = t("res_params_expander")
     if _active_ov_lines:
@@ -4000,6 +4012,14 @@ if st.session_state.active_tab == "📈 Resultados":
                     f"Todas las líneas heredan el global "
                     f"(turnos: {shifts}, disponibilidad: {availability}, eficiencia: {efficiency})."
                 )
+            # Caption horas efectivas — al borde inferior del expander
+            if _active_ov_lines:
+                st.caption(
+                    f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')} "
+                    f"(referencia global). Parámetros pueden variar por línea."
+                )
+            else:
+                st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
         else:
             st.caption("Sin líneas planificadas. Selecciona modelos en Planificación.")
 
@@ -4015,28 +4035,6 @@ if st.session_state.active_tab == "📈 Resultados":
             }
         else:
             _plant_ov[_lid] = {"enabled": False}
-
-    # Botón guardar — después del sync para que persista el estado actual de los widgets
-    if _has_db() and _planned_line_ids:
-        _sv_col, _ = st.columns([1, 3])
-        if _sv_col.button("💾 Guardar parámetros por línea", key="btn_save_line_overrides"):
-            if _active_sc_id:
-                _saved_ok = save_scenario_line_overrides(_active_sc_id, _plant_ov)
-            else:
-                _saved_ok = save_line_overrides(plant_id, _plant_ov)
-            if _saved_ok:
-                st.success("Parámetros por línea guardados.")
-            else:
-                st.error("Error al guardar. Comprueba la conexión.")
-
-    # Caption de horas efectivas
-    if _active_ov_lines:
-        st.caption(
-            f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')} "
-            f"(referencia global). Parámetros pueden variar por línea."
-        )
-    else:
-        st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
 
     for line_id in all_line_ids:
 
@@ -4168,32 +4166,13 @@ if st.session_state.active_tab == "📈 Resultados":
 
         summary_df = pd.concat([summary_df, pd.DataFrame([total_row])], ignore_index=True)
 
-        # ── Resumen ejecutivo ─────────────────────────────────────────────────
+        # ── Resumen ejecutivo — cómputo (render tras la tabla) ───────────────
         _ex = summary_df.iloc[:-1]  # excluye fila TOTAL
         _ex_cap  = pd.to_numeric(_ex["Capacidad (UDS/SEM)"], errors="coerce").fillna(0).sum()
         _ex_dem  = pd.to_numeric(_ex["Demanda (UDS/SEM)"],   errors="coerce").fillna(0).sum()
         _ex_def  = pd.to_numeric(_ex["Déficit (UDS/SEM)"],   errors="coerce").fillna(0).sum()
         _ex_sat  = pd.to_numeric(_ex["Saturación (%)"],      errors="coerce").fillna(0).max()
         _ex_crit = _ex[pd.to_numeric(_ex["Déficit (UDS/SEM)"], errors="coerce").fillna(0) > 0]["line_id"].tolist()
-        _ex_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_active_sc_id, "—")
-
-        _ex_header = (
-            f"**{_ex_sc_name}**"
-            f"  ·  {len(_planned_line_ids)} líneas"
-            + (f"  ·  ✏ {len(_active_ov_lines)} override(s)" if _active_ov_lines else "")
-        )
-        st.info(_ex_header)
-        _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
-        _mc1.metric("Cap. total (uds/sem)", _fmt_num(_ex_cap))
-        _mc2.metric("Dem. total (uds/sem)", _fmt_num(_ex_dem))
-        _mc3.metric("Déficit (uds/sem)",    _fmt_num(_ex_def),
-                    delta=None if _ex_def == 0 else f"−{_fmt_num(_ex_def)}",
-                    delta_color="inverse")
-        _mc4.metric("Sat. máxima (%)",      _fmt_num(_ex_sat))
-        _mc5.metric("Líneas críticas",
-                    str(len(_ex_crit)),
-                    help=", ".join(_ex_crit) if _ex_crit else "Ninguna")
-        # ─────────────────────────────────────────────────────────────────────
 
     def style_summary(df: pd.DataFrame):
         styled = df.copy()
@@ -4254,7 +4233,7 @@ if st.session_state.active_tab == "📈 Resultados":
         ]
         display_cols = [c for c in display_cols if c in summary_df.columns]
 
-        # ── Panel de lectura rápida ───────────────────────────────────────────
+        # ── Cómputo panel de lectura rápida (sin render — va tras la tabla) ───
         _lo = summary_df[summary_df["line_id"] != "TOTAL"]
         _def_v = pd.to_numeric(_lo["Déficit (UDS/SEM)"], errors="coerce").fillna(0.0)
         _sat_v = pd.to_numeric(_lo["Saturación (%)"], errors="coerce").fillna(0.0)
@@ -4272,14 +4251,11 @@ if st.session_state.active_tab == "📈 Resultados":
             if not _crit_lo.empty and "bottleneck" in _crit_lo.columns and pd.notna(_crit_lo.iloc[0]["bottleneck"])
             else "—"
         )
-        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
-        _pm1.metric(t("res_panel_n_deficit"), _n_def)
-        _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
-        _pm3.metric(t("res_panel_n_critical"), _n_crit)
-        _pm4.metric(t("res_panel_bottleneck"), _main_bn)
-        st.caption(t("res_sorted_note"))
 
-        # ── Bloque 9: personas equivalentes — síntesis ejecutiva ──────────────
+        # ── Cómputo FTE (sin render) ──────────────────────────────────────────
+        _fte_show = False
+        _total_fte = 0.0
+        _top_fte_line, _top_fte_val, _top_fte_pct = "—", 0.0, 0.0
         if "Personas eq." in _lo.columns:
             _fte_v = pd.to_numeric(_lo["Personas eq."], errors="coerce").fillna(0.0)
             _total_fte = float(_fte_v.sum())
@@ -4288,20 +4264,11 @@ if st.session_state.active_tab == "📈 Resultados":
                 _top_fte_line = str(_lo.loc[_top_fte_idx, "line"]) if "line" in _lo.columns else "—"
                 _top_fte_val = float(_fte_v[_top_fte_idx])
                 _top_fte_pct = _top_fte_val / _total_fte * 100.0
-                st.info(
-                    t("res_fte_info").format(
-                        total_fte=_fmt_num(_total_fte),
-                        top_line=_top_fte_line,
-                        top_fte=_fmt_num(_top_fte_val),
-                        top_pct=_fmt_num(_top_fte_pct),
-                    )
-                )
+                _fte_show = True
 
+        # ── Cómputo buffer Excel (sin render) ────────────────────────────────
         total_display_df = summary_df.copy()
         total_display_df.loc[total_display_df["line_id"] == "TOTAL", ["nave", "line"]] = ["", "TOTAL"]
-        st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
-
-        # --- Exportación Excel ---
         _export_df = total_display_df[display_cols].copy()
         _export_df = _export_df.rename(columns={
             "nave": "Nave", "line": "Línea", "model": "Modelo", "bottleneck": "Cuello de botella"
@@ -4310,7 +4277,6 @@ if st.session_state.active_tab == "📈 Resultados":
         _sc_name_export = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_sel_sc_id, "")
         _export_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         _export_filename = f"capacidad_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-
         _buf = io.BytesIO()
         with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
             _meta = pd.DataFrame([
@@ -4322,12 +4288,49 @@ if st.session_state.active_tab == "📈 Resultados":
             _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
         _buf.seek(0)
 
-        st.download_button(
+        # ── UI: cabecera "Resumen resultados" con cuello + Export ─────────────
+        _rh1, _rh2, _rh3 = st.columns([2.5, 2, 1.5])
+        _rh1.markdown("**Resumen resultados**")
+        _rh2.caption(f"{t('res_panel_bottleneck')}: **{_main_bn}**")
+        _rh3.download_button(
             label=t("res_export_btn"),
             data=_buf,
             file_name=_export_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+        # ── UI: tabla ────────────────────────────────────────────────────────
+        st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
+
+        # ── UI: métricas bajo la tabla ────────────────────────────────────────
+        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
+        _pm1.metric(t("res_panel_n_deficit"), _n_def)
+        _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
+        _pm3.metric(t("res_panel_n_critical"), _n_crit)
+        _pm4.metric(t("res_panel_bottleneck"), _main_bn)
+        st.caption(t("res_sorted_note"))
+
+        _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
+        _mc1.metric("Cap. total (uds/sem)", _fmt_num(_ex_cap))
+        _mc2.metric("Dem. total (uds/sem)", _fmt_num(_ex_dem))
+        _mc3.metric("Déficit (uds/sem)",    _fmt_num(_ex_def),
+                    delta=None if _ex_def == 0 else f"−{_fmt_num(_ex_def)}",
+                    delta_color="inverse")
+        _mc4.metric("Sat. máxima (%)",      _fmt_num(_ex_sat))
+        _mc5.metric("Líneas críticas",
+                    str(len(_ex_crit)),
+                    help=", ".join(_ex_crit) if _ex_crit else "Ninguna")
+
+        # ── UI: bloque azul FTE ───────────────────────────────────────────────
+        if _fte_show:
+            st.info(
+                t("res_fte_info").format(
+                    total_fte=_fmt_num(_total_fte),
+                    top_line=_top_fte_line,
+                    top_fte=_fmt_num(_top_fte_val),
+                    top_pct=_fmt_num(_top_fte_pct),
+                )
+            )
 
         # --- Comparativa entre escenarios ---
         if _has_db():
