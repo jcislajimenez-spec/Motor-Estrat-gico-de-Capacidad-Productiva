@@ -2572,16 +2572,18 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state.line_bench_variant[_pid][line_id] = _variant
 
             with _c2:
+                # Garantizar que la clave existe antes de renderizar para evitar el warning
+                # "widget created with default value but also set via Session State API"
+                _dem_key = f"demand_{_pid}_{line_id}"
+                if _dem_key not in st.session_state:
+                    st.session_state[_dem_key] = float(
+                        st.session_state.line_demand.get(_pid, {}).get(line_id, 0.0)
+                    )
                 d = st.number_input(
                     f"Demanda ({line_id} – {_m})",
                     min_value=0.0,
-                    value=float(
-                        st.session_state.line_demand
-                        .get(_pid, {})
-                        .get(line_id, 0.0)
-                    ),
                     step=1.0,
-                    key=f"demand_{_pid}_{line_id}",
+                    key=_dem_key,
                     label_visibility="collapsed",
                 )
                 st.session_state.line_demand[_pid][line_id] = d
