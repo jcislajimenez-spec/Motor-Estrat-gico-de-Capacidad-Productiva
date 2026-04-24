@@ -3972,6 +3972,33 @@ if st.session_state.active_tab == "📈 Resultados":
 
         summary_df = pd.concat([summary_df, pd.DataFrame([total_row])], ignore_index=True)
 
+        # ── Resumen ejecutivo ─────────────────────────────────────────────────
+        _ex = summary_df.iloc[:-1]  # excluye fila TOTAL
+        _ex_cap  = pd.to_numeric(_ex["Capacidad (UDS/SEM)"], errors="coerce").fillna(0).sum()
+        _ex_dem  = pd.to_numeric(_ex["Demanda (UDS/SEM)"],   errors="coerce").fillna(0).sum()
+        _ex_def  = pd.to_numeric(_ex["Déficit (UDS/SEM)"],   errors="coerce").fillna(0).sum()
+        _ex_sat  = pd.to_numeric(_ex["Saturación (%)"],      errors="coerce").fillna(0).max()
+        _ex_crit = _ex[pd.to_numeric(_ex["Déficit (UDS/SEM)"], errors="coerce").fillna(0) > 0]["line_id"].tolist()
+        _ex_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_active_sc_id, "—")
+
+        _ex_header = (
+            f"**{_ex_sc_name}**"
+            f"  ·  {len(_planned_line_ids)} líneas"
+            + (f"  ·  ✏ {len(_active_ov_lines)} override(s)" if _active_ov_lines else "")
+        )
+        st.info(_ex_header)
+        _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
+        _mc1.metric("Cap. total (uds/sem)", _fmt_num(_ex_cap))
+        _mc2.metric("Dem. total (uds/sem)", _fmt_num(_ex_dem))
+        _mc3.metric("Déficit (uds/sem)",    _fmt_num(_ex_def),
+                    delta=None if _ex_def == 0 else f"−{_fmt_num(_ex_def)}",
+                    delta_color="inverse")
+        _mc4.metric("Sat. máxima (%)",      _fmt_num(_ex_sat))
+        _mc5.metric("Líneas críticas",
+                    str(len(_ex_crit)),
+                    help=", ".join(_ex_crit) if _ex_crit else "Ninguna")
+        # ─────────────────────────────────────────────────────────────────────
+
     def style_summary(df: pd.DataFrame):
         styled = df.copy()
 
