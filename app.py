@@ -1059,7 +1059,8 @@ def list_scenarios(plant_id: int) -> list[dict]:
 
 
 def load_line_overrides(plant_id: int) -> dict:
-    """Returns {line_id: {enabled, shifts, availability, efficiency}} for plant_id."""
+    """Fallback de planta: devuelve overrides por línea cuando no hay escenario activo
+    o cuando el escenario activo no tiene overrides propios en scenario_line_overrides."""
     if not _has_db():
         return {}
     c = get_connection()
@@ -1122,7 +1123,8 @@ def save_line_overrides(plant_id: int, overrides: dict) -> bool:
 
 
 def load_scenario_line_overrides(scenario_id: int) -> dict:
-    """Returns {line_id: {enabled, shifts, availability, efficiency}} for a scenario."""
+    """Persistencia principal de overrides por línea. Ligada al escenario activo.
+    Si devuelve vacío, la carga en Resultados cae a load_line_overrides (fallback por planta)."""
     if not _has_db():
         return {}
     c = get_connection()
@@ -3640,12 +3642,29 @@ def _precompute_all_bases_for_tab4(
 if st.session_state.active_tab == "📈 Resultados":
     st.subheader(t("tab_res_header"))
 
-    # ── Bloques 8A + 10: resolver de horas efectivas por línea ───────────────
-    # Estructura en session_state["line_params_override"][plant_id][scenario_key][line_id]:
-    #   {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
-    # Anidado por (plant_id, scenario_key) para evitar contaminación entre plantas y escenarios.
-    # enabled=False → hereda SIEMPRE el global actual (nunca usa valores locales)
-    # enabled=True  → usa valores locales del widget
+    # ── Overrides por línea (Bloques 8A + 10) ────────────────────────────────
+    #
+    # ESTRUCTURA DE SESIÓN
+    #   session_state["line_params_override"][plant_id][scenario_key][line_id]
+    #   = {"enabled": bool, "shifts": int, "availability": float, "efficiency": float}
+    #
+    #   • Anidado por plant_id y scenario_key para que dos plantas o dos escenarios
+    #     con el mismo line_id nunca compartan estado en memoria.
+    #   • scenario_key = scenario_id activo, o 0 si no hay escenario cargado.
+    #
+    # WIDGET KEYS
+    #   ov_en_{plant_id}_{_ov_sc_key}_{line_id}  (y análogos para shifts/avail/eff)
+    #   Incluyen plant_id + scenario_key para que cambiar de escenario genere claves
+    #   distintas → los widgets arrancan limpios sin arrastrar valores anteriores.
+    #
+    # PRIORIDAD DE RESOLUCIÓN
+    #   1. scenario_line_overrides del escenario activo  (persistencia principal)
+    #   2. line_overrides de la planta                   (fallback si escenario vacío)
+    #   3. parámetros globales de la planta              (si enabled=False o sin override)
+    #
+    # REGLA FUNCIONAL
+    #   enabled=False → la línea hereda SIEMPRE el global actual
+    #   enabled=True  → usa shifts / availability / efficiency propios
     _active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
     _ov_sc_key = _active_sc_id if _active_sc_id is not None else 0
     st.session_state.setdefault("line_params_override", {})
@@ -3653,8 +3672,7 @@ if st.session_state.active_tab == "📈 Resultados":
     st.session_state["line_params_override"][plant_id].setdefault(_ov_sc_key, {})
     _plant_ov = st.session_state["line_params_override"][plant_id][_ov_sc_key]
 
-    # Carga overrides desde DB una vez por escenario activo por sesión
-    # Prioridad: scenario_line_overrides → line_overrides (fallback por planta)
+    # Carga desde DB una vez por (plant_id, scenario_key) por sesión
     _ov_load_key = f"_line_ov_loaded_{plant_id}_{_ov_sc_key}"
     if not st.session_state.get(_ov_load_key, False):
         if _active_sc_id:
