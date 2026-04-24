@@ -4288,17 +4288,13 @@ if st.session_state.active_tab == "📈 Resultados":
             _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
         _buf.seek(0)
 
-        # ── UI: 4 métricas panel (encima de la tabla) ────────────────────────
-        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
+        # ── UI: 4 métricas + Export en una sola banda compacta ───────────────
+        _pm1, _pm2, _pm3, _pm4, _pmx = st.columns(5)
         _pm1.metric(t("res_panel_n_deficit"), _n_def)
         _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
         _pm3.metric(t("res_panel_n_critical"), _n_crit)
         _pm4.metric(t("res_panel_bottleneck"), _main_bn)
-        st.caption(t("res_sorted_note"))
-
-        # ── UI: Export alineado a la derecha, encima de la tabla ─────────────
-        _, _rh2 = st.columns([6, 2])
-        _rh2.download_button(
+        _pmx.download_button(
             label=t("res_export_btn"),
             data=_buf,
             file_name=_export_filename,
