@@ -3716,13 +3716,18 @@ if st.session_state.active_tab == "📈 Resultados":
     ]
 
     # Fase 1 — Hidratación: inicializa widget keys desde line_params_override (fuente de verdad)
-    # Solo escribe si la clave NO existe aún → respeta interacciones recientes del usuario
+    # Solo escribe si la clave NO existe aún → respeta interacciones recientes del usuario.
+    # Las claves de valor se inicializan según el estado ACTUAL del checkbox (no el guardado),
+    # para cubrir el caso en que el usuario activa el override en este mismo run.
     for _lid in _planned_line_ids:
         _ov_saved = _plant_ov.get(_lid, {})
         _ov_saved_en = bool(_ov_saved.get("enabled", False))
-        if f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}" not in st.session_state:
-            st.session_state[f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}"] = _ov_saved_en
-        if _ov_saved_en:
+        _en_key = f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}"
+        if _en_key not in st.session_state:
+            st.session_state[_en_key] = _ov_saved_en
+        # Leer estado actual (refleja interacción del usuario en este run)
+        _cur_en = bool(st.session_state[_en_key])
+        if _cur_en:
             for _wk, _wv in [
                 (f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}",  int(_ov_saved.get("shifts", shifts))),
                 (f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}",   float(_ov_saved.get("availability", availability))),
@@ -3766,7 +3771,7 @@ if st.session_state.active_tab == "📈 Resultados":
                             # Línea con override: cabecera con checkbox + nombre
                             _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
-                                "ov", value=True,
+                                "ov",
                                 key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
                                 label_visibility="collapsed",
                             )
@@ -3777,17 +3782,17 @@ if st.session_state.active_tab == "📈 Resultados":
                             # Controles en dos columnas: turnos | disponib. | eficiencia
                             _rs, _ra, _re = st.columns([1, 2, 2])
                             _rs.number_input(
-                                "Turnos", min_value=1, max_value=5, value=shifts, step=1,
+                                "Turnos", min_value=1, max_value=5, step=1,
                                 key=f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {shifts}",
                             )
                             _ra.slider(
-                                "Disponib.", min_value=0.0, max_value=1.0, value=availability, step=0.01,
+                                "Disponib.", min_value=0.0, max_value=1.0, step=0.01,
                                 key=f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {availability}",
                             )
                             _re.slider(
-                                "Eficiencia", min_value=0.0, max_value=1.0, value=efficiency, step=0.01,
+                                "Eficiencia", min_value=0.0, max_value=1.0, step=0.01,
                                 key=f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {efficiency}",
                             )
@@ -3795,7 +3800,7 @@ if st.session_state.active_tab == "📈 Resultados":
                             # Línea sin override: fila compacta, sin sliders
                             _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
                             _rc.checkbox(
-                                "ov", value=False,
+                                "ov",
                                 key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
                                 label_visibility="collapsed",
                             )
