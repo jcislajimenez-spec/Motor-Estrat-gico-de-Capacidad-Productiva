@@ -3934,7 +3934,7 @@ if st.session_state.active_tab == "📈 Resultados":
                                             _pc, _pn, _pt = st.columns([0.5, 1.6, 1.4], vertical_alignment="center")
                                             _pc.checkbox("p", key=_pen_key, label_visibility="collapsed")
                                             _pn.markdown(
-                                                f'<p style="margin:0;line-height:1;font-size:0.85rem">{_proc}</p>',
+                                                f'<p style="margin:0;line-height:1;font-size:0.85rem;position:relative;top:-3px">{_proc}</p>',
                                                 unsafe_allow_html=True,
                                             )
                                             if st.session_state[_pen_key]:
@@ -4289,7 +4289,7 @@ if st.session_state.active_tab == "📈 Resultados":
         _buf.seek(0)
 
         # ── UI: 4 métricas + Export en una sola banda compacta ───────────────
-        st.markdown('<div style="margin-top:-1rem;margin-bottom:-0.5rem">', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top:-2rem;margin-bottom:-1rem">', unsafe_allow_html=True)
         _pm1, _pm2, _pm3, _pm4, _pmx = st.columns(5, vertical_alignment="bottom")
         _pm1.metric(t("res_panel_n_deficit"), _n_def)
         _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
@@ -4300,6 +4300,7 @@ if st.session_state.active_tab == "📈 Resultados":
             data=_buf,
             file_name=_export_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
