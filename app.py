@@ -3672,7 +3672,10 @@ if st.session_state.active_tab == "📈 Resultados":
                                 key=f"ov_en_{plant_id}_{_lid}",
                                 label_visibility="collapsed",
                             )
-                            _rn.markdown(f"**✏ {_lid}**")
+                            _rn.markdown(
+                                f'<p style="margin:0;line-height:1;font-weight:600">✏ {_lid}</p>',
+                                unsafe_allow_html=True,
+                            )
                             # Controles en dos columnas: turnos | disponib. | eficiencia
                             _rs, _ra, _re = st.columns([1, 2, 2])
                             _rs.number_input(
@@ -3698,7 +3701,10 @@ if st.session_state.active_tab == "📈 Resultados":
                                 key=f"ov_en_{plant_id}_{_lid}",
                                 label_visibility="collapsed",
                             )
-                            _rn.caption(_lid)
+                            _rn.markdown(
+                                f'<p style="margin:0;line-height:1;font-size:0.85rem">{_lid}</p>',
+                                unsafe_allow_html=True,
+                            )
             if _active_ov_lines:
                 st.caption(
                     f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
