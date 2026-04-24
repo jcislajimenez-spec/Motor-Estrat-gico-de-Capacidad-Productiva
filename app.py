@@ -4288,11 +4288,10 @@ if st.session_state.active_tab == "📈 Resultados":
             _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
         _buf.seek(0)
 
-        # ── UI: cabecera "Resumen resultados" con cuello + Export ─────────────
-        _rh1, _rh2, _rh3 = st.columns([2.5, 2, 1.5])
+        # ── UI: cabecera "Resumen resultados" con Export alineado a la derecha ──
+        _rh1, _rh2 = st.columns([4, 2])
         _rh1.markdown("**Resumen resultados**")
-        _rh2.caption(f"{t('res_panel_bottleneck')}: **{_main_bn}**")
-        _rh3.download_button(
+        _rh2.download_button(
             label=t("res_export_btn"),
             data=_buf,
             file_name=_export_filename,
