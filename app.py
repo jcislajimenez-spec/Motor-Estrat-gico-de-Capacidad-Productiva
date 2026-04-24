@@ -892,6 +892,7 @@ def save_csv(df: pd.DataFrame, name: str) -> None:
 def _has_db() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
+
 @st.cache_data(ttl=60)
 def load_table(table: str) -> pd.DataFrame:
     """
@@ -1187,6 +1188,56 @@ def save_scenario_line_overrides(scenario_id: int, overrides: dict) -> bool:
         c.close()
 
 
+def load_scenario_process_shifts(scenario_id: int) -> dict:
+    """Returns {line_id: {process: shifts}} for a scenario. Only rows with Personalizar=ON."""
+    if not _has_db():
+        return {}
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'SELECT line_id, process, shifts '
+                'FROM "scenario_process_shift_overrides" WHERE scenario_id = %s',
+                (scenario_id,)
+            )
+            rows = cur.fetchall()
+        result: dict = {}
+        for line_id, process, sh in rows:
+            result.setdefault(line_id, {})[process] = int(sh)
+        return result
+    except Exception:
+        return {}
+    finally:
+        c.close()
+
+
+def save_scenario_process_shifts(scenario_id: int, line_id: str, data: dict) -> bool:
+    """Replaces process shift overrides for (scenario_id, line_id).
+    data = {process: shifts} — only personalized processes. Absence = hereda."""
+    if not _has_db():
+        return False
+    c = get_connection()
+    try:
+        with c.cursor() as cur:
+            cur.execute(
+                'DELETE FROM "scenario_process_shift_overrides" '
+                'WHERE scenario_id = %s AND line_id = %s',
+                (scenario_id, line_id)
+            )
+            for process, sh in data.items():
+                cur.execute(
+                    'INSERT INTO "scenario_process_shift_overrides" '
+                    '(scenario_id, line_id, process, shifts) VALUES (%s, %s, %s, %s)',
+                    (scenario_id, line_id, process, int(sh))
+                )
+        c.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        c.close()
+
+
 def load_scenario_by_id(scenario_id: int) -> dict | None:
     """Loads line data for a specific scenario id."""
     if not _has_db():
@@ -1265,6 +1316,13 @@ def duplicate_scenario(scenario_id: int, plant_id: int) -> tuple[int, str] | tup
                 '(scenario_id, line_id, enabled, shifts, availability, efficiency) '
                 'SELECT %s, line_id, enabled, shifts, availability, efficiency '
                 'FROM "scenario_line_overrides" WHERE scenario_id = %s',
+                (new_id, scenario_id)
+            )
+            cur.execute(
+                'INSERT INTO "scenario_process_shift_overrides" '
+                '(scenario_id, line_id, process, shifts) '
+                'SELECT %s, line_id, process, shifts '
+                'FROM "scenario_process_shift_overrides" WHERE scenario_id = %s',
                 (new_id, scenario_id)
             )
         c.commit()
@@ -3578,6 +3636,38 @@ def compute_line_detail(
     return merged, bottleneck_proc, cap_week
 
 
+def compute_line_detail_v2(
+    line_id: str,
+    model: str,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+    hours_eff_default: float,
+    hours_eff_by_process: dict,
+) -> tuple[pd.DataFrame, str, float]:
+    """Per-process hours_eff variant of compute_line_detail.
+    hours_eff_by_process = {process: float}. Missing process → hours_eff_default.
+    No cache decorator: dict arg is unhashable; _compute_line_base (cached) absorbs the heavy work."""
+    base = _compute_line_base(line_id, model, times_df_param, stations_df_param)
+    if base.empty:
+        return base, "", 0.0
+    merged = base.copy()
+    merged["capacity"] = 0.0
+    mask = (merged["cycle_time_real"] > 0) & (merged["stations"] > 0)
+    merged.loc[mask, "capacity"] = merged[mask].apply(
+        lambda r: (
+            hours_eff_by_process.get(str(r["process"]), hours_eff_default) * r["stations"]
+        ) / r["cycle_time_real"],
+        axis=1,
+    )
+    productive = merged[mask].copy()
+    if productive.empty or productive["capacity"].dropna().empty:
+        return merged, "", 0.0
+    bottleneck_row = productive.loc[productive["capacity"].idxmin()]
+    bottleneck_proc = str(bottleneck_row["process"])
+    cap_week = float(bottleneck_row["capacity"])
+    return merged, bottleneck_proc, cap_week
+
+
 def capacity_hours_for_output(merged: pd.DataFrame, output_units: float) -> float:
     """
     Capacidad (h/SEM) y (h/AÑO) = **horas-hombre (HH)** necesarias para producir `output_units`.
@@ -3696,6 +3786,33 @@ if st.session_state.active_tab == "📈 Resultados":
         _e = float(_ov.get("efficiency", efficiency))
         return hours_week * _s * _a * _e
 
+    # ── Process shift overrides ───────────────────────────────────────────────
+    # Structure: proc_shift_override[plant_id][ov_sc_key][line_id] = {process: shifts}
+    # Only personalized processes are stored; absence means "hereda turno de línea".
+    # Only meaningful when a scenario is active (_active_sc_id is not None).
+    st.session_state.setdefault("proc_shift_override", {})
+    st.session_state["proc_shift_override"].setdefault(plant_id, {})
+    st.session_state["proc_shift_override"][plant_id].setdefault(_ov_sc_key, {})
+    _proc_ov = st.session_state["proc_shift_override"][plant_id][_ov_sc_key]
+
+    _proc_sh_load_key = f"_proc_sh_loaded_{plant_id}_{_ov_sc_key}"
+    if not st.session_state.get(_proc_sh_load_key, False):
+        if _active_sc_id:
+            for _lid2, _pd2 in load_scenario_process_shifts(_active_sc_id).items():
+                _proc_ov[_lid2] = _pd2
+        st.session_state[_proc_sh_load_key] = True
+
+    def _resolve_process_hours_eff(lid: str) -> dict | None:
+        """Returns per-process hours_eff dict, or None if no process overrides.
+        Line-level availability/efficiency apply; only shifts vary per process."""
+        _line_pd = _proc_ov.get(lid)
+        if not _line_pd:
+            return None
+        _ov_l = _plant_ov.get(lid, {})
+        _a = float(_ov_l.get("availability", availability)) if _ov_l.get("enabled") else availability
+        _e = float(_ov_l.get("efficiency", efficiency)) if _ov_l.get("enabled") else efficiency
+        return {proc: hours_week * float(sh) * _a * _e for proc, sh in _line_pd.items()}
+
     summary_rows = []
     detail_by_line = {}
 
@@ -3770,18 +3887,81 @@ if st.session_state.active_tab == "📈 Resultados":
                     for _lid in _grp_lids:
                         _en = st.session_state.get(f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}", False)
                         if _en:
-                            # Línea con override: cabecera con checkbox + nombre
-                            _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
+                            # Línea con override: cabecera checkbox | nombre+indicador | [⚙ Procesos]
+                            _proc_line_ov = _proc_ov.get(_lid, {})
+                            _proc_c = len(_proc_line_ov)
+                            _proc_indicator = f" · proc: {_proc_c}" if _proc_c else ""
+                            _rc, _rn, _rp = st.columns([0.4, 2.8, 1.4], gap="small", vertical_alignment="center")
                             _rc.checkbox(
                                 "ov",
                                 key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
                                 label_visibility="collapsed",
                             )
                             _rn.markdown(
-                                f'<p style="margin:0;line-height:1;font-weight:600">✏ {_lid}</p>',
+                                f'<p style="margin:0;line-height:1;font-weight:600">✏ {_lid}{_proc_indicator}</p>',
                                 unsafe_allow_html=True,
                             )
-                            # Controles en dos columnas: turnos | disponib. | eficiencia
+                            # Botón ⚙ Procesos: solo disponible con escenario activo
+                            _lid_model = st.session_state.line_model.get(plant_id, {}).get(_lid, "")
+                            if _active_sc_id and _lid_model:
+                                with _rp.popover("⚙ Procesos", use_container_width=True):
+                                    _base_df = _compute_line_base(_lid, _lid_model, times_df, stations_df)
+                                    _procs_list = _base_df["process"].tolist() if not _base_df.empty else []
+                                    _line_global_sh = int(st.session_state.get(f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}", shifts))
+                                    if not _procs_list:
+                                        st.caption("Sin procesos para esta línea.")
+                                    else:
+                                        st.caption(f"Turnos globales de línea: **{_line_global_sh}**")
+                                        for _proc in _procs_list:
+                                            _pen_key = f"psh_en_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
+                                            _pval_key = f"psh_val_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
+                                            if _pen_key not in st.session_state:
+                                                st.session_state[_pen_key] = _proc in _proc_line_ov
+                                            if st.session_state[_pen_key] and _pval_key not in st.session_state:
+                                                st.session_state[_pval_key] = int(_proc_line_ov.get(_proc, _line_global_sh))
+                                            _pc, _pn, _pt = st.columns([0.5, 1.6, 1.4])
+                                            _pc.checkbox("p", key=_pen_key, label_visibility="collapsed")
+                                            _pn.markdown(
+                                                f'<p style="margin:0;line-height:1;font-size:0.85rem">{_proc}</p>',
+                                                unsafe_allow_html=True,
+                                            )
+                                            if st.session_state[_pen_key]:
+                                                if _pval_key not in st.session_state:
+                                                    st.session_state[_pval_key] = int(_proc_line_ov.get(_proc, _line_global_sh))
+                                                _pt.number_input(
+                                                    "t", min_value=1, max_value=5, step=1,
+                                                    key=_pval_key, label_visibility="collapsed",
+                                                )
+                                            else:
+                                                st.session_state.pop(_pval_key, None)
+                                                _pt.markdown(
+                                                    f'<p style="margin:0;line-height:1;font-size:0.8rem;color:gray">hereda ({_line_global_sh})</p>',
+                                                    unsafe_allow_html=True,
+                                                )
+                                        # Sync proc_ov from widget state
+                                        _new_proc_ov: dict = {}
+                                        for _proc in _procs_list:
+                                            _pen_key = f"psh_en_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
+                                            _pval_key = f"psh_val_{plant_id}_{_ov_sc_key}_{_lid}_{_proc}"
+                                            if st.session_state.get(_pen_key, False):
+                                                _new_proc_ov[_proc] = int(st.session_state.get(_pval_key, _line_global_sh))
+                                        _proc_ov[_lid] = _new_proc_ov
+                                        st.divider()
+                                        if st.button(
+                                            "💾 Guardar turnos por proceso",
+                                            key=f"btn_save_psh_{plant_id}_{_ov_sc_key}_{_lid}",
+                                        ):
+                                            _psh_ok = save_scenario_process_shifts(_active_sc_id, _lid, _new_proc_ov)
+                                            if _psh_ok:
+                                                st.success("Guardado.")
+                                            else:
+                                                st.error("Error al guardar.")
+                            else:
+                                _rp.button(
+                                    "⚙ Procesos", disabled=True, use_container_width=True,
+                                    key=f"psh_btn_dis_{plant_id}_{_ov_sc_key}_{_lid}",
+                                )
+                            # Controles: turnos | disponib. | eficiencia
                             _rs, _ra, _re = st.columns([1, 2, 2])
                             _rs.number_input(
                                 "Turnos", min_value=1, max_value=5, step=1,
@@ -3882,7 +4062,16 @@ if st.session_state.active_tab == "📈 Resultados":
             .get(line_id, 0.0)
         )
 
-        merged, bottleneck_proc, cap_week = compute_line_detail(line_id, model, times_df, stations_df, _resolve_hours_eff(line_id))
+        _line_hours_eff = _resolve_hours_eff(line_id)
+        _proc_he = _resolve_process_hours_eff(line_id)
+        if _proc_he is not None:
+            merged, bottleneck_proc, cap_week = compute_line_detail_v2(
+                line_id, model, times_df, stations_df, _line_hours_eff, _proc_he
+            )
+        else:
+            merged, bottleneck_proc, cap_week = compute_line_detail(
+                line_id, model, times_df, stations_df, _line_hours_eff
+            )
 
         saturation = 0.0
         deficit = 0.0
