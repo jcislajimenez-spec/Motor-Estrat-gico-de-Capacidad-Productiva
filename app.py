@@ -4288,9 +4288,16 @@ if st.session_state.active_tab == "📈 Resultados":
             _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
         _buf.seek(0)
 
-        # ── UI: cabecera "Resumen resultados" con Export alineado a la derecha ──
-        _rh1, _rh2 = st.columns([4, 2])
-        _rh1.markdown("**Resumen resultados**")
+        # ── UI: 4 métricas panel (encima de la tabla) ────────────────────────
+        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
+        _pm1.metric(t("res_panel_n_deficit"), _n_def)
+        _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
+        _pm3.metric(t("res_panel_n_critical"), _n_crit)
+        _pm4.metric(t("res_panel_bottleneck"), _main_bn)
+        st.caption(t("res_sorted_note"))
+
+        # ── UI: Export alineado a la derecha, encima de la tabla ─────────────
+        _, _rh2 = st.columns([6, 2])
         _rh2.download_button(
             label=t("res_export_btn"),
             data=_buf,
@@ -4301,13 +4308,7 @@ if st.session_state.active_tab == "📈 Resultados":
         # ── UI: tabla ────────────────────────────────────────────────────────
         st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
 
-        # ── UI: métricas bajo la tabla ────────────────────────────────────────
-        _pm1, _pm2, _pm3, _pm4 = st.columns(4)
-        _pm1.metric(t("res_panel_n_deficit"), _n_def)
-        _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
-        _pm3.metric(t("res_panel_n_critical"), _n_crit)
-        _pm4.metric(t("res_panel_bottleneck"), _main_bn)
-        st.caption(t("res_sorted_note"))
+        # ── UI: 5 métricas resumen (bajo la tabla) ────────────────────────────
 
         _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
         _mc1.metric("Cap. total (uds/sem)", _fmt_num(_ex_cap))
