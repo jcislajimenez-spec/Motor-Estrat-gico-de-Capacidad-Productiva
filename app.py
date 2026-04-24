@@ -133,6 +133,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_proc_global_shifts":  "Turnos globales de línea:",
         "res_proc_save_ok":        "Guardado.",
         "res_proc_save_err":       "Error al guardar.",
+        "res_metric_cap_total":    "Cap. total (uds/sem)",
+        "res_metric_dem_total":    "Dem. total (uds/sem)",
+        "res_metric_deficit":      "Déficit (uds/sem)",
+        "res_metric_sat_max":      "Sat. máxima (%)",
+        "res_metric_crit_lines":   "Líneas críticas",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -337,6 +342,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_proc_global_shifts":  "Line global shifts:",
         "res_proc_save_ok":        "Saved.",
         "res_proc_save_err":       "Error saving.",
+        "res_metric_cap_total":    "Total cap. (uds/week)",
+        "res_metric_dem_total":    "Total dem. (uds/week)",
+        "res_metric_deficit":      "Deficit (uds/week)",
+        "res_metric_sat_max":      "Max. saturation (%)",
+        "res_metric_crit_lines":   "Critical lines",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -541,6 +551,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_proc_global_shifts":  "Lerroaren turno globalak:",
         "res_proc_save_ok":        "Gordeta.",
         "res_proc_save_err":       "Errorea gordetzean.",
+        "res_metric_cap_total":    "Kap. guztira (uds/aste)",
+        "res_metric_dem_total":    "Esk. guztira (uds/aste)",
+        "res_metric_deficit":      "Defizita (uds/aste)",
+        "res_metric_sat_max":      "Sat. maximoa (%)",
+        "res_metric_crit_lines":   "Lerro kritikoak",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -2568,7 +2583,7 @@ if st.session_state.active_tab == "📊 Planificación":
             st.success(t(_pending_msg))
 
     for nave in sorted(stations_df["nave"].astype(str).str.strip().unique().tolist()):
-        st.markdown(f"#### NAVE {nave}")
+        st.markdown(f"#### {t('cfg_filter_nave')} {nave}")
 
         _ch0, _ch1, _ch2 = st.columns([0.7, 1.8, 1.0])
         _ch0.caption(t("cfg_line_label"))
@@ -4002,17 +4017,17 @@ if st.session_state.active_tab == "📈 Resultados":
                             # Controles: turnos | disponib. | eficiencia
                             _rs, _ra, _re = st.columns([1, 2, 2])
                             _rs.number_input(
-                                "Turnos", min_value=1, max_value=5, step=1,
+                                t("param_shifts"), min_value=1, max_value=5, step=1,
                                 key=f"shifts_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {shifts}",
                             )
                             _ra.slider(
-                                "Disponib.", min_value=0.0, max_value=1.0, step=0.01,
+                                t("param_availability"), min_value=0.0, max_value=1.0, step=0.01,
                                 key=f"avail_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {availability}",
                             )
                             _re.slider(
-                                "Eficiencia", min_value=0.0, max_value=1.0, step=0.01,
+                                t("param_efficiency"), min_value=0.0, max_value=1.0, step=0.01,
                                 key=f"eff_ov_{plant_id}_{_ov_sc_key}_{_lid}",
                                 help=f"Global: {efficiency}",
                             )
@@ -4336,13 +4351,13 @@ if st.session_state.active_tab == "📈 Resultados":
         # ── UI: 5 métricas resumen (bajo la tabla) ────────────────────────────
 
         _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
-        _mc1.metric("Cap. total (uds/sem)", _fmt_num(_ex_cap))
-        _mc2.metric("Dem. total (uds/sem)", _fmt_num(_ex_dem))
-        _mc3.metric("Déficit (uds/sem)",    _fmt_num(_ex_def),
+        _mc1.metric(t("res_metric_cap_total"), _fmt_num(_ex_cap))
+        _mc2.metric(t("res_metric_dem_total"), _fmt_num(_ex_dem))
+        _mc3.metric(t("res_metric_deficit"),   _fmt_num(_ex_def),
                     delta=None if _ex_def == 0 else f"−{_fmt_num(_ex_def)}",
                     delta_color="inverse")
-        _mc4.metric("Sat. máxima (%)",      _fmt_num(_ex_sat))
-        _mc5.metric("Líneas críticas",
+        _mc4.metric(t("res_metric_sat_max"),   _fmt_num(_ex_sat))
+        _mc5.metric(t("res_metric_crit_lines"),
                     str(len(_ex_crit)),
                     help=", ".join(_ex_crit) if _ex_crit else "Ninguna")
 
