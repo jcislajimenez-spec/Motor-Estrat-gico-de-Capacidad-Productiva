@@ -5634,9 +5634,18 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
 if st.session_state.active_tab == "📅 Simulación anual":
     st.subheader(t("sim_tab_header"))
 
-    # ── Resolvers mínimos ─────────────────────────────────────────────────────
+    # ── Resolver escenario activo (independiente de Planificación) ───────────
     _sim_active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
-    _sim_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_sim_active_sc_id, "—")
+    _sim_sc_name = "—"
+    if _has_db():
+        _sim_sc_list = list_scenarios(plant_id)
+        _sim_sc_map  = {s["id"]: s["name"] for s in _sim_sc_list}
+        if _sim_active_sc_id is None:
+            _active_db = next((s for s in _sim_sc_list if s.get("is_active")), None)
+            if _active_db:
+                _sim_active_sc_id = _active_db["id"]
+        if _sim_active_sc_id is not None:
+            _sim_sc_name = _sim_sc_map.get(_sim_active_sc_id, "—")
 
     # Líneas planificadas: mismo criterio que Resultados
     _sim_all_line_ids = sorted(
@@ -5653,21 +5662,29 @@ if st.session_state.active_tab == "📅 Simulación anual":
     elif not _sim_planned_line_ids:
         st.warning(t("sim_no_lines"))
     else:
-        # ── Capacidad base provisional ────────────────────────────────────────
-        # HIPÓTESIS INICIAL: hours_eff global × nº líneas planificadas.
-        # Simplificación V1: usa hours_eff del sidebar, sin overrides por línea.
-        _sim_cap_hours_base = hours_eff * len(_sim_planned_line_ids)
+        # ── Capacidad base real: Σ(cap_week_línea × cycle_time_modelo) ────────
+        _sim_tc = times_df.copy()
+        _sim_tc["cycle_time"] = pd.to_numeric(_sim_tc["cycle_time"], errors="coerce").fillna(0.0)
+        _sim_ctm = _sim_tc.groupby("model")["cycle_time"].sum().to_dict()
+
+        _sim_cap_h_sem = 0.0
+        for _slid in _sim_planned_line_ids:
+            _smdl = st.session_state.get("line_model", {}).get(plant_id, {}).get(_slid)
+            if not _smdl:
+                continue
+            _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, hours_eff)
+            _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
 
         # ── Bloque azul informativo ───────────────────────────────────────────
         st.info(
             f"**{_sim_sc_name}**  ·  {len(_sim_planned_line_ids)} {t('sim_lines_planned')}"
         )
 
-        # ── Métricas provisionales ────────────────────────────────────────────
+        # ── Métricas de capacidad base ────────────────────────────────────────
         st.markdown(f"#### {t('sim_cap_base_label')}")
         _sc1, _sc2, _sc3 = st.columns(3)
-        _sc1.metric(t("sim_cap_per_line"),   f"{_fmt_num(hours_eff)} h/sem")
+        _sc1.metric(t("sim_cap_per_line"),   f"{_fmt_num(_sim_cap_h_sem / len(_sim_planned_line_ids))} h/sem")
         _sc2.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
-        _sc3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_hours_base)} h/sem")
+        _sc3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
 
         st.caption(t("sim_cap_base_note"))
