@@ -1055,19 +1055,19 @@ def load_active_scenario(plant_id: int) -> dict | None:
     try:
         with c.cursor() as cur:
             cur.execute(
-                'SELECT id FROM "scenarios" WHERE plant_id = %s AND is_active = TRUE LIMIT 1',
+                'SELECT id, name FROM "scenarios" WHERE plant_id = %s AND is_active = TRUE LIMIT 1',
                 (plant_id,)
             )
             row = cur.fetchone()
             if not row:
                 return None
-            scenario_id = row[0]
+            scenario_id, scenario_name = row[0], row[1]
             cur.execute(
                 'SELECT line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
                 (scenario_id,)
             )
             lines = cur.fetchall()
-        result = {"scenario_id": scenario_id, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        result = {"scenario_id": scenario_id, "scenario_name": scenario_name, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
         for line_id, model, demand, bench_variant in lines:
             result["line_model"][line_id] = model or ""
             result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
@@ -1314,12 +1314,15 @@ def load_scenario_by_id(scenario_id: int) -> dict | None:
     c = get_connection()
     try:
         with c.cursor() as cur:
+            cur.execute('SELECT name FROM "scenarios" WHERE id = %s', (scenario_id,))
+            name_row = cur.fetchone()
+            scenario_name = name_row[0] if name_row else ""
             cur.execute(
                 'SELECT line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
                 (scenario_id,)
             )
             lines = cur.fetchall()
-        result = {"scenario_id": scenario_id, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
+        result = {"scenario_id": scenario_id, "scenario_name": scenario_name, "line_model": {}, "line_demand": {}, "line_bench_variant": {}}
         for line_id, model, demand, bench_variant in lines:
             result["line_model"][line_id] = model or ""
             result["line_demand"][line_id] = float(demand) if demand is not None else 0.0
@@ -2026,6 +2029,11 @@ if _pid_init != st.session_state.get("_last_pid"):
             st.session_state.line_demand[_pid_init] = {}
         if _pid_init not in st.session_state.line_bench_variant:
             st.session_state.line_bench_variant[_pid_init] = {}
+    # Populate name map on plant change — ensures Resultados and Simulación
+    # always have the scenario name available, even before Planificación renders.
+    if _has_db():
+        _init_sc_list = list_scenarios(_pid_init)
+        st.session_state[f"_sc_name_map_{_pid_init}"] = {s["id"]: s["name"] for s in _init_sc_list}
     st.session_state["_last_pid"] = _pid_init
 if _pid_init not in st.session_state.line_demand:
     st.session_state.line_demand[_pid_init] = {}
@@ -2602,6 +2610,8 @@ if st.session_state.active_tab == "📊 Planificación":
         st.session_state.line_bench_variant[_pid] = _pending["line_bench_variant"]
         if "scenario_id" in _pending:
             st.session_state[f"scenario_select_{_pid}"] = _pending["scenario_id"]
+        if "scenario_name" in _pending:
+            st.session_state[f"scenario_name_input_{_pid}"] = _pending["scenario_name"]
         for _lid, _mdl in _pending["line_model"].items():
             _var = _pending["line_bench_variant"].get(_lid, "")
             if _mdl in _DA_VALUES:
@@ -2753,6 +2763,8 @@ if st.session_state.active_tab == "📊 Planificación":
                 _init_sel = st.session_state.get(f"scenario_select_{_pid}")
                 if _init_sel in _sc_name_map:
                     st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map[_init_sel]
+                else:
+                    st.session_state[f"scenario_name_input_{_pid}"] = t("plan_save_name_default")
 
             _sce1, _sce2, _sce3, _sce4, _sce5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
@@ -2802,7 +2814,6 @@ if st.session_state.active_tab == "📊 Planificación":
     _sc_col1, _sc_col2, _sc_col3 = st.columns([2, 1, 1], vertical_alignment="bottom")
     _sc_name = _sc_col1.text_input(
         t("plan_save_name_label"),
-        value=t("plan_save_name_default"),
         key=f"scenario_name_input_{_pid}",
     )
     if _sc_col2.button(t("plan_save_changes_btn"), use_container_width=True):
@@ -2844,6 +2855,22 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state[f"_deferred_sc_name_{_pid}"] = _used_name
             st.success(t("plan_save_ok"))
             st.rerun()
+
+    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
+    _dbg_sc_id   = st.session_state.get(f"scenario_select_{_pid}")
+    _dbg_nm_inp  = st.session_state.get(f"scenario_name_input_{_pid}", "‹no set›")
+    _dbg_sc_map  = st.session_state.get(f"_sc_name_map_{_pid}", {})
+    _dbg_nm_map  = _dbg_sc_map.get(_dbg_sc_id, "‹no encontrado en mapa›")
+    _dbg_pending = f"_pending_scenario_{_pid}" in st.session_state
+    with st.expander("🔍 DEBUG estado escenario — Planificación", expanded=False):
+        st.code(
+            f"plant_id              = {_pid}\n"
+            f"scenario_select       = {_dbg_sc_id}\n"
+            f"scenario_name_input   = {_dbg_nm_inp}\n"
+            f"_sc_name_map keys     = {list(_dbg_sc_map.keys())}\n"
+            f"nombre desde mapa     = {_dbg_nm_map}\n"
+            f"_pending existe       = {_dbg_pending}"
+        )
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
@@ -3929,6 +3956,19 @@ if st.session_state.active_tab == "📈 Resultados":
 
     # ── Título + botón guardar (misma fila) ───────────────────────────────────
     _ex_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_active_sc_id, "—")
+
+    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
+    _dbg_r_map = st.session_state.get(f"_sc_name_map_{plant_id}", {})
+    with st.expander("🔍 DEBUG estado escenario — Resultados", expanded=False):
+        st.code(
+            f"plant_id              = {plant_id}\n"
+            f"scenario_select       = {_active_sc_id}\n"
+            f"scenario_name_input   = {st.session_state.get(f'scenario_name_input_{plant_id}', '‹no set›')}\n"
+            f"_sc_name_map keys     = {list(_dbg_r_map.keys())}\n"
+            f"nombre desde mapa     = {_dbg_r_map.get(_active_sc_id, '‹no encontrado›')}\n"
+            f"_ex_sc_name resuelto  = {_ex_sc_name}"
+        )
+
     _ex_header_info = (
         f"**{_ex_sc_name}**"
         f"  ·  {len(_planned_line_ids)} líneas"
@@ -3957,7 +3997,7 @@ if st.session_state.active_tab == "📈 Resultados":
     _expander_label = t("res_params_expander")
     if _active_ov_lines:
         _expander_label += f"  —  ✏ {len(_active_ov_lines)} activo(s)"
-    with st.expander(_expander_label, expanded=bool(_active_ov_lines)):
+    with st.expander(_expander_label, expanded=False):
         if _planned_line_ids:
             import math as _math
             _chunk = _math.ceil(len(_planned_line_ids) / 3)
@@ -5634,10 +5674,13 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
 if st.session_state.active_tab == "📅 Simulación anual":
     st.subheader(t("sim_tab_header"))
 
-    # ── Resolver escenario activo (independiente de Planificación) ───────────
-    _sim_active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
-    _sim_sc_name = "—"
-    if _has_db():
+    # ── Resolver escenario activo ─────────────────────────────────────────────
+    # _raw_sc_id: valor puro de session_state — mismo que usa Resultados para _ov_sc_key.
+    # _sim_active_sc_id: para display/guard — puede caer a is_active de DB si session es None.
+    _raw_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+    _sim_active_sc_id = _raw_sc_id
+    _sim_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_raw_sc_id, "—")
+    if _sim_sc_name == "—" and _has_db():
         _sim_sc_list = list_scenarios(plant_id)
         _sim_sc_map  = {s["id"]: s["name"] for s in _sim_sc_list}
         if _sim_active_sc_id is None:
@@ -5646,6 +5689,21 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _sim_active_sc_id = _active_db["id"]
         if _sim_active_sc_id is not None:
             _sim_sc_name = _sim_sc_map.get(_sim_active_sc_id, "—")
+
+    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
+    _dbg_s_map = st.session_state.get(f"_sc_name_map_{plant_id}", {})
+    _dbg_s_ov_key = _raw_sc_id if _raw_sc_id is not None else 0
+    with st.expander("🔍 DEBUG estado escenario — Simulación anual", expanded=False):
+        st.code(
+            f"plant_id              = {plant_id}\n"
+            f"scenario_select       = {st.session_state.get(f'scenario_select_{plant_id}')}\n"
+            f"_raw_sc_id            = {_raw_sc_id}\n"
+            f"_sim_active_sc_id     = {_sim_active_sc_id}\n"
+            f"_sim_ov_sc_key        = {_dbg_s_ov_key}\n"
+            f"_sc_name_map keys     = {list(_dbg_s_map.keys())}\n"
+            f"nombre desde mapa     = {_dbg_s_map.get(_raw_sc_id, '‹no encontrado›')}\n"
+            f"_sim_sc_name resuelto = {_sim_sc_name}"
+        )
 
     # Líneas planificadas: mismo criterio que Resultados
     _sim_all_line_ids = sorted(
@@ -5663,7 +5721,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
         st.warning(t("sim_no_lines"))
     else:
         # ── Override resolution — mismas claves que Resultados ────────────────
-        _sim_ov_sc_key = _sim_active_sc_id if _sim_active_sc_id is not None else 0
+        _sim_ov_sc_key = _raw_sc_id if _raw_sc_id is not None else 0
         _sim_plant_ov = (
             st.session_state.get("line_params_override", {})
             .get(plant_id, {})
