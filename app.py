@@ -4329,20 +4329,13 @@ if st.session_state.active_tab == "📈 Resultados":
             _export_df.to_excel(_writer, sheet_name="Resultados", index=False)
         _buf.seek(0)
 
-        # ── UI: 4 métricas + Export en una sola banda compacta ───────────────
+        # ── UI: 4 métricas en banda compacta ─────────────────────────────────
         st.markdown('<div style="margin-top:-2rem;margin-bottom:-1rem">', unsafe_allow_html=True)
-        _pm1, _pm2, _pm3, _pm4, _pmx = st.columns(5, vertical_alignment="bottom")
+        _pm1, _pm2, _pm3, _pm4 = st.columns(4, vertical_alignment="bottom")
         _pm1.metric(t("res_panel_n_deficit"), _n_def)
         _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
         _pm3.metric(t("res_panel_n_critical"), _n_crit)
         _pm4.metric(t("res_panel_bottleneck"), _main_bn)
-        _pmx.download_button(
-            label=t("res_export_btn"),
-            data=_buf,
-            file_name=_export_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
         st.markdown('</div>', unsafe_allow_html=True)
 
         # ── UI: tabla ────────────────────────────────────────────────────────
@@ -4371,6 +4364,14 @@ if st.session_state.active_tab == "📈 Resultados":
                     top_pct=_fmt_num(_top_fte_pct),
                 )
             )
+
+        # ── Export simple — salida secundaria del escenario activo ──────────
+        st.download_button(
+            label=t("res_export_btn"),
+            data=_buf,
+            file_name=_export_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
         # --- Comparativa entre escenarios ---
         if _has_db():
