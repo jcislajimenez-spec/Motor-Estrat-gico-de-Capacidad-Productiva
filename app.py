@@ -2018,9 +2018,9 @@ if _pid_init != st.session_state.get("_last_pid"):
         st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
         st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
         # Solo inicializar si el usuario no tiene ya un escenario elegido en esta sesión.
-        # Si ya existe scenario_select, el usuario cargó un escenario explícitamente — no pisar.
-        if f"scenario_select_{_pid_init}" not in st.session_state:
-            st.session_state[f"scenario_select_{_pid_init}"] = _scenario["scenario_id"]
+        # Usar clave no-widget (_session_sc_id_) para que Streamlit no la borre al cambiar de tab.
+        if f"_session_sc_id_{_pid_init}" not in st.session_state:
+            st.session_state[f"_session_sc_id_{_pid_init}"] = _scenario["scenario_id"]
             _scenario["_msg"] = None
             st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
     else:
@@ -2611,6 +2611,7 @@ if st.session_state.active_tab == "📊 Planificación":
         st.session_state.line_bench_variant[_pid] = _pending["line_bench_variant"]
         if "scenario_id" in _pending:
             st.session_state[f"scenario_select_{_pid}"] = _pending["scenario_id"]
+            st.session_state[f"_session_sc_id_{_pid}"] = _pending["scenario_id"]
         if "scenario_name" in _pending:
             st.session_state[f"scenario_name_input_{_pid}"] = _pending["scenario_name"]
         for _lid, _mdl in _pending["line_model"].items():
@@ -3845,7 +3846,7 @@ if st.session_state.active_tab == "📈 Resultados":
     #   1. scenario_line_overrides del escenario activo  (persistencia principal)
     #   2. line_overrides de la planta                   (fallback si escenario vacío)
     #   3. parámetros globales de la planta              (si enabled=False o sin override)
-    _active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+    _active_sc_id = st.session_state.get(f"_session_sc_id_{plant_id}")
     _ov_sc_key = _active_sc_id if _active_sc_id is not None else 0
     st.session_state.setdefault("line_params_override", {})
     st.session_state["line_params_override"].setdefault(plant_id, {})
@@ -5678,7 +5679,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
     # ── Resolver escenario activo ─────────────────────────────────────────────
     # _raw_sc_id: valor puro de session_state — mismo que usa Resultados para _ov_sc_key.
     # _sim_active_sc_id: para display/guard — puede caer a is_active de DB si session es None.
-    _raw_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+    _raw_sc_id = st.session_state.get(f"_session_sc_id_{plant_id}")
     _sim_active_sc_id = _raw_sc_id
     _sim_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_raw_sc_id, "—")
     if _sim_sc_name == "—" and _has_db():
