@@ -2017,11 +2017,12 @@ if _pid_init != st.session_state.get("_last_pid"):
         st.session_state.line_model[_pid_init] = _scenario["line_model"]
         st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
         st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
-        # Sync selector to the loaded scenario so UI and session_state agree
-        st.session_state[f"scenario_select_{_pid_init}"] = _scenario["scenario_id"]
-        # Queue widget key hydration — pending-load block applies before widgets render
-        _scenario["_msg"] = None
-        st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
+        # Solo inicializar si el usuario no tiene ya un escenario elegido en esta sesión.
+        # Si ya existe scenario_select, el usuario cargó un escenario explícitamente — no pisar.
+        if f"scenario_select_{_pid_init}" not in st.session_state:
+            st.session_state[f"scenario_select_{_pid_init}"] = _scenario["scenario_id"]
+            _scenario["_msg"] = None
+            st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
     else:
         if _pid_init not in st.session_state.line_model:
             st.session_state.line_model[_pid_init] = {}
