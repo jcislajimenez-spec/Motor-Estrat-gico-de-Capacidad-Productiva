@@ -3913,9 +3913,9 @@ if st.session_state.active_tab == "📈 Resultados":
             else:
                 _saved_ok = save_line_overrides(plant_id, _plant_ov)
             if _saved_ok:
-                st.success(t("res_save_line_ok"))
+                st.toast(t("res_save_line_ok"), icon="✅")
             else:
-                st.error(t("res_save_line_err"))
+                st.toast(t("res_save_line_err"), icon="🚨")
 
     # ── Bloque azul escenario (debajo del título) ─────────────────────────────
     st.info(_ex_header_info)
