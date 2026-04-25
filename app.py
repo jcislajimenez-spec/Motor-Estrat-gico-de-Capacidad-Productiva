@@ -5781,3 +5781,51 @@ if st.session_state.active_tab == "📅 Simulación anual":
         _sc3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
 
         st.caption(t("sim_cap_base_note"))
+
+        # ── Plantilla descargable ─────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### Plantilla de simulación anual")
+        st.caption("Descarga la plantilla Excel, rellena los datos y súbela para ejecutar la simulación.")
+
+        def _build_sim_template_xlsx() -> bytes:
+            import io
+            _buf = io.BytesIO()
+            _semanas = [f"Sem {i}" for i in range(1, 53)]
+
+            _df_dem = pd.DataFrame(
+                [["SL"] + [0.0] * 52],
+                columns=["Modelo"] + _semanas,
+            )
+            _df_plan = pd.DataFrame(
+                [["SL"] + [0.0] * 52],
+                columns=["Modelo"] + _semanas,
+            )
+            _df_esp = pd.DataFrame(
+                [
+                    {"semana": 1,  "horas_disponibles": 30.0, "motivo": "Semana reducida vacaciones"},
+                    {"semana": 25, "horas_disponibles": 0.0,  "motivo": "Parada verano"},
+                ],
+            )
+            _df_res = pd.DataFrame(
+                [
+                    ["Previsión ventas (h)"]       + [0.0] * 52,
+                    ["Plan maestro prod. (h)"]     + [0.0] * 52,
+                    ["Disponibilidad real (h)"]    + [0.0] * 52,
+                ],
+                columns=["Métrica"] + _semanas,
+            )
+
+            with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
+                _df_dem.to_excel(_writer,  sheet_name="DEMANDA_HORAS",    index=False)
+                _df_plan.to_excel(_writer, sheet_name="PLAN_HORAS",       index=False)
+                _df_esp.to_excel(_writer,  sheet_name="SEMANAS_ESPECIALES", index=False)
+                _df_res.to_excel(_writer,  sheet_name="RESUMEN_SEMANAL",  index=False)
+
+            return _buf.getvalue()
+
+        st.download_button(
+            label="⬇️ Descargar plantilla Excel",
+            data=_build_sim_template_xlsx(),
+            file_name="plantilla_simulacion_anual.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
