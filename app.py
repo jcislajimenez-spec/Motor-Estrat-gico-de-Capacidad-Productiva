@@ -138,6 +138,17 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_metric_deficit":      "Déficit (uds/sem)",
         "res_metric_sat_max":      "Sat. máxima (%)",
         "res_metric_crit_lines":   "Líneas críticas",
+        # Simulación anual
+        "nav_sim_annual":          "📅 Simulación anual",
+        "sim_tab_header":          "Simulación anual — Capacidad vs Demanda",
+        "sim_no_scenario":         "Sin escenario activo. Ve a Planificación, activa un escenario y asigna modelos antes de usar esta simulación.",
+        "sim_no_lines":            "El escenario activo no tiene líneas planificadas. Ve a Planificación y asigna modelos a las líneas.",
+        "sim_lines_planned":       "líneas planificadas",
+        "sim_cap_base_label":      "Capacidad base provisional (hipótesis inicial a validar)",
+        "sim_cap_per_line":        "h/sem por línea (global)",
+        "sim_n_lines":             "Líneas planificadas",
+        "sim_cap_total_base":      "Cap. base planta (h/sem)",
+        "sim_cap_base_note":       "⚠ Hipótesis inicial: hours_eff global × nº líneas planificadas. No aplica overrides individuales por línea. Validar con negocio antes de continuar al cálculo semanal.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -347,6 +358,17 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_metric_deficit":      "Deficit (uds/week)",
         "res_metric_sat_max":      "Max. saturation (%)",
         "res_metric_crit_lines":   "Critical lines",
+        # Annual simulation
+        "nav_sim_annual":          "📅 Annual simulation",
+        "sim_tab_header":          "Annual simulation — Capacity vs Demand",
+        "sim_no_scenario":         "No active scenario. Go to Planning, activate a scenario and assign models before using this simulation.",
+        "sim_no_lines":            "The active scenario has no planned lines. Go to Planning and assign models to lines.",
+        "sim_lines_planned":       "planned lines",
+        "sim_cap_base_label":      "Provisional base capacity (initial hypothesis to validate)",
+        "sim_cap_per_line":        "h/week per line (global)",
+        "sim_n_lines":             "Planned lines",
+        "sim_cap_total_base":      "Plant base capacity (h/week)",
+        "sim_cap_base_note":       "⚠ Initial hypothesis: global hours_eff × number of planned lines. Does not apply individual line overrides. Validate with business before proceeding to weekly calculation.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -556,6 +578,17 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "res_metric_deficit":      "Defizita (uds/aste)",
         "res_metric_sat_max":      "Sat. maximoa (%)",
         "res_metric_crit_lines":   "Lerro kritikoak",
+        # Urteko simulazioa
+        "nav_sim_annual":          "📅 Urteko simulazioa",
+        "sim_tab_header":          "Urteko simulazioa — Ahalmena vs Eskaria",
+        "sim_no_scenario":         "Ez dago eszenatoki aktiborik. Joan Planifikazioera, aktibatu eszenatoki bat eta esleitu ereduak simulazio hau erabili aurretik.",
+        "sim_no_lines":            "Eszenatoki aktiboak ez du planifikatutako lerrorik. Joan Planifikazioera eta esleitu ereduak lerroei.",
+        "sim_lines_planned":       "planifikatutako lerro",
+        "sim_cap_base_label":      "Oinarrizko ahalmen probisionala (hasierako hipotesia, balioztatze beharrekoa)",
+        "sim_cap_per_line":        "o/aste lerro bakoitzeko (globala)",
+        "sim_n_lines":             "Planifikatutako lerroak",
+        "sim_cap_total_base":      "Plantaren oinarrizko ahalmena (o/aste)",
+        "sim_cap_base_note":       "⚠ Hasierako hipotesia: ordu_efektibo globala × planifikatutako lerro kopurua. Ez du lerroko override indibidualik aplikatzen. Baliozta ezazu negozioari asteko kalkulura jo aurretik.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -1827,9 +1860,10 @@ _PAGES = [
     "⚙️ Configuración (Power User)",
     "📈 Resultados",
     "🧭 Capacidad según mix",
+    "📅 Simulación anual",
 ]
 _PAGES_I18N = {p: k for p, k in zip(_PAGES, [
-    "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix"
+    "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix", "nav_sim_annual"
 ])}
 st.sidebar.radio(
     t("nav_label"),
@@ -5593,3 +5627,47 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                             for c in ["Uds/sem", "Uds/año", "h/sem", "h/año"]:
                                 df_show[c] = df_show[c].map(lambda x: f"{float(x):.2f}")
                             st.table(df_show)
+
+# =========================================================
+# BLOQUE 11 BIS — SIMULACIÓN ANUAL CAPACIDAD VS DEMANDA
+# =========================================================
+if st.session_state.active_tab == "📅 Simulación anual":
+    st.subheader(t("sim_tab_header"))
+
+    # ── Resolvers mínimos ─────────────────────────────────────────────────────
+    _sim_active_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+    _sim_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_sim_active_sc_id, "—")
+
+    # Líneas planificadas: mismo criterio que Resultados
+    _sim_all_line_ids = sorted(
+        stations_df["line_id"].astype(str).str.strip().unique().tolist()
+    )
+    _sim_planned_line_ids = [
+        lid for lid in _sim_all_line_ids
+        if st.session_state.get("line_model", {}).get(plant_id, {}).get(lid)
+    ]
+
+    # ── Guards ────────────────────────────────────────────────────────────────
+    if _sim_active_sc_id is None:
+        st.warning(t("sim_no_scenario"))
+    elif not _sim_planned_line_ids:
+        st.warning(t("sim_no_lines"))
+    else:
+        # ── Capacidad base provisional ────────────────────────────────────────
+        # HIPÓTESIS INICIAL: hours_eff global × nº líneas planificadas.
+        # Simplificación V1: usa hours_eff del sidebar, sin overrides por línea.
+        _sim_cap_hours_base = hours_eff * len(_sim_planned_line_ids)
+
+        # ── Bloque azul informativo ───────────────────────────────────────────
+        st.info(
+            f"**{_sim_sc_name}**  ·  {len(_sim_planned_line_ids)} {t('sim_lines_planned')}"
+        )
+
+        # ── Métricas provisionales ────────────────────────────────────────────
+        st.markdown(f"#### {t('sim_cap_base_label')}")
+        _sc1, _sc2, _sc3 = st.columns(3)
+        _sc1.metric(t("sim_cap_per_line"),   f"{_fmt_num(hours_eff)} h/sem")
+        _sc2.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
+        _sc3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_hours_base)} h/sem")
+
+        st.caption(t("sim_cap_base_note"))
