@@ -5662,7 +5662,35 @@ if st.session_state.active_tab == "📅 Simulación anual":
     elif not _sim_planned_line_ids:
         st.warning(t("sim_no_lines"))
     else:
-        # ── Capacidad base real: Σ(cap_week_línea × cycle_time_modelo) ────────
+        # ── Override resolution — mismas claves que Resultados ────────────────
+        _sim_ov_sc_key = _sim_active_sc_id if _sim_active_sc_id is not None else 0
+        _sim_plant_ov = (
+            st.session_state.get("line_params_override", {})
+            .get(plant_id, {})
+            .get(_sim_ov_sc_key, {})
+        )
+        _sim_proc_ov = (
+            st.session_state.get("proc_shift_override", {})
+            .get(plant_id, {})
+            .get(_sim_ov_sc_key, {})
+        )
+
+        def _sim_resolve_he(lid: str) -> float:
+            _ov = _sim_plant_ov.get(lid, {})
+            if not _ov.get("enabled", False):
+                return hours_eff
+            return hours_week * int(_ov.get("shifts", shifts)) * float(_ov.get("availability", availability)) * float(_ov.get("efficiency", efficiency))
+
+        def _sim_resolve_proc_he(lid: str):
+            _pd = _sim_proc_ov.get(lid)
+            if not _pd:
+                return None
+            _ov_l = _sim_plant_ov.get(lid, {})
+            _a = float(_ov_l.get("availability", availability)) if _ov_l.get("enabled") else availability
+            _e = float(_ov_l.get("efficiency", efficiency)) if _ov_l.get("enabled") else efficiency
+            return {proc: hours_week * float(sh) * _a * _e for proc, sh in _pd.items()}
+
+        # ── Capacidad base: lógica idéntica al loop de Resultados ─────────────
         _sim_tc = times_df.copy()
         _sim_tc["cycle_time"] = pd.to_numeric(_sim_tc["cycle_time"], errors="coerce").fillna(0.0)
         _sim_ctm = _sim_tc.groupby("model")["cycle_time"].sum().to_dict()
@@ -5672,7 +5700,12 @@ if st.session_state.active_tab == "📅 Simulación anual":
             _smdl = st.session_state.get("line_model", {}).get(plant_id, {}).get(_slid)
             if not _smdl:
                 continue
-            _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, hours_eff)
+            _s_lhe = _sim_resolve_he(_slid)
+            _s_phe = _sim_resolve_proc_he(_slid)
+            if _s_phe is not None:
+                _, _, _scap_w = compute_line_detail_v2(_slid, _smdl, times_df, stations_df, _s_lhe, _s_phe)
+            else:
+                _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, _s_lhe)
             _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
 
         # ── Bloque azul informativo ───────────────────────────────────────────
