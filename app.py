@@ -6060,9 +6060,8 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                     f"{_rk['sat_max']} %")
                         _kr5.metric("Saturación media (%)",
                                     f"{_rk['sat_media']} %")
-                        _n_esp_red = int(
-                            (_sim_result["tabla"]["Cap. disponible (h)"] < _sim_cap_h_sem).sum()
-                        )
+                        _df_esp_render = _sim_parsed.get("especiales") if _sim_parsed else None
+                        _n_esp_red = len(_df_esp_render) if _df_esp_render is not None else 0
                         _cap_note = f" · {_n_esp_red} sem. con capacidad reducida" if _n_esp_red > 0 else ""
                         st.caption(
                             f"Capacidad base de planta: {_fmt_num(_sim_cap_h_sem)} h/sem{_cap_note}"
@@ -6126,7 +6125,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             margin=dict(t=20, b=40, l=0, r=0),
                             legend=dict(orientation="h", yanchor="bottom", y=1.01,
                                         xanchor="right", x=1),
-                            xaxis=dict(title="Semana", tickmode="linear", tick0=1, dtick=4),
+                            xaxis=dict(title="Semana", tickmode="linear", tick0=1, dtick=1, tickangle=-45),
                             yaxis=dict(title="Horas"),
                             plot_bgcolor="rgba(0,0,0,0)",
                             paper_bgcolor="rgba(0,0,0,0)",
