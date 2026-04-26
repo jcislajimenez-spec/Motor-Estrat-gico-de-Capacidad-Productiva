@@ -5829,3 +5829,125 @@ if st.session_state.active_tab == "📅 Simulación anual":
             file_name="plantilla_simulacion_anual.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+        # ── Subida y validación de Excel ──────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### Cargar datos de simulación")
+        st.caption("Sube el Excel relleno (usa la plantilla anterior como base).")
+
+        def _parse_sim_excel(file) -> dict:
+            import io
+            _result = {
+                "errors":     [],
+                "warnings":   [],
+                "demanda":    None,
+                "plan":       None,
+                "especiales": None,
+                "resumen":    None,
+                "n_modelos":  0,
+                "n_semanas":  0,
+            }
+            _semanas_esperadas = [f"Sem {i}" for i in range(1, 53)]
+            try:
+                _xls = pd.ExcelFile(io.BytesIO(file.read()), engine="openpyxl")
+            except Exception as _ex:
+                _result["errors"].append(f"No se pudo leer el archivo Excel: {_ex}")
+                return _result
+
+            _hojas = _xls.sheet_names
+
+            # ── DEMANDA_HORAS — obligatoria ───────────────────────────────────
+            if "DEMANDA_HORAS" not in _hojas:
+                _result["errors"].append("Falta la hoja obligatoria DEMANDA_HORAS.")
+                return _result
+
+            _df_dem = _xls.parse("DEMANDA_HORAS")
+            if "Modelo" not in _df_dem.columns:
+                _result["errors"].append("DEMANDA_HORAS no tiene la columna 'Modelo'.")
+                return _result
+
+            _sems_presentes = [c for c in _df_dem.columns if c in _semanas_esperadas]
+            if not _sems_presentes:
+                _result["errors"].append(
+                    "DEMANDA_HORAS no contiene ninguna columna 'Sem 1'…'Sem 52'."
+                )
+                return _result
+
+            _df_dem_datos = _df_dem.dropna(subset=["Modelo"])
+            if len(_df_dem_datos) == 0:
+                _result["errors"].append("DEMANDA_HORAS está vacía (ninguna fila con Modelo).")
+                return _result
+
+            # Convertir semanas a numérico — celdas no numéricas → 0.0 + aviso
+            for _sc in _sems_presentes:
+                _antes = _df_dem_datos[_sc].copy()
+                _df_dem_datos = _df_dem_datos.copy()
+                _df_dem_datos[_sc] = pd.to_numeric(_df_dem_datos[_sc], errors="coerce").fillna(0.0)
+                if _antes.isna().any() or (_antes.astype(str).str.strip() == "").any():
+                    pass  # vacías → 0.0, sin aviso extra
+                _no_num = pd.to_numeric(_antes, errors="coerce").isna() & _antes.notna() & (_antes.astype(str).str.strip() != "")
+                if _no_num.any():
+                    _result["warnings"].append(
+                        f"DEMANDA_HORAS: valores no numéricos en columna '{_sc}' tratados como 0."
+                    )
+
+            _result["demanda"]   = _df_dem_datos
+            _result["n_modelos"] = len(_df_dem_datos)
+            _result["n_semanas"] = len(_sems_presentes)
+
+            # ── PLAN_HORAS — opcional ─────────────────────────────────────────
+            if "PLAN_HORAS" not in _hojas:
+                _result["warnings"].append("No se encontró la hoja PLAN_HORAS (opcional).")
+            else:
+                _df_plan = _xls.parse("PLAN_HORAS")
+                for _sc in [c for c in _df_plan.columns if c in _semanas_esperadas]:
+                    _df_plan[_sc] = pd.to_numeric(_df_plan[_sc], errors="coerce").fillna(0.0)
+                _result["plan"] = _df_plan
+
+            # ── SEMANAS_ESPECIALES — opcional ─────────────────────────────────
+            if "SEMANAS_ESPECIALES" not in _hojas:
+                _result["warnings"].append("No se encontró la hoja SEMANAS_ESPECIALES (opcional).")
+            else:
+                _df_esp = _xls.parse("SEMANAS_ESPECIALES")
+                _cols_esp = {"semana", "horas_disponibles", "motivo"}
+                _faltan_esp = _cols_esp - set(_df_esp.columns)
+                if _faltan_esp:
+                    _result["warnings"].append(
+                        f"SEMANAS_ESPECIALES existe pero le faltan columnas: {sorted(_faltan_esp)}."
+                    )
+                _result["especiales"] = _df_esp
+
+            # ── RESUMEN_SEMANAL — opcional ────────────────────────────────────
+            if "RESUMEN_SEMANAL" not in _hojas:
+                _result["warnings"].append("No se encontró la hoja RESUMEN_SEMANAL (opcional).")
+            else:
+                _result["resumen"] = _xls.parse("RESUMEN_SEMANAL")
+
+            return _result
+
+        _sim_uploaded = st.file_uploader(
+            "Selecciona el archivo Excel de simulación",
+            type=["xlsx"],
+            key=f"sim_upload_{plant_id}",
+        )
+
+        if _sim_uploaded is not None:
+            _parsed = _parse_sim_excel(_sim_uploaded)
+
+            # Errores bloqueantes
+            if _parsed["errors"]:
+                for _err in _parsed["errors"]:
+                    st.error(f"Error: {_err}")
+            else:
+                # Avisos no bloqueantes
+                for _warn in _parsed["warnings"]:
+                    st.warning(_warn)
+
+                # Resumen de lectura
+                st.success("Archivo leído correctamente.")
+                _sr1, _sr2, _sr3, _sr4, _sr5 = st.columns(5)
+                _sr1.metric("Modelos (DEMANDA)", str(_parsed["n_modelos"]))
+                _sr2.metric("Semanas detectadas", str(_parsed["n_semanas"]))
+                _sr3.metric("PLAN_HORAS",         "✓" if _parsed["plan"]       is not None else "—")
+                _sr4.metric("SEM. ESPECIALES",    "✓" if _parsed["especiales"] is not None else "—")
+                _sr5.metric("RESUMEN_SEMANAL",    "✓" if _parsed["resumen"]    is not None else "—")
