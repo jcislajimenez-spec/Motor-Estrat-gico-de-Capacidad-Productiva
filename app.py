@@ -5938,6 +5938,8 @@ if st.session_state.active_tab == "📅 Simulación anual":
             if _parsed["errors"]:
                 for _err in _parsed["errors"]:
                     st.error(f"Error: {_err}")
+                st.session_state.pop(f"_sim_parsed_{plant_id}", None)
+                st.session_state.pop(f"_sim_result_{plant_id}", None)
             else:
                 # Avisos no bloqueantes
                 for _warn in _parsed["warnings"]:
@@ -5951,3 +5953,92 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _sr3.metric("PLAN_HORAS",         "✓" if _parsed["plan"]       is not None else "—")
                 _sr4.metric("SEM. ESPECIALES",    "✓" if _parsed["especiales"] is not None else "—")
                 _sr5.metric("RESUMEN_SEMANAL",    "✓" if _parsed["resumen"]    is not None else "—")
+                st.session_state[f"_sim_parsed_{plant_id}"] = _parsed
+                st.session_state.pop(f"_sim_result_{plant_id}", None)
+
+        # ── Botón de cálculo y resultado ──────────────────────────────────────
+        _sim_parsed = st.session_state.get(f"_sim_parsed_{plant_id}")
+        if _sim_parsed is not None:
+            _semanas_esperadas = [f"Sem {i}" for i in range(1, 53)]
+            _sems_faltantes = [s for s in _semanas_esperadas
+                               if s not in _sim_parsed["demanda"].columns]
+            _apto_simular = len(_sems_faltantes) == 0
+
+            st.markdown("---")
+
+            if not _apto_simular:
+                st.warning(
+                    "El archivo no es apto para simular. "
+                    f"Semanas faltantes en DEMANDA_HORAS: {', '.join(_sems_faltantes)}"
+                )
+            else:
+                if _sim_parsed["plan"] is None:
+                    st.info(
+                        "PLAN_HORAS no disponible en el archivo — "
+                        "se usará DEMANDA_HORAS como plan de referencia."
+                    )
+
+                if st.button("Calcular simulación anual",
+                             key=f"sim_calc_btn_{plant_id}"):
+                    # Mapa semanas especiales: {semana_int: horas_disponibles}
+                    _esp_map = {}
+                    _df_esp_s = _sim_parsed.get("especiales")
+                    if _df_esp_s is not None:
+                        if "semana" in _df_esp_s.columns and "horas_disponibles" in _df_esp_s.columns:
+                            for _, _erow in _df_esp_s.iterrows():
+                                try:
+                                    _esp_map[int(_erow["semana"])] = float(_erow["horas_disponibles"])
+                                except (ValueError, TypeError):
+                                    pass
+
+                    _rows_sim = []
+                    for _w in range(1, 53):
+                        _scol = f"Sem {_w}"
+                        _dem_w = float(_sim_parsed["demanda"][_scol].sum())
+                        if _sim_parsed["plan"] is not None and _scol in _sim_parsed["plan"].columns:
+                            _plan_w = float(_sim_parsed["plan"][_scol].sum())
+                        else:
+                            _plan_w = _dem_w
+                        _cap_base_w   = _sim_cap_h_sem
+                        _cap_disp_w   = _esp_map.get(_w, _sim_cap_h_sem)
+                        _deficit_w    = max(0.0, _dem_w - _cap_disp_w)
+                        if _deficit_w > 0:
+                            _estado_w = "Déficit"
+                        elif _cap_disp_w > 0 and _dem_w / _cap_disp_w >= 0.9:
+                            _estado_w = "Atención"
+                        else:
+                            _estado_w = "OK"
+                        _rows_sim.append({
+                            "Semana":                  _w,
+                            "Demanda (h)":             round(_dem_w, 1),
+                            "Plan (h)":                round(_plan_w, 1),
+                            "Capacidad base (h)":      round(_cap_base_w, 1),
+                            "Capacidad disponible (h)": round(_cap_disp_w, 1),
+                            "Déficit (h)":             round(_deficit_w, 1),
+                            "Estado":                  _estado_w,
+                        })
+
+                    _tabla_sim = pd.DataFrame(_rows_sim)
+                    _kpis_sim = {
+                        "semanas_deficit": int((_tabla_sim["Déficit (h)"] > 0).sum()),
+                        "demanda_anual":   round(float(_tabla_sim["Demanda (h)"].sum()), 1),
+                        "cap_anual":       round(float(_tabla_sim["Capacidad disponible (h)"].sum()), 1),
+                    }
+                    st.session_state[f"_sim_result_{plant_id}"] = {
+                        "tabla": _tabla_sim,
+                        "kpis":  _kpis_sim,
+                    }
+
+                _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
+                if _sim_result is not None:
+                    st.markdown("#### Resultado de la simulación anual")
+                    _kr1, _kr2, _kr3 = st.columns(3)
+                    _kr1.metric("Semanas con déficit",
+                                str(_sim_result["kpis"]["semanas_deficit"]))
+                    _kr2.metric("Demanda anual total (h)",
+                                _fmt_num(_sim_result["kpis"]["demanda_anual"]))
+                    _kr3.metric("Capacidad anual disponible (h)",
+                                _fmt_num(_sim_result["kpis"]["cap_anual"]))
+                    st.dataframe(_sim_result["tabla"],
+                                 use_container_width=True,
+                                 hide_index=True)
