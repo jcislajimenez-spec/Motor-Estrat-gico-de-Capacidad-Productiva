@@ -2858,21 +2858,6 @@ if st.session_state.active_tab == "📊 Planificación":
             st.success(t("plan_save_ok"))
             st.rerun()
 
-    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
-    _dbg_sc_id   = st.session_state.get(f"scenario_select_{_pid}")
-    _dbg_nm_inp  = st.session_state.get(f"scenario_name_input_{_pid}", "‹no set›")
-    _dbg_sc_map  = st.session_state.get(f"_sc_name_map_{_pid}", {})
-    _dbg_nm_map  = _dbg_sc_map.get(_dbg_sc_id, "‹no encontrado en mapa›")
-    _dbg_pending = f"_pending_scenario_{_pid}" in st.session_state
-    with st.expander("🔍 DEBUG estado escenario — Planificación", expanded=False):
-        st.code(
-            f"plant_id              = {_pid}\n"
-            f"scenario_select       = {_dbg_sc_id}\n"
-            f"scenario_name_input   = {_dbg_nm_inp}\n"
-            f"_sc_name_map keys     = {list(_dbg_sc_map.keys())}\n"
-            f"nombre desde mapa     = {_dbg_nm_map}\n"
-            f"_pending existe       = {_dbg_pending}"
-        )
 
 # =========================================================
 # 2) CONFIGURACIÓN (POWER USER)
@@ -3959,17 +3944,6 @@ if st.session_state.active_tab == "📈 Resultados":
     # ── Título + botón guardar (misma fila) ───────────────────────────────────
     _ex_sc_name = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_active_sc_id, "—")
 
-    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
-    _dbg_r_map = st.session_state.get(f"_sc_name_map_{plant_id}", {})
-    with st.expander("🔍 DEBUG estado escenario — Resultados", expanded=False):
-        st.code(
-            f"plant_id              = {plant_id}\n"
-            f"scenario_select       = {_active_sc_id}\n"
-            f"scenario_name_input   = {st.session_state.get(f'scenario_name_input_{plant_id}', '‹no set›')}\n"
-            f"_sc_name_map keys     = {list(_dbg_r_map.keys())}\n"
-            f"nombre desde mapa     = {_dbg_r_map.get(_active_sc_id, '‹no encontrado›')}\n"
-            f"_ex_sc_name resuelto  = {_ex_sc_name}"
-        )
 
     _ex_header_info = (
         f"**{_ex_sc_name}**"
@@ -5692,20 +5666,6 @@ if st.session_state.active_tab == "📅 Simulación anual":
         if _sim_active_sc_id is not None:
             _sim_sc_name = _sim_sc_map.get(_sim_active_sc_id, "—")
 
-    # ── DEBUG TRACE — TEMPORAL, BORRAR TRAS DIAGNÓSTICO ──────────────────────
-    _dbg_s_map = st.session_state.get(f"_sc_name_map_{plant_id}", {})
-    _dbg_s_ov_key = _raw_sc_id if _raw_sc_id is not None else 0
-    with st.expander("🔍 DEBUG estado escenario — Simulación anual", expanded=False):
-        st.code(
-            f"plant_id              = {plant_id}\n"
-            f"scenario_select       = {st.session_state.get(f'scenario_select_{plant_id}')}\n"
-            f"_raw_sc_id            = {_raw_sc_id}\n"
-            f"_sim_active_sc_id     = {_sim_active_sc_id}\n"
-            f"_sim_ov_sc_key        = {_dbg_s_ov_key}\n"
-            f"_sc_name_map keys     = {list(_dbg_s_map.keys())}\n"
-            f"nombre desde mapa     = {_dbg_s_map.get(_raw_sc_id, '‹no encontrado›')}\n"
-            f"_sim_sc_name resuelto = {_sim_sc_name}"
-        )
 
     # Líneas planificadas: mismo criterio que Resultados
     _sim_all_line_ids = sorted(
