@@ -5932,6 +5932,8 @@ if st.session_state.active_tab == "📅 Simulación anual":
         )
 
         if _sim_uploaded is not None:
+            import hashlib
+            _file_hash = hashlib.sha256(_sim_uploaded.getvalue()).hexdigest()
             _parsed = _parse_sim_excel(_sim_uploaded)
 
             # Errores bloqueantes
@@ -5954,7 +5956,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _sr4.metric("SEM. ESPECIALES",    "✓" if _parsed["especiales"] is not None else "—")
                 _sr5.metric("RESUMEN_SEMANAL",    "✓" if _parsed["resumen"]    is not None else "—")
                 st.session_state[f"_sim_parsed_{plant_id}"] = _parsed
-                st.session_state.pop(f"_sim_result_{plant_id}", None)
+                if _file_hash != st.session_state.get(f"_sim_file_hash_{plant_id}"):
+                    st.session_state.pop(f"_sim_result_{plant_id}", None)
+                st.session_state[f"_sim_file_hash_{plant_id}"] = _file_hash
 
         # ── Botón de cálculo y resultado ──────────────────────────────────────
         _sim_parsed = st.session_state.get(f"_sim_parsed_{plant_id}")
