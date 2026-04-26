@@ -6096,3 +6096,50 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         st.dataframe(_sim_result["tabla"],
                                      use_container_width=True,
                                      hide_index=True)
+
+                        # ── Export Excel ──────────────────────────────────────────────
+                        def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname):
+                            import io as _io_exp
+                            _buf_exp = _io_exp.BytesIO()
+                            _estado_map_exp = {
+                                "🟢 OK":       "OK",
+                                "🟡 Atención": "Atención",
+                                "🔴 Déficit":  "Déficit",
+                                "⚫ Parada":   "Parada",
+                            }
+                            _tabla_exp = _tabla.copy()
+                            _tabla_exp["Estado"] = _tabla_exp["Estado"].map(
+                                lambda v: _estado_map_exp.get(v, v)
+                            )
+                            _pico_str = f"Sem {_kpis['semana_pico']}" if _kpis["semana_pico"] != "—" else "—"
+                            _resumen_exp = pd.DataFrame([
+                                {"Parámetro": "Planta",                    "Valor": _pname},
+                                {"Parámetro": "Escenario",                 "Valor": _scname},
+                                {"Parámetro": "Fecha de cálculo",          "Valor": datetime.now().strftime("%Y-%m-%d")},
+                                {"Parámetro": "Capacidad base (h/sem)",    "Valor": _cap_base},
+                                {"Parámetro": "Semanas con cap. especial", "Valor": _n_esp},
+                                {"Parámetro": "Semanas con déficit",       "Valor": _kpis["semanas_deficit"]},
+                                {"Parámetro": "Déficit acumulado (h)",     "Valor": _kpis["deficit_acumulado"]},
+                                {"Parámetro": "Semana pico",               "Valor": _pico_str},
+                                {"Parámetro": "Saturación máxima (%)",     "Valor": _kpis["sat_max"]},
+                                {"Parámetro": "Saturación media (%)",      "Valor": _kpis["sat_media"]},
+                            ])
+                            with pd.ExcelWriter(_buf_exp, engine="openpyxl") as _writer_exp:
+                                _resumen_exp.to_excel(_writer_exp, sheet_name="RESUMEN", index=False)
+                                _tabla_exp.to_excel(_writer_exp, sheet_name="SIMULACIÓN_SEMANAL", index=False)
+                            return _buf_exp.getvalue()
+
+                        _export_fname = datetime.now().strftime("simulacion_anual_%Y-%m-%d_%H-%M.xlsx")
+                        st.download_button(
+                            label="⬇️ Exportar simulación a Excel",
+                            data=_build_sim_export_xlsx(
+                                _sim_result["tabla"],
+                                _sim_result["kpis"],
+                                _sim_cap_h_sem,
+                                _n_esp_red,
+                                selected_plant_name,
+                                _sim_sc_name,
+                            ),
+                            file_name=_export_fname,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
