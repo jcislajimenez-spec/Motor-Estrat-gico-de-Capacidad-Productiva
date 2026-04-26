@@ -5999,30 +5999,39 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             _plan_w = float(_sim_parsed["plan"][_scol].sum())
                         else:
                             _plan_w = _dem_w
-                        _cap_base_w   = _sim_cap_h_sem
-                        _cap_disp_w   = _esp_map.get(_w, _sim_cap_h_sem)
-                        _deficit_w    = max(0.0, _dem_w - _cap_disp_w)
-                        if _deficit_w > 0:
-                            _estado_w = "Déficit"
-                        elif _cap_disp_w > 0 and _dem_w / _cap_disp_w >= 0.9:
-                            _estado_w = "Atención"
+                        _cap_disp_w = _esp_map.get(_w, _sim_cap_h_sem)
+                        _deficit_w  = max(0.0, _dem_w - _cap_disp_w)
+                        _sat_w      = round(_dem_w / _cap_disp_w * 100, 1) if _cap_disp_w > 0 else 0.0
+                        if _cap_disp_w == 0:
+                            _estado_w = "⚫ Parada"
+                        elif _deficit_w > 0:
+                            _estado_w = "🔴 Déficit"
+                        elif _sat_w >= 90.0:
+                            _estado_w = "🟡 Atención"
                         else:
-                            _estado_w = "OK"
+                            _estado_w = "🟢 OK"
                         _rows_sim.append({
-                            "Semana":                  _w,
-                            "Demanda (h)":             round(_dem_w, 1),
-                            "Plan (h)":                round(_plan_w, 1),
-                            "Capacidad base (h)":      round(_cap_base_w, 1),
-                            "Capacidad disponible (h)": round(_cap_disp_w, 1),
-                            "Déficit (h)":             round(_deficit_w, 1),
-                            "Estado":                  _estado_w,
+                            "Semana":              _w,
+                            "Demanda (h)":         round(_dem_w, 1),
+                            "Plan (h)":            round(_plan_w, 1),
+                            "Cap. disponible (h)": round(_cap_disp_w, 1),
+                            "Saturación (%)":      _sat_w,
+                            "Déficit (h)":         round(_deficit_w, 1),
+                            "Estado":              _estado_w,
                         })
 
-                    _tabla_sim = pd.DataFrame(_rows_sim)
+                    _tabla_sim       = pd.DataFrame(_rows_sim)
+                    _mask_no_parada  = _tabla_sim["Estado"] != "⚫ Parada"
+                    _mask_activa     = _tabla_sim["Cap. disponible (h)"] > 0
+                    _sat_series      = _tabla_sim.loc[_mask_activa, "Saturación (%)"]
+                    _pico_idx        = _sat_series.idxmax() if not _sat_series.empty else None
+                    _semana_pico_val = int(_tabla_sim.loc[_pico_idx, "Semana"]) if _pico_idx is not None else "—"
                     _kpis_sim = {
-                        "semanas_deficit": int((_tabla_sim["Déficit (h)"] > 0).sum()),
-                        "demanda_anual":   round(float(_tabla_sim["Demanda (h)"].sum()), 1),
-                        "cap_anual":       round(float(_tabla_sim["Capacidad disponible (h)"].sum()), 1),
+                        "semanas_deficit":   int((_mask_no_parada & (_tabla_sim["Déficit (h)"] > 0)).sum()),
+                        "deficit_acumulado": round(float(_tabla_sim["Déficit (h)"].sum()), 1),
+                        "semana_pico":       _semana_pico_val,
+                        "sat_max":           round(float(_sat_series.max()), 1) if not _sat_series.empty else 0.0,
+                        "sat_media":         round(float(_sat_series.mean()), 1) if not _sat_series.empty else 0.0,
                     }
                     st.session_state[f"_sim_result_{plant_id}"] = {
                         "tabla": _tabla_sim,
@@ -6031,14 +6040,29 @@ if st.session_state.active_tab == "📅 Simulación anual":
 
                 _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
                 if _sim_result is not None:
-                    st.markdown("#### Resultado de la simulación anual")
-                    _kr1, _kr2, _kr3 = st.columns(3)
-                    _kr1.metric("Semanas con déficit",
-                                str(_sim_result["kpis"]["semanas_deficit"]))
-                    _kr2.metric("Demanda anual total (h)",
-                                _fmt_num(_sim_result["kpis"]["demanda_anual"]))
-                    _kr3.metric("Capacidad anual disponible (h)",
-                                _fmt_num(_sim_result["kpis"]["cap_anual"]))
-                    st.dataframe(_sim_result["tabla"],
-                                 use_container_width=True,
-                                 hide_index=True)
+                    if "semana_pico" not in _sim_result.get("kpis", {}):
+                        st.info("Pulsa 'Calcular simulación anual' para actualizar el resultado con el nuevo formato.")
+                    else:
+                        _rk = _sim_result["kpis"]
+                        st.markdown("#### Resultado de la simulación anual")
+                        _kr1, _kr2, _kr3, _kr4, _kr5 = st.columns(5)
+                        _kr1.metric("Semanas con déficit",
+                                    str(_rk["semanas_deficit"]))
+                        _kr2.metric("Déficit acumulado (h)",
+                                    _fmt_num(_rk["deficit_acumulado"]))
+                        _kr3.metric("Semana pico",
+                                    f"Sem {_rk['semana_pico']}" if _rk["semana_pico"] != "—" else "—")
+                        _kr4.metric("Saturación máxima (%)",
+                                    f"{_rk['sat_max']} %")
+                        _kr5.metric("Saturación media (%)",
+                                    f"{_rk['sat_media']} %")
+                        _n_esp_red = int(
+                            (_sim_result["tabla"]["Cap. disponible (h)"] < _sim_cap_h_sem).sum()
+                        )
+                        _cap_note = f" · {_n_esp_red} sem. con capacidad reducida" if _n_esp_red > 0 else ""
+                        st.caption(
+                            f"Capacidad base de planta: {_fmt_num(_sim_cap_h_sem)} h/sem{_cap_note}"
+                        )
+                        st.dataframe(_sim_result["tabla"],
+                                     use_container_width=True,
+                                     hide_index=True)
