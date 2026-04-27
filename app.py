@@ -5994,6 +5994,154 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         "se usará DEMANDA_HORAS como plan de referencia."
                     )
 
+                # ── BLOQUE 2B — Configuración de tramos de capacidad ─────────
+                st.markdown("---")
+                st.markdown("**Tramos de capacidad semanales**")
+
+                # Scenario map for selectboxes
+                _tram_sc_map = st.session_state.get(f"_sc_name_map_{plant_id}", {})
+                if not _tram_sc_map and _has_db():
+                    _tram_raw_list = list_scenarios(plant_id)
+                    _tram_sc_map = {s["id"]: s["name"] for s in _tram_raw_list}
+                    st.session_state[f"_sc_name_map_{plant_id}"] = _tram_sc_map
+                if not _tram_sc_map and _sim_active_sc_id is not None:
+                    _tram_sc_map = {_sim_active_sc_id: _sim_sc_name}
+                _tram_sc_ids = list(_tram_sc_map.keys())
+
+                # Initialize tramos list (1 tramo por defecto)
+                _tram_key = f"_sim_tramos_{plant_id}"
+                if _tram_key not in st.session_state or not st.session_state[_tram_key]:
+                    _def_sc = _tram_sc_ids[0] if _tram_sc_ids else None
+                    st.session_state[_tram_key] = [
+                        {"sem_inicio": 1, "sem_fin": 52, "sc_id": _def_sc}
+                    ]
+                _tramos = st.session_state[_tram_key]
+
+                # Helpers: read current widget values → rebuild list; clear widget keys
+                def _tram_read_widgets(trs, pid):
+                    _out = []
+                    for _ti, _tr in enumerate(trs):
+                        _out.append({
+                            "sem_inicio": st.session_state.get(f"_tram_{pid}_{_ti}_ini", _tr["sem_inicio"]),
+                            "sem_fin":    st.session_state.get(f"_tram_{pid}_{_ti}_fin", _tr["sem_fin"]),
+                            "sc_id":      st.session_state.get(f"_tram_{pid}_{_ti}_sc",  _tr["sc_id"]),
+                        })
+                    return _out
+
+                def _tram_clear_keys(pid, n_max=12):
+                    for _ki in range(n_max):
+                        for _ks in ["_ini", "_fin", "_sc"]:
+                            st.session_state.pop(f"_tram_{pid}_{_ki}{_ks}", None)
+
+                # Validation: check full 1–52 coverage, no gaps, no overlaps
+                def _validate_tramos(trs):
+                    if not trs:
+                        return ["Debe haber al menos 1 tramo."]
+                    _errs = []
+                    for _vi, _vt in enumerate(trs):
+                        if _vt["sem_inicio"] > _vt["sem_fin"]:
+                            _errs.append(
+                                f"Tramo {_vi + 1}: inicio ({_vt['sem_inicio']}) "
+                                f"mayor que fin ({_vt['sem_fin']})."
+                            )
+                    if _errs:
+                        return _errs
+                    _sorted = sorted(trs, key=lambda _x: _x["sem_inicio"])
+                    if _sorted[0]["sem_inicio"] != 1:
+                        _errs.append(
+                            f"Hueco: semanas 1–{_sorted[0]['sem_inicio'] - 1} sin cubrir."
+                        )
+                    _exp = 1
+                    for _vt in _sorted:
+                        if _vt["sem_inicio"] > _exp:
+                            _errs.append(
+                                f"Hueco: semanas {_exp}–{_vt['sem_inicio'] - 1} sin cubrir."
+                            )
+                        elif _vt["sem_inicio"] < _exp:
+                            _errs.append(
+                                f"Solapamiento: semanas {_vt['sem_inicio']}–{_exp - 1} "
+                                "cubiertas más de una vez."
+                            )
+                        _exp = _vt["sem_fin"] + 1
+                    if _exp != 53:
+                        _errs.append(
+                            f"Hueco: semanas {_exp - 1 if _exp > 1 else _exp}–52 sin cubrir."
+                        )
+                    return _errs
+
+                # Column headers
+                _th0, _th1, _th2, _th3 = st.columns([1, 1, 4, 1])
+                _th0.caption("Sem inicio")
+                _th1.caption("Sem fin")
+                _th2.caption("Escenario")
+                _th3.caption("")
+
+                _del_idx = None
+                for _ti, _tr in enumerate(_tramos):
+                    _tc0, _tc1, _tc2, _tc3 = st.columns([1, 1, 4, 1])
+                    _tr["sem_inicio"] = _tc0.number_input(
+                        "ini", min_value=1, max_value=52,
+                        value=_tr["sem_inicio"],
+                        key=f"_tram_{plant_id}_{_ti}_ini",
+                        label_visibility="collapsed",
+                    )
+                    _tr["sem_fin"] = _tc1.number_input(
+                        "fin", min_value=1, max_value=52,
+                        value=_tr["sem_fin"],
+                        key=f"_tram_{plant_id}_{_ti}_fin",
+                        label_visibility="collapsed",
+                    )
+                    if _tram_sc_ids:
+                        _cur_sc = _tr["sc_id"] if _tr["sc_id"] in _tram_sc_ids else _tram_sc_ids[0]
+                        _tr["sc_id"] = _tc2.selectbox(
+                            "sc",
+                            options=_tram_sc_ids,
+                            format_func=lambda _sid: _tram_sc_map.get(_sid, str(_sid)),
+                            index=_tram_sc_ids.index(_cur_sc),
+                            key=f"_tram_{plant_id}_{_ti}_sc",
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        _tc2.caption("— sin escenarios disponibles —")
+                    if len(_tramos) > 1:
+                        if _tc3.button("✕", key=f"_tram_{plant_id}_{_ti}_del", use_container_width=True):
+                            _del_idx = _ti
+
+                # Apply delete
+                if _del_idx is not None:
+                    _rebuilt = _tram_read_widgets(_tramos, plant_id)
+                    _rebuilt.pop(_del_idx)
+                    _tram_clear_keys(plant_id)
+                    st.session_state[_tram_key] = _rebuilt
+                    st.rerun()
+
+                # Add button — disabled only at max 10 tramos
+                if st.button(
+                    "＋ Añadir tramo",
+                    key=f"_tram_{plant_id}_add",
+                    disabled=len(_tramos) >= 10,
+                ):
+                    _rebuilt = _tram_read_widgets(_tramos, plant_id)
+                    _last_fin = _rebuilt[-1]["sem_fin"] if _rebuilt else 0
+                    _new_ini  = min(_last_fin + 1, 52)
+                    _def_sc   = _tram_sc_ids[0] if _tram_sc_ids else None
+                    _rebuilt.append({"sem_inicio": _new_ini, "sem_fin": 52, "sc_id": _def_sc})
+                    _tram_clear_keys(plant_id)
+                    st.session_state[_tram_key] = _rebuilt
+                    st.rerun()
+
+                # Validation feedback
+                _tram_errs = _validate_tramos(_tramos)
+                if _tram_errs:
+                    for _te in _tram_errs:
+                        st.error(_te)
+                else:
+                    st.success("Cobertura completa: Sem 1–52")
+
+                # Scope warning
+                st.info("Configuración preparada. Todavía no afecta al cálculo de esta versión.")
+                st.markdown("---")
+
                 if st.button("Calcular simulación anual",
                              key=f"sim_calc_btn_{plant_id}",
                              use_container_width=True):
