@@ -5728,24 +5728,15 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, _s_lhe)
             _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
 
-        # ── Bloque azul informativo ───────────────────────────────────────────
-        st.info(
-            f"**{_sim_sc_name}**  ·  {len(_sim_planned_line_ids)} {t('sim_lines_planned')}"
-        )
-
-        # ── Métricas de capacidad base ────────────────────────────────────────
-        st.markdown(f"#### {t('sim_cap_base_label')}")
-        _sc1, _sc2, _sc3 = st.columns(3)
-        _sc1.metric(t("sim_cap_per_line"),   f"{_fmt_num(_sim_cap_h_sem / len(_sim_planned_line_ids))} h/sem")
-        _sc2.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
-        _sc3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
-
+        # ── BLOQUE 1 — Cabecera operativa ────────────────────────────────────
+        _hdr1, _hdr2, _hdr3, _hdr4 = st.columns([3, 2, 2, 2])
+        with _hdr1:
+            st.markdown("**Escenario activo**")
+            st.markdown(f"{_sim_sc_name}")
+        _hdr2.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
+        _hdr3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
+        _hdr4.metric(t("sim_cap_per_line"),   f"{_fmt_num(_sim_cap_h_sem / len(_sim_planned_line_ids))} h/sem")
         st.caption(t("sim_cap_base_note"))
-
-        # ── Plantilla descargable ─────────────────────────────────────────────
-        st.markdown("---")
-        st.markdown("#### Plantilla de simulación anual")
-        st.caption("Descarga la plantilla Excel, rellena los datos y súbela para ejecutar la simulación.")
 
         def _build_sim_template_xlsx() -> bytes:
             import io
@@ -5783,17 +5774,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
 
             return _buf.getvalue()
 
-        st.download_button(
-            label="⬇️ Descargar plantilla Excel",
-            data=_build_sim_template_xlsx(),
-            file_name="plantilla_simulacion_anual.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-        # ── Subida y validación de Excel ──────────────────────────────────────
-        st.markdown("---")
-        st.markdown("#### Cargar datos de simulación")
-        st.caption("Sube el Excel relleno (usa la plantilla anterior como base).")
+        # ── BLOQUE 2 — Carga + plantilla ─────────────────────────────────────
 
         def _parse_sim_excel(file) -> dict:
             import io
@@ -5885,11 +5866,21 @@ if st.session_state.active_tab == "📅 Simulación anual":
 
             return _result
 
-        _sim_uploaded = st.file_uploader(
-            "Selecciona el archivo Excel de simulación",
-            type=["xlsx"],
-            key=f"sim_upload_{plant_id}",
-        )
+        _col_up, _col_tmpl = st.columns([3, 1])
+        with _col_up:
+            _sim_uploaded = st.file_uploader(
+                "Selecciona el archivo Excel de simulación",
+                type=["xlsx"],
+                key=f"sim_upload_{plant_id}",
+            )
+        with _col_tmpl:
+            st.caption("Usa la plantilla como base.")
+            st.download_button(
+                label="⬇️ Plantilla Excel",
+                data=_build_sim_template_xlsx(),
+                file_name="plantilla_simulacion_anual.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
         if _sim_uploaded is not None:
             import hashlib
@@ -5907,28 +5898,25 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 for _warn in _parsed["warnings"]:
                     st.warning(_warn)
 
-                # Resumen de lectura
-                st.success("Archivo leído correctamente.")
-                _sr1, _sr2, _sr3, _sr4, _sr5 = st.columns(5)
-                _sr1.metric("Modelos (DEMANDA)", str(_parsed["n_modelos"]))
-                _sr2.metric("Semanas detectadas", str(_parsed["n_semanas"]))
-                _sr3.metric("PLAN_HORAS",         "✓" if _parsed["plan"]       is not None else "—")
-                _sr4.metric("SEM. ESPECIALES",    "✓" if _parsed["especiales"] is not None else "—")
-                _sr5.metric("RESUMEN_SEMANAL",    "✓" if _parsed["resumen"]    is not None else "—")
+                # Resumen de lectura — validación compacta
+                st.success(
+                    f"✓ {_parsed['n_modelos']} modelos · {_parsed['n_semanas']} semanas"
+                    f" · PLAN {'✓' if _parsed['plan'] is not None else '—'}"
+                    f" · SEM. ESPECIALES {'✓' if _parsed['especiales'] is not None else '—'}"
+                    f" · RESUMEN {'✓' if _parsed['resumen'] is not None else '—'}"
+                )
                 st.session_state[f"_sim_parsed_{plant_id}"] = _parsed
                 if _file_hash != st.session_state.get(f"_sim_file_hash_{plant_id}"):
                     st.session_state.pop(f"_sim_result_{plant_id}", None)
                 st.session_state[f"_sim_file_hash_{plant_id}"] = _file_hash
 
-        # ── Botón de cálculo y resultado ──────────────────────────────────────
+        # ── Cálculo y resultados de simulación ──────────────────────────────
         _sim_parsed = st.session_state.get(f"_sim_parsed_{plant_id}")
         if _sim_parsed is not None:
             _semanas_esperadas = [f"Sem {i}" for i in range(1, 53)]
             _sems_faltantes = [s for s in _semanas_esperadas
                                if s not in _sim_parsed["demanda"].columns]
             _apto_simular = len(_sems_faltantes) == 0
-
-            st.markdown("---")
 
             if not _apto_simular:
                 st.warning(
@@ -5943,7 +5931,8 @@ if st.session_state.active_tab == "📅 Simulación anual":
                     )
 
                 if st.button("Calcular simulación anual",
-                             key=f"sim_calc_btn_{plant_id}"):
+                             key=f"sim_calc_btn_{plant_id}",
+                             use_container_width=True):
                     # Mapa semanas especiales: {semana_int: horas_disponibles}
                     _esp_map = {}
                     _df_esp_s = _sim_parsed.get("especiales")
@@ -6008,7 +5997,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         st.info("Pulsa 'Calcular simulación anual' para actualizar el resultado con el nuevo formato.")
                     else:
                         _rk = _sim_result["kpis"]
-                        st.markdown("#### Resultado de la simulación anual")
+                        st.markdown(f"#### Simulación anual — {_sim_sc_name}")
                         _kr1, _kr2, _kr3, _kr4, _kr5 = st.columns(5)
                         _kr1.metric("Semanas con déficit",
                                     str(_rk["semanas_deficit"]))
@@ -6093,9 +6082,19 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         )
                         st.plotly_chart(_fig_sim, use_container_width=True)
 
-                        st.dataframe(_sim_result["tabla"],
-                                     use_container_width=True,
-                                     hide_index=True)
+                        # ── BLOQUE 7 — Tabla operativa ───────────────────────────────
+                        _tabla_critica = _sim_result["tabla"][
+                            _sim_result["tabla"]["Estado"].isin(
+                                ["🔴 Déficit", "🟡 Atención", "⚫ Parada"]
+                            )
+                        ].copy()
+                        if not _tabla_critica.empty:
+                            st.markdown("##### Semanas críticas")
+                            st.dataframe(_tabla_critica, use_container_width=True, hide_index=True)
+                        else:
+                            st.success("Sin semanas críticas — todas las semanas dentro de capacidad.")
+                        with st.expander("Ver tabla completa (52 semanas)", expanded=False):
+                            st.dataframe(_sim_result["tabla"], use_container_width=True, hide_index=True)
 
                         # ── Export Excel ──────────────────────────────────────────────
                         def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname):
