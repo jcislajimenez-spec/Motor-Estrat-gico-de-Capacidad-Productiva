@@ -1462,11 +1462,12 @@ def create_scenario_inactive(plant_id: int, name: str, line_model: dict, line_de
 
 
 def _on_scenario_select_change(pid) -> None:
-    """on_change callback for the scenario selectbox. Syncs the name field to the newly selected scenario."""
+    """on_change callback for the scenario selectbox. Syncs the name field and session sc id to the newly selected scenario."""
     _sel = st.session_state.get(f"scenario_select_{pid}")
     _nmap = st.session_state.get(f"_sc_name_map_{pid}", {})
     if _sel in _nmap:
         st.session_state[f"scenario_name_input_{pid}"] = _nmap[_sel]
+        st.session_state[f"_session_sc_id_{pid}"] = _sel
 
 
 def ensure_int(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -2754,7 +2755,9 @@ if st.session_state.active_tab == "📊 Planificación":
             # Apply deferred selection (set by delete/duplicate/save-as-new on previous run)
             _defer_sel_key = f"_deferred_sc_select_{_pid}"
             if _defer_sel_key in st.session_state:
-                st.session_state[f"scenario_select_{_pid}"] = st.session_state.pop(_defer_sel_key)
+                _deferred_id = st.session_state.pop(_defer_sel_key)
+                st.session_state[f"scenario_select_{_pid}"] = _deferred_id
+                st.session_state[f"_session_sc_id_{_pid}"] = _deferred_id
 
             # Apply deferred name (set by duplicate/save-as-new/save-changes on previous run)
             _defer_name_key = f"_deferred_sc_name_{_pid}"
@@ -4364,7 +4367,7 @@ if st.session_state.active_tab == "📈 Resultados":
         _export_df = _export_df.rename(columns={
             "nave": "Nave", "line": "Línea", "model": "Modelo", "bottleneck": "Cuello de botella"
         })
-        _sel_sc_id = st.session_state.get(f"scenario_select_{plant_id}")
+        _sel_sc_id = st.session_state.get(f"_session_sc_id_{plant_id}")
         _sc_name_export = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_sel_sc_id, "")
         _export_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         _export_filename = f"capacidad_{selected_plant_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
