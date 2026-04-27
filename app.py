@@ -6029,7 +6029,39 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             ["Plan (h)", "Cap. disponible (h)", "Saturación (%)", "Déficit (h)", "Estado"]
                         ].values
 
+                        # ── Banda estructural según mix ──────────────────────────────
+                        _mix_struct = compute_plant_structural_capacity(
+                            plant_id, selected_plant_name,
+                            settings_df, models_df, times_df, stations_df, compat_df,
+                        )
+                        _mix_min_h  = _mix_struct.get("min_h_sem", 0.0)
+                        _mix_prom_h = _mix_struct.get("prom_h_sem", 0.0)
+                        _mix_max_h  = _mix_struct.get("max_h_sem", 0.0)
+                        _mix_weeks  = list(range(1, 53))
+
                         _fig_sim = go.Figure()
+
+                        if _mix_max_h > 0:
+                            _fig_sim.add_trace(go.Scatter(
+                                x=_mix_weeks, y=[_mix_min_h] * 52,
+                                mode="lines", line=dict(width=0),
+                                showlegend=False, hoverinfo="skip",
+                            ))
+                            _fig_sim.add_trace(go.Scatter(
+                                x=_mix_weeks, y=[_mix_max_h] * 52,
+                                mode="lines", line=dict(width=0),
+                                fill="tonexty",
+                                fillcolor="rgba(100,160,100,0.15)",
+                                name="Rango estructural según mix — sin overrides",
+                                hoverinfo="skip",
+                            ))
+                            _fig_sim.add_trace(go.Scatter(
+                                x=_mix_weeks, y=[_mix_prom_h] * 52,
+                                mode="lines",
+                                line=dict(color="rgba(100,160,100,0.55)", width=1, dash="dot"),
+                                name="Promedio estructural según mix",
+                                hoverinfo="skip",
+                            ))
 
                         _fig_sim.add_trace(go.Bar(
                             x=_df_g["Semana"],
@@ -6081,6 +6113,14 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             bargap=0.15,
                         )
                         st.plotly_chart(_fig_sim, use_container_width=True)
+                        if _mix_max_h > 0:
+                            st.caption(
+                                f"La banda sombreada representa el rango estructural según mix, "
+                                f"calculado sin overrides de escenario — "
+                                f"Mín: {_fmt_num(_mix_min_h)} h/sem · "
+                                f"Prom: {_fmt_num(_mix_prom_h)} h/sem · "
+                                f"Máx: {_fmt_num(_mix_max_h)} h/sem"
+                            )
 
                         # ── BLOQUE 7 — Tabla operativa ───────────────────────────────
                         _tabla_critica = _sim_result["tabla"][
