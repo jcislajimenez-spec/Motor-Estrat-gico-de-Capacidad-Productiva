@@ -6044,21 +6044,21 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         if _mix_max_h > 0:
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_min_h] * 52,
-                                mode="lines", line=dict(width=0),
+                                mode="lines", line=dict(color="rgba(60,120,60,0.6)", width=1),
                                 showlegend=False, hoverinfo="skip",
                             ))
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_max_h] * 52,
-                                mode="lines", line=dict(width=0),
+                                mode="lines", line=dict(color="rgba(60,120,60,0.6)", width=1),
                                 fill="tonexty",
-                                fillcolor="rgba(100,160,100,0.25)",
+                                fillcolor="rgba(100,160,100,0.35)",
                                 name="Rango estructural según mix — sin overrides",
                                 hoverinfo="skip",
                             ))
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_prom_h] * 52,
                                 mode="lines",
-                                line=dict(color="rgba(60,120,60,0.8)", width=1.5, dash="dot"),
+                                line=dict(color="rgba(60,120,60,0.8)", width=1.5, dash="dashdot"),
                                 name="Promedio estructural según mix",
                                 hoverinfo="skip",
                             ))
@@ -6069,6 +6069,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             name="Demanda (h)",
                             marker_color=_bar_colors_g,
                             opacity=0.65,
+                            width=0.55,
                             customdata=_custom_g,
                             hovertemplate=(
                                 "<b>Sem %{x}</b><br>"
@@ -6087,7 +6088,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             y=_df_g["Cap. disponible (h)"],
                             name="Cap. disponible (escenario activo)",
                             mode="lines",
-                            line=dict(color="#3d3d3d", width=3, shape="hv"),
+                            line=dict(color="#3d3d3d", width=2.3, shape="hv"),
                             hoverinfo="skip",
                         ))
 
