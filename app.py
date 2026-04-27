@@ -2751,15 +2751,6 @@ if st.session_state.active_tab == "📊 Planificación":
             # Make name map available to the on_change callback (read by _on_scenario_select_change)
             st.session_state[f"_sc_name_map_{_pid}"] = _sc_name_map
 
-            # Pre-sync selectbox to the actually loaded scenario (_session_sc_id_).
-            # Resets stale widget state after tab navigation without having pressed Cargar.
-            # Deferred selection (below) overrides this when a post-action jump is pending.
-            _trusted_sc_id = st.session_state.get(f"_session_sc_id_{_pid}")
-            if _trusted_sc_id in _sc_label_map:
-                if st.session_state.get(f"scenario_select_{_pid}") != _trusted_sc_id:
-                    st.session_state[f"scenario_select_{_pid}"] = _trusted_sc_id
-                    st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map.get(_trusted_sc_id, "")
-
             # Apply deferred selection (set by delete/duplicate/save-as-new on previous run)
             _defer_sel_key = f"_deferred_sc_select_{_pid}"
             if _defer_sel_key in st.session_state:
