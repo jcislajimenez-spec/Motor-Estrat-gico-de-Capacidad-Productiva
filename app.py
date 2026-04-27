@@ -6051,14 +6051,14 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 x=_mix_weeks, y=[_mix_max_h] * 52,
                                 mode="lines", line=dict(width=0),
                                 fill="tonexty",
-                                fillcolor="rgba(100,160,100,0.15)",
+                                fillcolor="rgba(100,160,100,0.25)",
                                 name="Rango estructural según mix — sin overrides",
                                 hoverinfo="skip",
                             ))
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_prom_h] * 52,
                                 mode="lines",
-                                line=dict(color="rgba(100,160,100,0.55)", width=1, dash="dot"),
+                                line=dict(color="rgba(60,120,60,0.8)", width=1.5, dash="dot"),
                                 name="Promedio estructural según mix",
                                 hoverinfo="skip",
                             ))
@@ -6068,6 +6068,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             y=_df_g["Demanda (h)"],
                             name="Demanda (h)",
                             marker_color=_bar_colors_g,
+                            opacity=0.65,
                             customdata=_custom_g,
                             hovertemplate=(
                                 "<b>Sem %{x}</b><br>"
@@ -6084,9 +6085,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _fig_sim.add_trace(go.Scatter(
                             x=_df_g["Semana"],
                             y=_df_g["Cap. disponible (h)"],
-                            name="Cap. disponible (h)",
+                            name="Cap. disponible (escenario activo)",
                             mode="lines",
-                            line=dict(color="#3d3d3d", width=2, shape="hv"),
+                            line=dict(color="#3d3d3d", width=3, shape="hv"),
                             hoverinfo="skip",
                         ))
 
@@ -6102,11 +6103,11 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             ))
 
                         _fig_sim.update_layout(
-                            height=380,
+                            height=420,
                             margin=dict(t=20, b=40, l=0, r=0),
                             legend=dict(orientation="h", yanchor="bottom", y=1.01,
                                         xanchor="right", x=1),
-                            xaxis=dict(title="Semana", tickmode="linear", tick0=1, dtick=1, tickangle=-45),
+                            xaxis=dict(title="Semana", tickmode="linear", tick0=1, dtick=2, tickangle=-45),
                             yaxis=dict(title="Horas"),
                             plot_bgcolor="rgba(0,0,0,0)",
                             paper_bgcolor="rgba(0,0,0,0)",
@@ -6119,7 +6120,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 f"calculado sin overrides de escenario — "
                                 f"Mín: {_fmt_num(_mix_min_h)} h/sem · "
                                 f"Prom: {_fmt_num(_mix_prom_h)} h/sem · "
-                                f"Máx: {_fmt_num(_mix_max_h)} h/sem"
+                                f"Máx: {_fmt_num(_mix_max_h)} h/sem. "
+                                f"Si la línea negra queda fuera de la banda, puede deberse a overrides "
+                                f"de turnos, disponibilidad o eficiencia del escenario activo."
                             )
 
                         # ── BLOQUE 7 — Tabla operativa ───────────────────────────────
