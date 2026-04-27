@@ -5715,6 +5715,47 @@ if st.session_state.active_tab == "📅 Simulación anual":
         _sim_tc["cycle_time"] = pd.to_numeric(_sim_tc["cycle_time"], errors="coerce").fillna(0.0)
         _sim_ctm = _sim_tc.groupby("model")["cycle_time"].sum().to_dict()
 
+        # ── Función local: capacidad de cualquier escenario leyendo desde BD ──
+        def _compute_cap_for_scenario(
+            sc_id: int,
+            times_df_local: pd.DataFrame,
+            stations_df_local: pd.DataFrame,
+            ctm: dict,
+            hours_week_l: float,
+            shifts_l: int,
+            availability_l: float,
+            efficiency_l: float,
+            hours_eff_l: float,
+        ) -> float:
+            _sc_data = load_scenario_by_id(sc_id)
+            if not _sc_data:
+                return 0.0
+            _sc_ov   = load_scenario_line_overrides(sc_id)
+            _sc_proc = load_scenario_process_shifts(sc_id)
+            _all_lids = sorted(
+                stations_df_local["line_id"].astype(str).str.strip().unique().tolist()
+            )
+            _planned_l = [_lid for _lid in _all_lids if _sc_data["line_model"].get(_lid)]
+            _cap_l = 0.0
+            for _lid in _planned_l:
+                _mdl = _sc_data["line_model"][_lid]
+                _ov  = _sc_ov.get(_lid, {})
+                if _ov.get("enabled", False):
+                    _he = hours_week_l * int(_ov["shifts"]) * float(_ov["availability"]) * float(_ov["efficiency"])
+                else:
+                    _he = hours_eff_l
+                _phe = None
+                if _lid in _sc_proc:
+                    _a = float(_ov.get("availability", availability_l)) if _ov.get("enabled") else availability_l
+                    _e = float(_ov.get("efficiency",   efficiency_l))   if _ov.get("enabled") else efficiency_l
+                    _phe = {_p: hours_week_l * float(_sh) * _a * _e for _p, _sh in _sc_proc[_lid].items()}
+                if _phe is not None:
+                    _, _, _cap_w = compute_line_detail_v2(_lid, _mdl, times_df_local, stations_df_local, _he, _phe)
+                else:
+                    _, _, _cap_w = compute_line_detail(_lid, _mdl, times_df_local, stations_df_local, _he)
+                _cap_l += _cap_w * ctm.get(_mdl, 0.0)
+            return _cap_l
+
         _sim_cap_h_sem = 0.0
         for _slid in _sim_planned_line_ids:
             _smdl = st.session_state.get("line_model", {}).get(plant_id, {}).get(_slid)
@@ -5727,6 +5768,19 @@ if st.session_state.active_tab == "📅 Simulación anual":
             else:
                 _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, _s_lhe)
             _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
+
+        # ── [CHECK TEMPORAL P1] — Borrar antes de Paso 2 ─────────────────────
+        if _sim_active_sc_id is not None and _has_db():
+            _cap_check_p1 = _compute_cap_for_scenario(
+                _sim_active_sc_id,
+                times_df, stations_df, _sim_ctm,
+                hours_week, shifts, availability, efficiency, hours_eff,
+            )
+            st.caption(
+                f"[CHECK P1] función nueva: {_cap_check_p1:.2f} h/sem "
+                f"| actual: {_sim_cap_h_sem:.2f} h/sem "
+                f"| diff: {abs(_cap_check_p1 - _sim_cap_h_sem):.4f}"
+            )
 
         # ── BLOQUE 1 — Cabecera operativa ────────────────────────────────────
         _hdr1, _hdr2, _hdr3, _hdr4 = st.columns([3, 2, 2, 2])
