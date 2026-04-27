@@ -2017,12 +2017,9 @@ if _pid_init != st.session_state.get("_last_pid"):
         st.session_state.line_model[_pid_init] = _scenario["line_model"]
         st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
         st.session_state.line_bench_variant[_pid_init] = _scenario["line_bench_variant"]
-        # Solo inicializar si el usuario no tiene ya un escenario elegido en esta sesión.
-        # Usar clave no-widget (_session_sc_id_) para que Streamlit no la borre al cambiar de tab.
-        if f"_session_sc_id_{_pid_init}" not in st.session_state:
-            st.session_state[f"_session_sc_id_{_pid_init}"] = _scenario["scenario_id"]
-            _scenario["_msg"] = None
-            st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
+        st.session_state[f"_session_sc_id_{_pid_init}"] = _scenario["scenario_id"]
+        _scenario["_msg"] = None
+        st.session_state[f"_pending_scenario_{_pid_init}"] = _scenario
     else:
         if _pid_init not in st.session_state.line_model:
             st.session_state.line_model[_pid_init] = {}
@@ -2181,6 +2178,10 @@ def load_all_plants_data():
         "compat":   _dfs["compatibility"],
     }
 
+
+# Track previous active tab — used by Planificación to detect tab-return without syncing on every render.
+_prev_active_tab = st.session_state.get("_active_tab_prev", st.session_state.active_tab)
+st.session_state["_active_tab_prev"] = st.session_state.active_tab
 
 # =========================================================
 # 0) GLOBAL - VISIÓN MULTIPLANTA
@@ -2768,6 +2769,14 @@ if st.session_state.active_tab == "📊 Planificación":
                     st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map[_init_sel]
                 else:
                     st.session_state[f"scenario_name_input_{_pid}"] = t("plan_save_name_default")
+
+            # Tab-return sync: align dropdown and name to _session_sc_id_ only when
+            # coming back from another tab (not on every render — avoids dropdown rebound).
+            if _prev_active_tab != "📊 Planificación":
+                _trusted_sc_id = st.session_state.get(f"_session_sc_id_{_pid}")
+                if _trusted_sc_id in _sc_label_map:
+                    st.session_state[f"scenario_select_{_pid}"] = _trusted_sc_id
+                    st.session_state[f"scenario_name_input_{_pid}"] = _sc_name_map.get(_trusted_sc_id, "")
 
             _sce1, _sce2, _sce3, _sce4, _sce5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="bottom")
             _sc_sel_id = _sce1.selectbox(
