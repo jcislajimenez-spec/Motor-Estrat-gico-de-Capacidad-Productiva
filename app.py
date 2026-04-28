@@ -5779,19 +5779,6 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _, _, _scap_w = compute_line_detail(_slid, _smdl, times_df, stations_df, _s_lhe)
             _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
 
-        # ── [CHECK TEMPORAL P1] — Borrar antes de Paso 2 ─────────────────────
-        if _sim_active_sc_id is not None and _has_db():
-            _cap_check_p1 = _compute_cap_for_scenario(
-                _sim_active_sc_id,
-                times_df, stations_df, _sim_ctm,
-                hours_week, shifts, availability, efficiency, hours_eff,
-            )
-            st.caption(
-                f"[CHECK P1] función nueva: {_cap_check_p1:.2f} h/sem "
-                f"| actual: {_sim_cap_h_sem:.2f} h/sem "
-                f"| diff: {abs(_cap_check_p1 - _sim_cap_h_sem):.4f}"
-            )
-
         # ── BLOQUE 1 — Cabecera operativa ────────────────────────────────────
         _hdr1, _hdr2, _hdr3, _hdr4 = st.columns([3, 2, 2, 2])
         with _hdr1:
@@ -6138,8 +6125,6 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 else:
                     st.success("Cobertura completa: Sem 1–52")
 
-                # Scope warning
-                st.info("Configuración preparada. Todavía no afecta al cálculo de esta versión.")
                 st.markdown("---")
 
                 if st.button("Calcular simulación anual",
@@ -6156,52 +6141,123 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 except (ValueError, TypeError):
                                     pass
 
-                    _rows_sim = []
-                    for _w in range(1, 53):
-                        _scol = f"Sem {_w}"
-                        _dem_w = float(_sim_parsed["demanda"][_scol].sum())
-                        if _sim_parsed["plan"] is not None and _scol in _sim_parsed["plan"].columns:
-                            _plan_w = float(_sim_parsed["plan"][_scol].sum())
-                        else:
-                            _plan_w = _dem_w
-                        _cap_disp_w = _esp_map.get(_w, _sim_cap_h_sem)
-                        _deficit_w  = max(0.0, _dem_w - _cap_disp_w)
-                        _sat_w      = round(_dem_w / _cap_disp_w * 100, 1) if _cap_disp_w > 0 else 0.0
-                        if _cap_disp_w == 0:
-                            _estado_w = "⚫ Parada"
-                        elif _deficit_w > 0:
-                            _estado_w = "🔴 Déficit"
-                        elif _sat_w >= 90.0:
-                            _estado_w = "🟡 Atención"
-                        else:
-                            _estado_w = "🟢 OK"
-                        _rows_sim.append({
-                            "Semana":              _w,
-                            "Demanda (h)":         round(_dem_w, 1),
-                            "Plan (h)":            round(_plan_w, 1),
-                            "Cap. disponible (h)": round(_cap_disp_w, 1),
-                            "Saturación (%)":      _sat_w,
-                            "Déficit (h)":         round(_deficit_w, 1),
-                            "Estado":              _estado_w,
-                        })
+                    # ── Validar tramos y construir mapa semana → capacidad ────
+                    _calc_errs = []
+                    _week_cap_map = {}  # {w: float} — vacío cuando todos los tramos usan el escenario activo
 
-                    _tabla_sim       = pd.DataFrame(_rows_sim)
-                    _mask_no_parada  = _tabla_sim["Estado"] != "⚫ Parada"
-                    _mask_activa     = _tabla_sim["Cap. disponible (h)"] > 0
-                    _sat_series      = _tabla_sim.loc[_mask_activa, "Saturación (%)"]
-                    _pico_idx        = _sat_series.idxmax() if not _sat_series.empty else None
-                    _semana_pico_val = int(_tabla_sim.loc[_pico_idx, "Semana"]) if _pico_idx is not None else "—"
-                    _kpis_sim = {
-                        "semanas_deficit":   int((_mask_no_parada & (_tabla_sim["Déficit (h)"] > 0)).sum()),
-                        "deficit_acumulado": round(float(_tabla_sim["Déficit (h)"].sum()), 1),
-                        "semana_pico":       _semana_pico_val,
-                        "sat_max":           round(float(_sat_series.max()), 1) if not _sat_series.empty else 0.0,
-                        "sat_media":         round(float(_sat_series.mean()), 1) if not _sat_series.empty else 0.0,
-                    }
-                    st.session_state[f"_sim_result_{plant_id}"] = {
-                        "tabla": _tabla_sim,
-                        "kpis":  _kpis_sim,
-                    }
+                    _re_tram_errs = _validate_tramos(_tramos)
+                    if _re_tram_errs:
+                        _calc_errs.extend(_re_tram_errs)
+                    else:
+                        # Problema 1: rechazar sc_id None o vacío antes de cualquier otra validación
+                        _sc_ids_needed = {t["sc_id"] for t in _tramos}
+                        _sc_ids_invalid = {s for s in _sc_ids_needed if s is None or s == ""}
+                        if _sc_ids_invalid:
+                            _calc_errs.append("Uno o más tramos no tienen escenario asignado.")
+                        elif not _has_db():
+                            # Sin BD: solo permitir tramos que usen el escenario activo
+                            _sc_ids_foreign = _sc_ids_needed - {_sim_active_sc_id}
+                            if _sc_ids_foreign:
+                                _calc_errs.append(
+                                    "El modo multi-tramo con escenarios distintos "
+                                    "requiere conexión a base de datos."
+                                )
+                            # else: _week_cap_map queda vacío → fallback a _sim_cap_h_sem en el bucle
+                        else:
+                            # Problema 2: validar TODOS los sc_id (incluido el activo) contra lista fresca
+                            _fresh_sc_list = list_scenarios(plant_id)
+                            _fresh_sc_ids  = {s["id"] for s in _fresh_sc_list}
+                            _sc_ids_missing = _sc_ids_needed - _fresh_sc_ids
+                            if _sc_ids_missing:
+                                _calc_errs.append(
+                                    f"Escenario(s) no encontrado(s) en BD: "
+                                    f"{', '.join(str(_m) for _m in _sc_ids_missing)}."
+                                )
+                            else:
+                                # Construir cache sc_id → capacidad (una llamada por sc_id distinto)
+                                _fresh_sc_name_map = {s["id"]: s["name"] for s in _fresh_sc_list}
+                                _sc_cap_cache = {}
+                                for _csc in _sc_ids_needed:
+                                    _sc_cap_cache[_csc] = (
+                                        _sim_cap_h_sem if _csc == _sim_active_sc_id
+                                        else _compute_cap_for_scenario(
+                                            _csc,
+                                            times_df, stations_df, _sim_ctm,
+                                            hours_week, shifts, availability, efficiency, hours_eff,
+                                        )
+                                    )
+                                # Problema 4: avisar si un escenario no activo tiene capacidad 0
+                                for _csc, _ccap in _sc_cap_cache.items():
+                                    if _csc != _sim_active_sc_id and _ccap == 0.0:
+                                        _calc_errs.append(
+                                            f"El escenario '{_fresh_sc_name_map.get(_csc, _csc)}' "
+                                            "tiene capacidad calculada de 0 h/sem. "
+                                            "Verifica que tenga líneas planificadas con modelos asignados."
+                                        )
+                                if not _calc_errs:
+                                    for _tr in _tramos:
+                                        for _tw in range(_tr["sem_inicio"], _tr["sem_fin"] + 1):
+                                            _week_cap_map[_tw] = _sc_cap_cache[_tr["sc_id"]]
+
+                    if _calc_errs:
+                        for _cerr in _calc_errs:
+                            st.error(_cerr)
+                        # Problema 5: aviso explícito de que el resultado anterior no cambia
+                        st.warning(
+                            "No se ha recalculado. "
+                            "El gráfico y la tabla mostrados corresponden al último cálculo válido anterior, "
+                            "no a la configuración actual de tramos."
+                        )
+                    else:
+                        _rows_sim = []
+                        for _w in range(1, 53):
+                            _scol = f"Sem {_w}"
+                            _dem_w = float(_sim_parsed["demanda"][_scol].sum())
+                            if _sim_parsed["plan"] is not None and _scol in _sim_parsed["plan"].columns:
+                                _plan_w = float(_sim_parsed["plan"][_scol].sum())
+                            else:
+                                _plan_w = _dem_w
+                            # Prioridad: SEMANAS_ESPECIALES > tramo > escenario activo base
+                            _cap_disp_w = _esp_map.get(_w, _week_cap_map.get(_w, _sim_cap_h_sem))
+                            _deficit_w  = max(0.0, _dem_w - _cap_disp_w)
+                            _sat_w      = round(_dem_w / _cap_disp_w * 100, 1) if _cap_disp_w > 0 else 0.0
+                            if _cap_disp_w == 0:
+                                _estado_w = "⚫ Parada"
+                            elif _deficit_w > 0:
+                                _estado_w = "🔴 Déficit"
+                            elif _sat_w >= 90.0:
+                                _estado_w = "🟡 Atención"
+                            else:
+                                _estado_w = "🟢 OK"
+                            _rows_sim.append({
+                                "Semana":              _w,
+                                "Demanda (h)":         round(_dem_w, 1),
+                                "Plan (h)":            round(_plan_w, 1),
+                                "Cap. disponible (h)": round(_cap_disp_w, 1),
+                                "Saturación (%)":      _sat_w,
+                                "Déficit (h)":         round(_deficit_w, 1),
+                                "Estado":              _estado_w,
+                            })
+
+                        _tabla_sim       = pd.DataFrame(_rows_sim)
+                        _mask_no_parada  = _tabla_sim["Estado"] != "⚫ Parada"
+                        _mask_activa     = _tabla_sim["Cap. disponible (h)"] > 0
+                        _sat_series      = _tabla_sim.loc[_mask_activa, "Saturación (%)"]
+                        _pico_idx        = _sat_series.idxmax() if not _sat_series.empty else None
+                        _semana_pico_val = int(_tabla_sim.loc[_pico_idx, "Semana"]) if _pico_idx is not None else "—"
+                        _kpis_sim = {
+                            "semanas_deficit":   int((_mask_no_parada & (_tabla_sim["Déficit (h)"] > 0)).sum()),
+                            "deficit_acumulado": round(float(_tabla_sim["Déficit (h)"].sum()), 1),
+                            "semana_pico":       _semana_pico_val,
+                            "sat_max":           round(float(_sat_series.max()), 1) if not _sat_series.empty else 0.0,
+                            "sat_media":         round(float(_sat_series.mean()), 1) if not _sat_series.empty else 0.0,
+                            # Problema 3: usa_tramos indica configuración multi-tramo, no variación de valores
+                            "usa_tramos":        len(_tramos) > 1,
+                        }
+                        st.session_state[f"_sim_result_{plant_id}"] = {
+                            "tabla": _tabla_sim,
+                            "kpis":  _kpis_sim,
+                        }
 
                 _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
                 if _sim_result is not None:
@@ -6224,9 +6280,12 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _df_esp_render = _sim_parsed.get("especiales") if _sim_parsed else None
                         _n_esp_red = len(_df_esp_render) if _df_esp_render is not None else 0
                         _cap_note = f" · {_n_esp_red} sem. con capacidad reducida" if _n_esp_red > 0 else ""
-                        st.caption(
-                            f"Capacidad base de planta: {_fmt_num(_sim_cap_h_sem)} h/sem{_cap_note}"
-                        )
+                        _usa_tramos_r = _rk.get("usa_tramos", False)
+                        if _usa_tramos_r:
+                            _cap_lbl = f"Capacidad variable por tramos{_cap_note}"
+                        else:
+                            _cap_lbl = f"Capacidad base de planta: {_fmt_num(_sim_cap_h_sem)} h/sem{_cap_note}"
+                        st.caption(_cap_lbl)
                         # ── Gráfico principal ─────────────────────────────────────────
                         import plotly.graph_objects as go
                         _df_g = _sim_result["tabla"]
@@ -6298,7 +6357,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _fig_sim.add_trace(go.Scatter(
                             x=_df_g["Semana"],
                             y=_df_g["Cap. disponible (h)"],
-                            name="Cap. disponible (escenario activo)",
+                            name="Cap. disponible (tramos)" if _rk.get("usa_tramos", False) else "Cap. disponible (escenario activo)",
                             mode="lines",
                             line=dict(color="#3d3d3d", width=2.3, shape="hv"),
                             hoverinfo="skip",
