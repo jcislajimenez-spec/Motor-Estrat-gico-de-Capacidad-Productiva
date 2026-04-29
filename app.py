@@ -1563,9 +1563,12 @@ def compute_plant_structural_capacity(
     all_stations: pd.DataFrame,
     all_compat: pd.DataFrame,
     shifts_override: int = None,
+    hours_week_override: float = None,
+    availability_override: float = None,
+    efficiency_override: float = None,
 ) -> dict:
     """Calcula capacidad estructural (max/prom/min) para una planta.
-    Si shifts_override tiene valor, fuerza ese número de turnos (solo para vista Global)."""
+    Los parámetros _override sustituyen al valor de settings cuando no son None."""
 
     # Obtener settings de la planta
     p_settings = all_settings[all_settings["plant_id"] == p_id]
@@ -1585,9 +1588,11 @@ def compute_plant_structural_capacity(
         p_days_year = int(row.get("days_open_year", 250))
         p_days_week = int(row.get("days_open_week", 5))
 
-    # Si hay override de turnos (selector global), usarlo en lugar de p_shifts
-    effective_shifts = shifts_override if shifts_override else p_shifts
-    p_hours_eff = p_hours_week * effective_shifts * p_availability * p_efficiency
+    effective_hours_week   = hours_week_override   if hours_week_override   is not None else p_hours_week
+    effective_shifts       = shifts_override        if shifts_override        is not None else p_shifts
+    effective_availability = availability_override  if availability_override  is not None else p_availability
+    effective_efficiency   = efficiency_override    if efficiency_override    is not None else p_efficiency
+    p_hours_eff = effective_hours_week * effective_shifts * effective_availability * effective_efficiency
     p_weeks_equiv = p_days_year / max(p_days_week, 1)
 
     # Filtrar datos por planta
@@ -6202,11 +6207,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                     if _calc_errs:
                         for _cerr in _calc_errs:
                             st.error(_cerr)
-                        # Problema 5: aviso explícito de que el resultado anterior no cambia
                         st.warning(
-                            "No se ha recalculado. "
-                            "El gráfico y la tabla mostrados corresponden al último cálculo válido anterior, "
-                            "no a la configuración actual de tramos."
+                            "El gráfico y la tabla mostrados corresponden al último cálculo válido anterior. "
+                            "La configuración actual de tramos no se ha aplicado."
                         )
                     else:
                         _rows_sim = []
@@ -6251,12 +6254,21 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             "semana_pico":       _semana_pico_val,
                             "sat_max":           round(float(_sat_series.max()), 1) if not _sat_series.empty else 0.0,
                             "sat_media":         round(float(_sat_series.mean()), 1) if not _sat_series.empty else 0.0,
-                            # Problema 3: usa_tramos indica configuración multi-tramo, no variación de valores
                             "usa_tramos":        len(_tramos) > 1,
                         }
+                        _tramos_meta = [
+                            {
+                                "Sem inicio": _tr["sem_inicio"],
+                                "Sem fin":    _tr["sem_fin"],
+                                "Escenario":  _tram_sc_map.get(_tr["sc_id"], str(_tr["sc_id"])),
+                            }
+                            for _tr in _tramos
+                        ]
                         st.session_state[f"_sim_result_{plant_id}"] = {
-                            "tabla": _tabla_sim,
-                            "kpis":  _kpis_sim,
+                            "tabla":       _tabla_sim,
+                            "kpis":        _kpis_sim,
+                            "tramos_meta": _tramos_meta,
+                            "calc_ts":     datetime.now().strftime("%Y-%m-%d %H:%M"),
                         }
 
                 _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
@@ -6282,7 +6294,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _cap_note = f" · {_n_esp_red} sem. con capacidad reducida" if _n_esp_red > 0 else ""
                         _usa_tramos_r = _rk.get("usa_tramos", False)
                         if _usa_tramos_r:
-                            _cap_lbl = f"Capacidad variable por tramos{_cap_note}"
+                            _cap_lbl = f"Capacidad calculada por tramos{_cap_note}"
                         else:
                             _cap_lbl = f"Capacidad base de planta: {_fmt_num(_sim_cap_h_sem)} h/sem{_cap_note}"
                         st.caption(_cap_lbl)
@@ -6304,6 +6316,10 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _mix_struct = compute_plant_structural_capacity(
                             plant_id, selected_plant_name,
                             settings_df, models_df, times_df, stations_df, compat_df,
+                            hours_week_override=hours_week,
+                            shifts_override=shifts,
+                            availability_override=availability,
+                            efficiency_override=efficiency,
                         )
                         _mix_min_h  = _mix_struct.get("min_h_sem", 0.0)
                         _mix_prom_h = _mix_struct.get("prom_h_sem", 0.0)
@@ -6388,13 +6404,23 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         st.plotly_chart(_fig_sim, use_container_width=True)
                         if _mix_max_h > 0:
                             st.caption(
-                                f"La banda sombreada representa el rango estructural según mix, "
-                                f"calculado sin overrides de escenario — "
+                                f"Rango estructural según mix con parámetros globales actuales, "
+                                f"sin overrides de escenario — "
                                 f"Mín: {_fmt_num(_mix_min_h)} h/sem · "
                                 f"Prom: {_fmt_num(_mix_prom_h)} h/sem · "
-                                f"Máx: {_fmt_num(_mix_max_h)} h/sem. "
-                                f"Si la línea negra queda fuera de la banda, puede deberse a overrides "
-                                f"de turnos, disponibilidad o eficiencia del escenario activo."
+                                f"Máx: {_fmt_num(_mix_max_h)} h/sem."
+                            )
+
+                        # ── Resumen de tramos aplicados ──────────────────────────────
+                        _tramos_meta_r = _sim_result.get("tramos_meta")
+                        if _tramos_meta_r:
+                            _calc_ts_r = _sim_result.get("calc_ts", "")
+                            _ts_lbl = f" · calculado {_calc_ts_r}" if _calc_ts_r else ""
+                            st.markdown(f"**Tramos aplicados**{_ts_lbl}")
+                            st.dataframe(
+                                pd.DataFrame(_tramos_meta_r),
+                                use_container_width=True,
+                                hide_index=True,
                             )
 
                         # ── BLOQUE 7 — Tabla operativa ───────────────────────────────
@@ -6412,7 +6438,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             st.dataframe(_sim_result["tabla"], use_container_width=True, hide_index=True)
 
                         # ── Export Excel ──────────────────────────────────────────────
-                        def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname):
+                        def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname, _tramos_meta_exp=None):
                             import io as _io_exp
                             _buf_exp = _io_exp.BytesIO()
                             _estado_map_exp = {
@@ -6441,6 +6467,10 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             with pd.ExcelWriter(_buf_exp, engine="openpyxl") as _writer_exp:
                                 _resumen_exp.to_excel(_writer_exp, sheet_name="RESUMEN", index=False)
                                 _tabla_exp.to_excel(_writer_exp, sheet_name="SIMULACIÓN_SEMANAL", index=False)
+                                if _tramos_meta_exp:
+                                    pd.DataFrame(_tramos_meta_exp).to_excel(
+                                        _writer_exp, sheet_name="TRAMOS", index=False
+                                    )
                             return _buf_exp.getvalue()
 
                         _export_fname = datetime.now().strftime("simulacion_anual_%Y-%m-%d_%H-%M.xlsx")
@@ -6453,6 +6483,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 _n_esp_red,
                                 selected_plant_name,
                                 _sim_sc_name,
+                                _sim_result.get("tramos_meta"),
                             ),
                             file_name=_export_fname,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
