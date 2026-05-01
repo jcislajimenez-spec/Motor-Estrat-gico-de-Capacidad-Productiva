@@ -4100,17 +4100,45 @@ if st.session_state.active_tab == "📈 Resultados":
                                 help=f"Global: {efficiency}",
                             )
                         else:
-                            # Línea sin override: fila compacta, sin sliders
-                            _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
-                            _rc.checkbox(
-                                "ov",
-                                key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
-                                label_visibility="collapsed",
-                            )
-                            _rn.markdown(
-                                f'<p style="margin:0;line-height:1;font-size:0.85rem">{_lid}</p>',
-                                unsafe_allow_html=True,
-                            )
+                            # Línea sin override activo
+                            _ghost_proc = _proc_ov.get(_lid, {})
+                            _ghost_c = len(_ghost_proc)
+                            if _ghost_c:
+                                # Procesos guardados pero inactivos — indicador + botón limpiar
+                                _rc, _rn, _rclean = st.columns([0.4, 2.4, 1.6], gap="small", vertical_alignment="center")
+                                _rc.checkbox(
+                                    "ov",
+                                    key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
+                                    label_visibility="collapsed",
+                                )
+                                _rn.markdown(
+                                    f'<p style="margin:0;line-height:1;font-size:0.85rem">{_lid} '
+                                    f'<span style="color:#cc7700;font-size:0.78rem">'
+                                    f'⚠ proc guardados inactivos: {_ghost_c}</span></p>',
+                                    unsafe_allow_html=True,
+                                )
+                                if _rclean.button(
+                                    "Limpiar proc",
+                                    key=f"btn_clean_psh_{plant_id}_{_ov_sc_key}_{_lid}",
+                                    use_container_width=True,
+                                ):
+                                    _proc_ov[_lid] = {}
+                                    if _active_sc_id:
+                                        save_scenario_process_shifts(_active_sc_id, _lid, {})
+                                    st.toast(f"Overrides de proceso eliminados para {_lid}.", icon="✅")
+                                    st.rerun()
+                            else:
+                                # Fila compacta sin overrides latentes
+                                _rc, _rn = st.columns([0.4, 3.6], gap="small", vertical_alignment="center")
+                                _rc.checkbox(
+                                    "ov",
+                                    key=f"ov_en_{plant_id}_{_ov_sc_key}_{_lid}",
+                                    label_visibility="collapsed",
+                                )
+                                _rn.markdown(
+                                    f'<p style="margin:0;line-height:1;font-size:0.85rem">{_lid}</p>',
+                                    unsafe_allow_html=True,
+                                )
             if _active_ov_lines:
                 st.caption(
                     f"✏ Override activo en: **{', '.join(_active_ov_lines)}**. "
