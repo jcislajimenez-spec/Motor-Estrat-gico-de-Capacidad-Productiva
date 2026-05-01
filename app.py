@@ -1316,7 +1316,9 @@ def load_scenario_by_id(scenario_id: int) -> dict | None:
         with c.cursor() as cur:
             cur.execute('SELECT name FROM "scenarios" WHERE id = %s', (scenario_id,))
             name_row = cur.fetchone()
-            scenario_name = name_row[0] if name_row else ""
+            if not name_row:
+                return None
+            scenario_name = name_row[0]
             cur.execute(
                 'SELECT line_id, model, demand, bench_variant FROM "scenario_lines" WHERE scenario_id = %s',
                 (scenario_id,)
@@ -3858,8 +3860,6 @@ if st.session_state.active_tab == "📈 Resultados":
     if not st.session_state.get(_ov_load_key, False):
         if _active_sc_id:
             _db_ov = load_scenario_line_overrides(_active_sc_id)
-            if not _db_ov:
-                _db_ov = load_line_overrides(plant_id)
         else:
             _db_ov = load_line_overrides(plant_id)
         for _lid, _ov_row in _db_ov.items():
