@@ -3893,13 +3893,16 @@ if st.session_state.active_tab == "📈 Resultados":
 
     def _resolve_process_hours_eff(lid: str) -> dict | None:
         """Returns per-process hours_eff dict, or None if no process overrides.
-        Line-level availability/efficiency apply; only shifts vary per process."""
+        Line-level availability/efficiency apply; only shifts vary per process.
+        Process overrides only apply when the line override is enabled."""
+        if not _plant_ov.get(lid, {}).get("enabled", False):
+            return None
         _line_pd = _proc_ov.get(lid)
         if not _line_pd:
             return None
         _ov_l = _plant_ov.get(lid, {})
-        _a = float(_ov_l.get("availability", availability)) if _ov_l.get("enabled") else availability
-        _e = float(_ov_l.get("efficiency", efficiency)) if _ov_l.get("enabled") else efficiency
+        _a = float(_ov_l.get("availability", availability))
+        _e = float(_ov_l.get("efficiency", efficiency))
         return {proc: hours_week * float(sh) * _a * _e for proc, sh in _line_pd.items()}
 
     summary_rows = []
@@ -5717,12 +5720,14 @@ if st.session_state.active_tab == "📅 Simulación anual":
             return hours_week * int(_ov.get("shifts", shifts)) * float(_ov.get("availability", availability)) * float(_ov.get("efficiency", efficiency))
 
         def _sim_resolve_proc_he(lid: str):
+            if not _sim_plant_ov.get(lid, {}).get("enabled", False):
+                return None
             _pd = _sim_proc_ov.get(lid)
             if not _pd:
                 return None
             _ov_l = _sim_plant_ov.get(lid, {})
-            _a = float(_ov_l.get("availability", availability)) if _ov_l.get("enabled") else availability
-            _e = float(_ov_l.get("efficiency", efficiency)) if _ov_l.get("enabled") else efficiency
+            _a = float(_ov_l.get("availability", availability))
+            _e = float(_ov_l.get("efficiency", efficiency))
             return {proc: hours_week * float(sh) * _a * _e for proc, sh in _pd.items()}
 
         # ── Capacidad base: lógica idéntica al loop de Resultados ─────────────
@@ -5760,9 +5765,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 else:
                     _he = hours_eff_l
                 _phe = None
-                if _lid in _sc_proc:
-                    _a = float(_ov.get("availability", availability_l)) if _ov.get("enabled") else availability_l
-                    _e = float(_ov.get("efficiency",   efficiency_l))   if _ov.get("enabled") else efficiency_l
+                if _lid in _sc_proc and _ov.get("enabled", False):
+                    _a = float(_ov.get("availability", availability_l))
+                    _e = float(_ov.get("efficiency",   efficiency_l))
                     _phe = {_p: hours_week_l * float(_sh) * _a * _e for _p, _sh in _sc_proc[_lid].items()}
                 if _phe is not None:
                     _, _, _cap_w = compute_line_detail_v2(_lid, _mdl, times_df_local, stations_df_local, _he, _phe)
