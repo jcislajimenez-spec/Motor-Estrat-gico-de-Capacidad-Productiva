@@ -6172,10 +6172,16 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         "Abre el bloque de tramos para revisarlos."
                     )
 
-                if st.button("Calcular simulación anual",
-                             key=f"sim_calc_btn_{plant_id}",
-                             type="primary",
-                             use_container_width=True):
+                _calc_l, _calc_c, _calc_r = st.columns([1, 2, 1])
+                with _calc_c:
+                    _sim_calc_clicked = st.button(
+                        "Calcular simulación anual",
+                        key=f"sim_calc_btn_{plant_id}",
+                        type="primary",
+                        use_container_width=True,
+                    )
+
+                if _sim_calc_clicked:
                     # Mapa semanas especiales: {semana_int: horas_disponibles}
                     _esp_map = {}
                     _df_esp_s = _sim_parsed.get("especiales")
@@ -6343,12 +6349,42 @@ if st.session_state.active_tab == "📅 Simulación anual":
                     else:
                         _rk = _sim_result["kpis"]
                         st.divider()
-                        if _rk["semanas_deficit"] == 0:
-                            st.success("Sin déficit anual — capacidad suficiente en las 52 semanas.")
-                        elif _rk["semanas_deficit"] <= 4:
-                            st.warning(f"{_rk['semanas_deficit']} semanas con déficit — revisar plan o escenario.")
-                        else:
-                            st.error(f"{_rk['semanas_deficit']} semanas con déficit — acción requerida.")
+                        with st.container(border=True):
+                            _sd = _rk["semanas_deficit"]
+                            _pico_lbl = (
+                                f"Sem {_rk['semana_pico']}"
+                                if _rk.get("semana_pico") not in [None, "—"]
+                                else "—"
+                            )
+                            if _sd == 0:
+                                _diag_icon  = "🟢"
+                                _diag_title = "Plan viable — sin déficit anual"
+                                _diag_main  = "La capacidad calculada cubre la demanda cargada en las 52 semanas."
+                                _diag_detail = f"Saturación media: {_rk['sat_media']} %"
+                            elif _sd <= 4:
+                                _diag_icon  = "🟡"
+                                _diag_title = f"Riesgo moderado — {_sd} semanas con déficit"
+                                _diag_main  = "Conviene revisar el plan, los tramos o el escenario aplicado."
+                                _diag_detail = (
+                                    f"Déficit acumulado: {_fmt_num(_rk['deficit_acumulado'])} h · "
+                                    f"Semana pico: {_pico_lbl} · "
+                                    f"Saturación máxima: {_rk['sat_max']} %"
+                                )
+                            else:
+                                _diag_icon  = "🔴"
+                                _diag_title = f"Acción requerida — {_sd} semanas con déficit"
+                                _diag_main  = "La simulación muestra una tensión relevante entre demanda y capacidad."
+                                _diag_detail = (
+                                    f"Déficit acumulado: {_fmt_num(_rk['deficit_acumulado'])} h · "
+                                    f"Semana pico: {_pico_lbl} · "
+                                    f"Saturación máxima: {_rk['sat_max']} %"
+                                )
+                            _diag_col_icon, _diag_col_text = st.columns([0.6, 5.4])
+                            _diag_col_icon.markdown(f"## {_diag_icon}")
+                            with _diag_col_text:
+                                st.markdown(f"#### {_diag_title}")
+                                st.markdown(_diag_main)
+                                st.caption(_diag_detail)
                         _kr1, _kr2, _kr3, _kr4, _kr5 = st.columns(5)
                         _kr1.metric("Semanas con déficit",
                                     str(_rk["semanas_deficit"]))
