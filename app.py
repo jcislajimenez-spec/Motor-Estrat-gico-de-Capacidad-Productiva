@@ -5334,7 +5334,7 @@ if st.session_state.active_tab == "📈 Resultados":
         fig1.update_layout(barmode="group")
         st.plotly_chart(fig1, use_container_width=True, key="fig1")
 
-        st.markdown("### 🔴 Demanda vs Capacidad – h/SEM (CRÍTICO)")
+        st.markdown("### Demanda vs capacidad — h/sem")
         fig2 = go.Figure()
         fig2.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (h/SEM)"], name="Demanda", marker_color="#A6192E")
         fig2.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (h/SEM)"], name="Capacidad", marker_color="green")
@@ -5348,14 +5348,14 @@ if st.session_state.active_tab == "📈 Resultados":
         fig3.update_layout(barmode="group")
         st.plotly_chart(fig3, use_container_width=True, key="fig3")
 
-        st.markdown("### 🔴 Demanda vs Capacidad – h/AÑO (CRÍTICO)")
+        st.markdown("### Demanda vs capacidad — h/año")
         fig4 = go.Figure()
         fig4.add_bar(x=df_plot["line_id"], y=df_plot["Demanda (h/AÑO)"], name="Demanda", marker_color="#A6192E")
         fig4.add_bar(x=df_plot["line_id"], y=df_plot["Capacidad (h/AÑO)"], name="Capacidad", marker_color="green")
         fig4.update_layout(barmode="group")
         st.plotly_chart(fig4, use_container_width=True, key="fig4")
 
-        st.markdown("## 🧠 Visión global planta – h/SEM")
+        st.markdown("## Visión global de planta — h/sem")
         total_demand_h_sem = float(summary_df.loc[summary_df["line_id"] != "TOTAL", "Demanda (h/SEM)"].sum())
         total_capacity_h_sem = float(summary_df.loc[summary_df["line_id"] != "TOTAL", "Capacidad (h/SEM)"].sum())
 
