@@ -5818,13 +5818,11 @@ if st.session_state.active_tab == "📅 Simulación anual":
             _sim_cap_h_sem += _scap_w * _sim_ctm.get(_smdl, 0.0)
 
         # ── BLOQUE 1 — Cabecera operativa ────────────────────────────────────
-        _hdr1, _hdr2, _hdr3, _hdr4 = st.columns([3, 2, 2, 2])
-        with _hdr1:
-            st.markdown("**Escenario activo**")
-            st.markdown(f"{_sim_sc_name}")
-        _hdr2.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
-        _hdr3.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
-        _hdr4.metric(t("sim_cap_per_line"),   f"{_fmt_num(_sim_cap_h_sem / len(_sim_planned_line_ids))} h/sem")
+        st.markdown(f"**Planta:** {selected_plant_name} · **Escenario:** {_sim_sc_name}")
+        _hdr1, _hdr2, _hdr3 = st.columns(3)
+        _hdr1.metric(t("sim_n_lines"),        str(len(_sim_planned_line_ids)))
+        _hdr2.metric(t("sim_cap_total_base"), f"{_fmt_num(_sim_cap_h_sem)} h/sem")
+        _hdr3.metric(t("sim_cap_per_line"),   f"{_fmt_num(_sim_cap_h_sem / len(_sim_planned_line_ids))} h/sem")
         st.caption(t("sim_cap_base_note"))
 
         def _build_sim_template_xlsx() -> bytes:
@@ -6176,6 +6174,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
 
                 if st.button("Calcular simulación anual",
                              key=f"sim_calc_btn_{plant_id}",
+                             type="primary",
                              use_container_width=True):
                     # Mapa semanas especiales: {semana_int: horas_disponibles}
                     _esp_map = {}
@@ -6343,6 +6342,13 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         st.info("Pulsa 'Calcular simulación anual' para actualizar el resultado con el nuevo formato.")
                     else:
                         _rk = _sim_result["kpis"]
+                        st.divider()
+                        if _rk["semanas_deficit"] == 0:
+                            st.success("Sin déficit anual — capacidad suficiente en las 52 semanas.")
+                        elif _rk["semanas_deficit"] <= 4:
+                            st.warning(f"{_rk['semanas_deficit']} semanas con déficit — revisar plan o escenario.")
+                        else:
+                            st.error(f"{_rk['semanas_deficit']} semanas con déficit — acción requerida.")
                         _kr1, _kr2, _kr3, _kr4, _kr5 = st.columns(5)
                         _kr1.metric("Semanas con déficit",
                                     str(_rk["semanas_deficit"]))
@@ -6536,7 +6542,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 ))
 
                         _fig_sim.update_layout(
-                            height=420,
+                            height=480,
                             margin=dict(t=20, b=40, l=0, r=0),
                             legend=dict(orientation="h", yanchor="bottom", y=1.01,
                                         xanchor="right", x=1),
@@ -6606,7 +6612,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 )
                             ].copy()
                             if not _tabla_critica.empty:
-                                st.markdown("##### Semanas críticas")
+                                st.markdown("#### Semanas críticas")
                                 st.dataframe(_tabla_critica, use_container_width=True, hide_index=True)
                             else:
                                 st.success("Sin semanas críticas — todas las semanas dentro de capacidad.")
