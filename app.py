@@ -4055,10 +4055,7 @@ if st.session_state.active_tab == "📈 Resultados":
                                                 )
                                             else:
                                                 st.session_state.pop(_pval_key, None)
-                                                _pt.markdown(
-                                                    f'<p style="margin:0;line-height:1;font-size:0.8rem;color:gray">hereda ({_line_global_sh})</p>',
-                                                    unsafe_allow_html=True,
-                                                )
+                                                _pt.caption(f"hereda ({_line_global_sh})")
                                         # Sync proc_ov from widget state
                                         _new_proc_ov: dict = {}
                                         for _proc in _procs_list:
@@ -4426,13 +4423,11 @@ if st.session_state.active_tab == "📈 Resultados":
         _buf.seek(0)
 
         # ── UI: 4 métricas en banda compacta ─────────────────────────────────
-        st.markdown('<div style="margin-top:-2rem;margin-bottom:-1rem">', unsafe_allow_html=True)
         _pm1, _pm2, _pm3, _pm4 = st.columns(4, vertical_alignment="bottom")
         _pm1.metric(t("res_panel_n_deficit"), _n_def)
         _pm2.metric(t("res_panel_max_sat"), f"{_fmt_num(_mx_sat)} %", help=_mx_line)
         _pm3.metric(t("res_panel_n_critical"), _n_crit)
         _pm4.metric(t("res_panel_bottleneck"), _main_bn)
-        st.markdown('</div>', unsafe_allow_html=True)
 
         # ── UI: tabla ────────────────────────────────────────────────────────
         st.dataframe(style_summary(total_display_df[display_cols]), use_container_width=True, hide_index=True)
@@ -5368,7 +5363,8 @@ if st.session_state.active_tab == "📈 Resultados":
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader(t("tab_mix_header"))
-    st.info(t("mix_info"))
+    with st.expander("ℹ Sobre esta vista", expanded=False):
+        st.markdown(t("mix_info"))
 
     _t = times_df.copy()
     _t["cycle_time"] = pd.to_numeric(_t["cycle_time"], errors="coerce").fillna(0.0)
