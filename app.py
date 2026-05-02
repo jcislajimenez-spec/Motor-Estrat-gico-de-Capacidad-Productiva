@@ -60,7 +60,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_col_model":     "Modelo / Variante de prueba",
         "plan_col_demand":    "Demanda (UDS/SEM)",
         "tab_cfg_header":     "Configuración (power user)",
-        "tab_cfg_caption":    "Aquí se mantienen modelos, tiempos, estaciones y compatibilidades. Usuario normal NO debería tocar esto.",
+        "tab_cfg_caption":    "Configuración avanzada de modelos, tiempos, estaciones y compatibilidades. Modificar solo con criterio técnico y datos validados.",
         "btn_save_models":    "💾 Guardar modelos",
         "msg_models_saved":   "Modelos guardados",
         "btn_save_times":     "💾 Guardar tiempos",
@@ -148,12 +148,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_cap_per_line":        "h/sem por línea (global)",
         "sim_n_lines":             "Líneas planificadas",
         "sim_cap_total_base":      "Cap. base planta (h/sem)",
-        "sim_cap_base_note":       "⚠ Hipótesis inicial: hours_eff global × nº líneas planificadas. No aplica overrides individuales por línea. Validar con negocio antes de continuar al cálculo semanal.",
+        "sim_cap_base_note":       "Capacidad base estimada con los parámetros globales de planificación. Los ajustes específicos por línea se aplican en el cálculo de resultados.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
         "mix_level2":             "### Nivel 2 — Por línea (rango estructural)",
-        "mix_level3":             "## Nivel 3 — Simulador de ocupación estructural por modelo",
+        "mix_level3":             "### Nivel 3 — Simulador de ocupación estructural por modelo",
         "mix_sim_caption":        "Este simulador **NO** cambia la planificación real. Solo sirve para explorar, en términos de **horas estructurales (h/sem)**, cuánto 'peso' podría llegar a ocupar cada modelo dentro del **techo estructural** de la planta.",
         "mix_no_combos":          "No hay combinaciones válidas para calcular el rango. Revisa compatibilidades, estaciones y/o tiempos.",
         "mix_no_valid_models":    "No hay modelos válidos (capacidad estructural > 0) para construir el simulador.",
@@ -280,7 +280,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_col_model":     "Model / Test variant",
         "plan_col_demand":    "Demand (UNITS/WEEK)",
         "tab_cfg_header":     "Configuration (power user)",
-        "tab_cfg_caption":    "Models, times, stations and compatibilities are managed here. Regular users should NOT modify this.",
+        "tab_cfg_caption":    "Advanced configuration for models, process times, stations and compatibilities. Modify only with validated data and technical criteria.",
         "btn_save_models":    "💾 Save models",
         "msg_models_saved":   "Models saved",
         "btn_save_times":     "💾 Save times",
@@ -368,12 +368,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_cap_per_line":        "h/week per line (global)",
         "sim_n_lines":             "Planned lines",
         "sim_cap_total_base":      "Plant base capacity (h/week)",
-        "sim_cap_base_note":       "⚠ Initial hypothesis: global hours_eff × number of planned lines. Does not apply individual line overrides. Validate with business before proceeding to weekly calculation.",
+        "sim_cap_base_note":       "Base capacity estimated with the global planning parameters. Line-specific adjustments are applied in the results calculation.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
         "mix_level2":             "### Level 2 — By line (structural range)",
-        "mix_level3":             "## Level 3 — Structural occupancy simulator by model",
+        "mix_level3":             "### Level 3 — Structural occupancy simulator by model",
         "mix_sim_caption":        "This simulator does **NOT** change the actual planning. It only helps explore, in terms of **structural hours (h/week)**, how much 'weight' each model could occupy within the plant's **structural ceiling**.",
         "mix_no_combos":          "No valid combinations to calculate the range. Check compatibilities, stations and/or times.",
         "mix_no_valid_models":    "No valid models (structural capacity > 0) to build the simulator.",
@@ -500,7 +500,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "plan_col_model":     "Eredua / Proba-aldaera",
         "plan_col_demand":    "Eskaria (UNITATE/ASTE)",
         "tab_cfg_header":     "Konfigurazioa (power user)",
-        "tab_cfg_caption":    "Ereduak, denborak, estazioak eta bateragarritasunak kudeatzen dira hemen. Erabiltzaile arruntak EZ luke ukitu behar.",
+        "tab_cfg_caption":    "Modeloen, denboren, estazioen eta bateragarritasunen konfigurazio aurreratua. Aldatu soilik balioztatutako datuekin eta irizpide teknikoarekin.",
         "btn_save_models":    "💾 Ereduak gorde",
         "msg_models_saved":   "Ereduak gordeta",
         "btn_save_times":     "💾 Denborak gorde",
@@ -588,12 +588,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_cap_per_line":        "o/aste lerro bakoitzeko (globala)",
         "sim_n_lines":             "Planifikatutako lerroak",
         "sim_cap_total_base":      "Plantaren oinarrizko ahalmena (o/aste)",
-        "sim_cap_base_note":       "⚠ Hasierako hipotesia: ordu_efektibo globala × planifikatutako lerro kopurua. Ez du lerroko override indibidualik aplikatzen. Baliozta ezazu negozioari asteko kalkulura jo aurretik.",
+        "sim_cap_base_note":       "Oinarrizko ahalmena plangintzako parametro globalekin kalkulatuta. Linea bakoitzeko doikuntza zehatzak emaitzen kalkuluan aplikatzen dira.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
         "mix_level2":             "### 2. maila — Lerroz lerro (tarte estrukturala)",
-        "mix_level3":             "## 3. maila — Ereduaren araberako okupazio estrukturalaren simulagailua",
+        "mix_level3":             "### 3. maila — Ereduaren araberako okupazio estrukturalaren simulagailua",
         "mix_sim_caption":        "Simulagailu honek ez du benetako planifikazioa **ALDATZEN**. **Ordu estrukturalei (o/aste)** dagokienez, eredu bakoitzak plantaren **teto estrukturalaren** barruan zenbat 'pisu' har lezakeen esploratzeko balio du.",
         "mix_no_combos":          "Ez dago tarte estrukturala kalkulatzeko konbinazio baliodunterik. Egiaztatu bateragarritasunak, estazioak eta/edo denborak.",
         "mix_no_valid_models":    "Ez dago eredu baliodunik (ahalmen estrukturala > 0) simulagailua eraikitzeko.",
@@ -887,7 +887,7 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 st.set_page_config(
-    page_title="Planificador de Capacidad",
+    page_title="Motor Estratégico de Capacidad",
     layout="wide"
 )
 
