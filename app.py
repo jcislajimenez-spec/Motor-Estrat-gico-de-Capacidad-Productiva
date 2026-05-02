@@ -5849,6 +5849,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
             _df_res = pd.DataFrame(
                 [
                     ["Previsión ventas (h)"]       + [0.0] * 52,
+                    ["Plan de gestión (h)"]        + [0.0] * 52,
                     ["Plan maestro prod. (h)"]     + [0.0] * 52,
                     ["Disponibilidad real (h)"]    + [0.0] * 52,
                 ],
@@ -6416,6 +6417,24 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             key=_vis_key,
                         )
                         _vis = set(_vis_sel)
+
+                        with st.expander("¿Qué representa cada serie?", expanded=False):
+                            st.markdown(
+                                "| Serie | Fuente | Significado | Afecta al cálculo |\n"
+                                "|---|---|---|:---:|\n"
+                                "| **Demanda cargada** | DEMANDA_HORAS | Carga principal usada por la app para calcular déficit y saturación. En el uso actual puede representar la demanda o el plan operativo cargado. | Sí |\n"
+                                "| **Plan estratégico / Previsión ventas** | RESUMEN_SEMANAL → Previsión ventas (h) | Referencia estratégica/comercial del año actual. | No |\n"
+                                "| **Plan de gestión** | RESUMEN_SEMANAL → Plan de gestión (h) | Base conservadora usada para presupuesto. | No |\n"
+                                "| **Plan maestro producción** | RESUMEN_SEMANAL → Plan maestro prod. (h) | Plan operativo/realista de producción. | No |\n"
+                                "| **Disponibilidad real** | RESUMEN_SEMANAL → Disponibilidad real (h) | Horas disponibles reales informadas desde Excel. No sustituye la capacidad calculada. | No |\n"
+                                "| **Capacidad calculada** | Cálculo interno de la app | Capacidad disponible según escenario, tramos y semanas especiales. | Sí |\n"
+                                "| **Banda estructural** | Cálculo interno de la app | Rango estructural mínimo/máximo según mix compatible, sin overrides de escenario. | No |\n"
+                                "| **Promedio estructural** | Cálculo interno de la app | Referencia media dentro del rango estructural. | No |"
+                            )
+                            st.caption(
+                                "Las series procedentes de RESUMEN_SEMANAL son referencias visuales. "
+                                "No modifican déficit, saturación, capacidad, tramos ni semanas especiales."
+                            )
 
                         _fig_sim = go.Figure()
 
