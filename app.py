@@ -5932,9 +5932,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _result["plan"] = _df_plan
 
             # ── SEMANAS_ESPECIALES — opcional ─────────────────────────────────
-            if "SEMANAS_ESPECIALES" not in _hojas:
-                _result["warnings"].append("No se encontró la hoja SEMANAS_ESPECIALES (opcional).")
-            else:
+            if "SEMANAS_ESPECIALES" in _hojas:
                 _df_esp = _xls.parse("SEMANAS_ESPECIALES")
                 _cols_esp = {"semana", "horas_disponibles", "motivo"}
                 _faltan_esp = _cols_esp - set(_df_esp.columns)
@@ -5945,9 +5943,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                 _result["especiales"] = _df_esp
 
             # ── RESUMEN_SEMANAL — opcional ────────────────────────────────────
-            if "RESUMEN_SEMANAL" not in _hojas:
-                _result["warnings"].append("No se encontró la hoja RESUMEN_SEMANAL (opcional).")
-            else:
+            if "RESUMEN_SEMANAL" in _hojas:
                 _result["resumen"] = _xls.parse("RESUMEN_SEMANAL")
 
             return _result
