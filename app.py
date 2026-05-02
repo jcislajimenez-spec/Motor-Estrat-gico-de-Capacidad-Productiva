@@ -6297,11 +6297,35 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             }
                             for _tr in _tramos
                         ]
+                        # Extraer series de RESUMEN_SEMANAL bloqueadas al momento del cálculo
+                        _series_resumen = {}
+                        _df_res_calc = _sim_parsed.get("resumen")
+                        if _df_res_calc is not None and "Métrica" in _df_res_calc.columns:
+                            for _fila_key, _display_name in [
+                                ("Previsión ventas (h)",    "Plan estratégico / Previsión ventas"),
+                                ("Plan de gestión (h)",     "Plan de gestión"),
+                                ("Plan maestro prod. (h)",  "Plan maestro producción"),
+                                ("Disponibilidad real (h)", "Disponibilidad real"),
+                            ]:
+                                _fila_row = _df_res_calc[_df_res_calc["Métrica"] == _fila_key]
+                                if _fila_row.empty:
+                                    continue
+                                _fila_vals = []
+                                for _fw in range(1, 53):
+                                    _fc = f"Sem {_fw}"
+                                    if _fc in _fila_row.columns:
+                                        _raw = pd.to_numeric(_fila_row[_fc].values[0], errors="coerce")
+                                        _fila_vals.append(0.0 if pd.isna(_raw) else float(_raw))
+                                    else:
+                                        _fila_vals.append(0.0)
+                                if any(_fv != 0.0 for _fv in _fila_vals):
+                                    _series_resumen[_display_name] = _fila_vals
                         st.session_state[f"_sim_result_{plant_id}"] = {
-                            "tabla":       _tabla_sim,
-                            "kpis":        _kpis_sim,
-                            "tramos_meta": _tramos_meta,
-                            "calc_ts":     datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "tabla":          _tabla_sim,
+                            "kpis":           _kpis_sim,
+                            "tramos_meta":    _tramos_meta,
+                            "calc_ts":        datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "series_resumen": _series_resumen,
                         }
 
                 _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
@@ -6334,6 +6358,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         # ── Gráfico principal ─────────────────────────────────────────
                         import plotly.graph_objects as go
                         _df_g = _sim_result["tabla"]
+                        _series_res_data = _sim_result.get("series_resumen", {})
                         _color_map_g = {
                             "🟢 OK":       "#7a9fc4",
                             "🟡 Atención": "#f0a500",
@@ -6359,9 +6384,43 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         _mix_max_h  = _mix_struct.get("max_h_sem", 0.0)
                         _mix_weeks  = list(range(1, 53))
 
+                        # ── Toggles de visibilidad de series ─────────────────────────
+                        _vis_available = [
+                            "Demanda cargada", "Capacidad calculada",
+                            "Banda estructural", "Promedio estructural",
+                        ]
+                        for _s_opt in [
+                            "Plan estratégico / Previsión ventas",
+                            "Plan de gestión",
+                            "Plan maestro producción",
+                            "Disponibilidad real",
+                        ]:
+                            if _s_opt in _series_res_data:
+                                _vis_available.append(_s_opt)
+
+                        _vis_key = f"_sim_vis_series_{plant_id}"
+                        if _vis_key not in st.session_state:
+                            _vis_defaults = ["Demanda cargada", "Capacidad calculada", "Banda estructural"]
+                            for _s_on in ["Plan estratégico / Previsión ventas", "Plan de gestión"]:
+                                if _s_on in _vis_available:
+                                    _vis_defaults.append(_s_on)
+                            st.session_state[_vis_key] = _vis_defaults
+                        # Sanitizar: eliminar valores que ya no están disponibles
+                        st.session_state[_vis_key] = [
+                            v for v in st.session_state[_vis_key] if v in _vis_available
+                        ]
+
+                        _vis_sel = st.multiselect(
+                            "Series visibles",
+                            options=_vis_available,
+                            key=_vis_key,
+                        )
+                        _vis = set(_vis_sel)
+
                         _fig_sim = go.Figure()
 
-                        if _mix_max_h > 0:
+                        # Banda estructural (rango min–max)
+                        if _mix_max_h > 0 and "Banda estructural" in _vis:
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_min_h] * 52,
                                 mode="lines", line=dict(color="rgba(60,120,60,0.6)", width=1),
@@ -6375,6 +6434,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 name="Rango estructural según mix — sin overrides",
                                 hoverinfo="skip",
                             ))
+
+                        # Promedio estructural
+                        if _mix_max_h > 0 and "Promedio estructural" in _vis:
                             _fig_sim.add_trace(go.Scatter(
                                 x=_mix_weeks, y=[_mix_prom_h] * 52,
                                 mode="lines",
@@ -6383,45 +6445,69 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                 hoverinfo="skip",
                             ))
 
-                        _fig_sim.add_trace(go.Bar(
-                            x=_df_g["Semana"],
-                            y=_df_g["Demanda (h)"],
-                            name="Demanda (h)",
-                            marker_color=_bar_colors_g,
-                            opacity=0.65,
-                            width=0.55,
-                            customdata=_custom_g,
-                            hovertemplate=(
-                                "<b>Sem %{x}</b><br>"
-                                "Demanda: %{y} h<br>"
-                                "Plan: %{customdata[0]} h<br>"
-                                "Cap. disponible: %{customdata[1]} h<br>"
-                                "Saturación: %{customdata[2]} %<br>"
-                                "Déficit: %{customdata[3]} h<br>"
-                                "Estado: %{customdata[4]}"
-                                "<extra></extra>"
-                            ),
-                        ))
+                        # Series opcionales de RESUMEN_SEMANAL
+                        _resumen_styles = {
+                            "Plan estratégico / Previsión ventas": dict(color="#7055b5", dash="dash",     width=1.8),
+                            "Plan de gestión":                     dict(color="#c06000", dash="dot",      width=1.8),
+                            "Plan maestro producción":             dict(color="#e07b00", dash="dash",     width=1.8),
+                            "Disponibilidad real":                 dict(color="#1a7a4a", dash="longdash", width=1.8),
+                        }
+                        for _s_name, _s_style in _resumen_styles.items():
+                            if _s_name in _vis and _s_name in _series_res_data:
+                                _fig_sim.add_trace(go.Scatter(
+                                    x=_mix_weeks,
+                                    y=_series_res_data[_s_name],
+                                    name=_s_name,
+                                    mode="lines",
+                                    line=_s_style,
+                                    hovertemplate=(
+                                        f"<b>Sem %{{x}}</b><br>{_s_name}: %{{y:.1f}} h"
+                                        "<extra></extra>"
+                                    ),
+                                ))
 
-                        _fig_sim.add_trace(go.Scatter(
-                            x=_df_g["Semana"],
-                            y=_df_g["Cap. disponible (h)"],
-                            name="Cap. disponible (tramos)" if _rk.get("usa_tramos", False) else "Cap. disponible (escenario activo)",
-                            mode="lines",
-                            line=dict(color="#3d3d3d", width=2.3, shape="hv"),
-                            hoverinfo="skip",
-                        ))
+                        # Demanda cargada (barras coloreadas por estado)
+                        if "Demanda cargada" in _vis:
+                            _fig_sim.add_trace(go.Bar(
+                                x=_df_g["Semana"],
+                                y=_df_g["Demanda (h)"],
+                                name="Demanda cargada (h)",
+                                marker_color=_bar_colors_g,
+                                opacity=0.65,
+                                width=0.55,
+                                customdata=_custom_g,
+                                hovertemplate=(
+                                    "<b>Sem %{x}</b><br>"
+                                    "Demanda: %{y} h<br>"
+                                    "Plan: %{customdata[0]} h<br>"
+                                    "Cap. disponible: %{customdata[1]} h<br>"
+                                    "Saturación: %{customdata[2]} %<br>"
+                                    "Déficit: %{customdata[3]} h<br>"
+                                    "Estado: %{customdata[4]}"
+                                    "<extra></extra>"
+                                ),
+                            ))
 
-                        _df_parada_g = _df_g[_df_g["Estado"] == "⚫ Parada"]
-                        if not _df_parada_g.empty:
+                        # Capacidad calculada + marcadores de parada (ligados)
+                        if "Capacidad calculada" in _vis:
                             _fig_sim.add_trace(go.Scatter(
-                                x=_df_parada_g["Semana"],
-                                y=[0] * len(_df_parada_g),
-                                name="Parada",
-                                mode="markers",
-                                marker=dict(symbol="x", color="#000000", size=10),
+                                x=_df_g["Semana"],
+                                y=_df_g["Cap. disponible (h)"],
+                                name="Cap. disponible (tramos)" if _rk.get("usa_tramos", False) else "Cap. disponible (escenario activo)",
+                                mode="lines",
+                                line=dict(color="#3d3d3d", width=2.3, shape="hv"),
                                 hoverinfo="skip",
                             ))
+                            _df_parada_g = _df_g[_df_g["Estado"] == "⚫ Parada"]
+                            if not _df_parada_g.empty:
+                                _fig_sim.add_trace(go.Scatter(
+                                    x=_df_parada_g["Semana"],
+                                    y=[0] * len(_df_parada_g),
+                                    name="Parada",
+                                    mode="markers",
+                                    marker=dict(symbol="x", color="#000000", size=10),
+                                    hoverinfo="skip",
+                                ))
 
                         _fig_sim.update_layout(
                             height=420,
@@ -6435,7 +6521,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             bargap=0.15,
                         )
                         st.plotly_chart(_fig_sim, use_container_width=True)
-                        if _mix_max_h > 0:
+                        if _mix_max_h > 0 and "Banda estructural" in _vis:
                             st.caption(
                                 f"Rango estructural según mix con parámetros globales actuales, "
                                 f"sin overrides de escenario — "
