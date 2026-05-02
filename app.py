@@ -5925,9 +5925,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
             _result["n_semanas"] = len(_sems_presentes)
 
             # ── PLAN_HORAS — opcional ─────────────────────────────────────────
-            if "PLAN_HORAS" not in _hojas:
-                _result["warnings"].append("No se encontró la hoja PLAN_HORAS (opcional).")
-            else:
+            if "PLAN_HORAS" in _hojas:
                 _df_plan = _xls.parse("PLAN_HORAS")
                 for _sc in [c for c in _df_plan.columns if c in _semanas_esperadas]:
                     _df_plan[_sc] = pd.to_numeric(_df_plan[_sc], errors="coerce").fillna(0.0)
