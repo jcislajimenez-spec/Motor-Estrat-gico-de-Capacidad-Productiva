@@ -1,4 +1,7 @@
+import hashlib as _hashlib
+import hmac as _hmac
 import io
+import json as _json
 import os
 import sys
 from datetime import datetime
@@ -891,6 +894,82 @@ st.set_page_config(
     layout="wide"
 )
 
+# ── BLOQUE 12A — Autenticación nominativa ─────────────────────────────
+def _auth_required() -> bool:
+    """Fail-closed: auth obligatoria salvo APP_AUTH_REQUIRED='0'."""
+    return os.environ.get("APP_AUTH_REQUIRED", "1").strip() != "0"
+
+
+def _load_app_users() -> dict:
+    raw = os.environ.get("APP_USERS_JSON")
+    if raw is None or not raw.strip():
+        raise ValueError("APP_USERS_JSON no está definida en el entorno.")
+
+    try:
+        users = _json.loads(raw)
+    except _json.JSONDecodeError as exc:
+        raise ValueError(f"APP_USERS_JSON no es JSON válido: {exc}") from exc
+
+    if not isinstance(users, dict) or not users:
+        raise ValueError("APP_USERS_JSON debe contener al menos un usuario.")
+
+    return users
+
+
+def _check_password(record, password_input: str) -> bool:
+    if not isinstance(record, dict):
+        return False
+
+    if "password_sha256" in record:
+        expected = str(record["password_sha256"])
+        actual = _hashlib.sha256(password_input.encode("utf-8")).hexdigest()
+        return _hmac.compare_digest(actual, expected)
+
+    if "password" in record:
+        return _hmac.compare_digest(password_input, str(record["password"]))
+
+    return False
+
+
+if "_authenticated" not in st.session_state:
+    st.session_state["_authenticated"] = False
+
+if "_current_user" not in st.session_state:
+    st.session_state["_current_user"] = ""
+
+if _auth_required():
+    try:
+        _users_db = _load_app_users()
+    except ValueError as _auth_err:
+        st.error(f"Error de configuración de acceso: {_auth_err}")
+        st.stop()
+
+    if not st.session_state["_authenticated"]:
+        st.markdown("## Motor Estratégico de Capacidad")
+        st.markdown("Introduce tus credenciales para acceder.")
+
+        with st.form("_login_form"):
+            _login_user = st.text_input("Usuario")
+            _login_pass = st.text_input("Contraseña", type="password")
+            _login_submitted = st.form_submit_button("Entrar", type="primary")
+
+        if _login_submitted:
+            _login_user = _login_user.strip()
+            _record = _users_db.get(_login_user)
+
+            if _record and _check_password(_record, _login_pass):
+                st.session_state["_authenticated"] = True
+                st.session_state["_current_user"] = _login_user
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos.")
+
+        st.stop()
+else:
+    st.session_state["_authenticated"] = True
+    st.session_state["_current_user"] = "anon"
+# ── Fin BLOQUE 12A ───────────────────────────────────────────────────
+
 # --- Conexión a base de datos Neon ---
 def get_connection():
     return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=10)
@@ -920,6 +999,14 @@ _ui_c2.selectbox(
     format_func=lambda x: _LANG_OPTIONS[x],
     key="lang",
 )
+
+if _auth_required() and st.session_state.get("_current_user") not in ("", "anon"):
+    _su_c1, _su_c2 = st.sidebar.columns([3, 1])
+    _su_c1.caption(f"Conectado como: **{st.session_state['_current_user']}**")
+    if _su_c2.button("↩", help="Cerrar sesión", key="_logout_btn"):
+        st.session_state.pop("_authenticated", None)
+        st.session_state.pop("_current_user", None)
+        st.rerun()
 
 logo = _load_logo()
 st.sidebar.image(logo, use_container_width=True)
