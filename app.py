@@ -152,6 +152,16 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_n_lines":             "Líneas planificadas",
         "sim_cap_total_base":      "Cap. base planta (h/sem)",
         "sim_cap_base_note":       "Capacidad base estimada con los parámetros globales de planificación. Los ajustes específicos por línea se aplican en el cálculo de resultados.",
+        # Programación real
+        "nav_prog_real":           "📋 Programación real",
+        "prog_tab_header":         "Programación real — Carga por proyecto",
+        "prog_no_scenario":        "Sin escenario activo. Ve a Planificación, activa un escenario y asigna modelos antes de usar esta vista.",
+        "prog_no_lines":           "El escenario activo no tiene líneas planificadas. Ve a Planificación y asigna modelos a las líneas.",
+        "prog_upload_label":       "Selecciona el archivo Excel con la hoja PROGRAMACION_REAL",
+        "prog_template_caption":   "Usa la plantilla como punto de partida.",
+        "prog_template_btn":       "⬇️ Plantilla Excel",
+        "prog_preview_header":     "#### Vista previa — proyectos cargados",
+        "prog_intro":              "Los promedios ayudan a ver tendencia. La programación real ayuda a decidir.\n\nAquí no miramos solo cuántas horas hay; miramos qué proyecto rompe la semana.\n\nSi hay conflicto, no tienes que buscarlo a mano: la herramienta lo señalará por semana, línea y proyecto.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -372,6 +382,16 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_n_lines":             "Planned lines",
         "sim_cap_total_base":      "Plant base capacity (h/week)",
         "sim_cap_base_note":       "Base capacity estimated with the global planning parameters. Line-specific adjustments are applied in the results calculation.",
+        # Real scheduling
+        "nav_prog_real":           "📋 Real scheduling",
+        "prog_tab_header":         "Real scheduling — Load by project",
+        "prog_no_scenario":        "No active scenario. Go to Planning, activate a scenario and assign models before using this view.",
+        "prog_no_lines":           "The active scenario has no planned lines. Go to Planning and assign models to lines.",
+        "prog_upload_label":       "Select the Excel file with the PROGRAMACION_REAL sheet",
+        "prog_template_caption":   "Use the template as a starting point.",
+        "prog_template_btn":       "⬇️ Excel template",
+        "prog_preview_header":     "#### Preview — loaded projects",
+        "prog_intro":              "Averages help see trends. Real scheduling helps decide.\n\nHere we don't just look at how many hours there are; we look at which project breaks the week.\n\nIf there is a conflict, you don't have to find it manually: the tool will flag it by week, line and project.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -592,6 +612,16 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "sim_n_lines":             "Planifikatutako lerroak",
         "sim_cap_total_base":      "Plantaren oinarrizko ahalmena (o/aste)",
         "sim_cap_base_note":       "Oinarrizko ahalmena plangintzako parametro globalekin kalkulatuta. Linea bakoitzeko doikuntza zehatzak emaitzen kalkuluan aplikatzen dira.",
+        # Benetako programazioa
+        "nav_prog_real":           "📋 Benetako programazioa",
+        "prog_tab_header":         "Benetako programazioa — Proiektuen karga",
+        "prog_no_scenario":        "Ez dago eszenatoki aktiborik. Joan Planifikazioera, aktibatu eszenatoki bat eta esleitu ereduak ikuspegi hau erabili aurretik.",
+        "prog_no_lines":           "Eszenatoki aktiboak ez du planifikatutako lerrorik. Joan Planifikazioera eta esleitu ereduak lerroei.",
+        "prog_upload_label":       "Hautatu PROGRAMACION_REAL orria duen Excel fitxategia",
+        "prog_template_caption":   "Erabili txantiloia abiapuntu gisa.",
+        "prog_template_btn":       "⬇️ Excel txantiloia",
+        "prog_preview_header":     "#### Aurrebista — kargatutako proiektuak",
+        "prog_intro":              "Batez bestekoak joera ikusten laguntzen du. Benetako programazioak erabakitzen laguntzen du.\n\nHemen ez dugu bakarrik zenbat ordu dauden begiratzen; aste bat hausten duen proiektua zein den begiratzen dugu.\n\nGatazkaren bat badago, ez duzu eskuz bilatu beharrik: tresnak astez, lerroz eta proiektuz adieraziko du.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -1958,9 +1988,11 @@ _PAGES = [
     "📈 Resultados",
     "🧭 Capacidad según mix",
     "📅 Simulación anual",
+    "📋 Programación real",
 ]
 _PAGES_I18N = {p: k for p, k in zip(_PAGES, [
-    "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix", "nav_sim_annual"
+    "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix", "nav_sim_annual",
+    "nav_prog_real",
 ])}
 st.sidebar.radio(
     t("nav_label"),
@@ -6756,3 +6788,349 @@ if st.session_state.active_tab == "📅 Simulación anual":
 
                         with st.expander("Ver tabla completa (52 semanas)", expanded=False):
                             st.dataframe(_sim_result["tabla"], use_container_width=True, hide_index=True)
+
+# ── BLOQUE 14A — Programación real ───────────────────────────────────────────
+
+def _build_prog_template_xlsx() -> bytes:
+    _buf = io.BytesIO()
+    _df_tmpl = pd.DataFrame([
+        {
+            "Proyecto":                  "PRY-001",
+            "Código proyecto/equipo":    "ALPHA-2024",
+            "Cliente / referencia":      "Cliente A",
+            "Modelo / familia":          "SL",
+            "Equipo / modelo":           "Inversor SL-100",
+            "Cantidad":                  10,
+            "Semana inicio mínima":      5,
+            "Semana entrega objetivo":   12,
+            "Duración semanas":          8,
+            "Horas totales":             200.0,
+            "Línea preferente":          "L1",
+            "Líneas alternativas":       "L2, L3",
+            "Estado proyecto":           "En curso",
+            "Estado materiales":         "OK",
+            "Prioridad":                 1,
+            "Comentarios":               "Ejemplo con todos los campos",
+        },
+        {
+            "Proyecto":                  "PRY-002",
+            "Código proyecto/equipo":    "BETA-2024",
+            "Cliente / referencia":      "Cliente B",
+            "Modelo / familia":          "SL",
+            "Equipo / modelo":           "Inversor SL-200",
+            "Cantidad":                  5,
+            "Semana inicio mínima":      8,
+            "Semana entrega objetivo":   15,
+            "Duración semanas":          8,
+            "Horas totales":             120.0,
+            "Línea preferente":          "L2",
+            "Líneas alternativas":       "",
+            "Estado proyecto":           "Pendiente",
+            "Estado materiales":         "Pendiente",
+            "Prioridad":                 2,
+            "Comentarios":               "Materiales pendientes",
+        },
+        {
+            "Proyecto":                  "PRY-003",
+            "Código proyecto/equipo":    "",
+            "Cliente / referencia":      "",
+            "Modelo / familia":          "SL",
+            "Equipo / modelo":           "",
+            "Cantidad":                  3,
+            "Semana inicio mínima":      20,
+            "Semana entrega objetivo":   26,
+            "Duración semanas":          7,
+            "Horas totales":             90.0,
+            "Línea preferente":          "",
+            "Líneas alternativas":       "L1, L2",
+            "Estado proyecto":           "En curso",
+            "Estado materiales":         "OK",
+            "Prioridad":                 3,
+            "Comentarios":               "Sin línea preferente — se usarán alternativas",
+        },
+    ])
+    with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
+        _df_tmpl.to_excel(_writer, sheet_name="PROGRAMACION_REAL", index=False)
+    return _buf.getvalue()
+
+
+_PROG_COLS_OBLIGATORIAS = {
+    "Proyecto",
+    "Modelo / familia",
+    "Cantidad",
+    "Semana inicio mínima",
+    "Semana entrega objetivo",
+    "Horas totales",
+    "Prioridad",
+}
+_PROG_COLS_OPCIONALES_DEFAULTS = {
+    "Duración semanas":        None,
+    "Línea preferente":        "",
+    "Líneas alternativas":     "",
+    "Estado materiales":       "OK",
+    "Estado proyecto":         "",
+    "Cliente / referencia":    "",
+    "Código proyecto/equipo":  "",
+    "Equipo / modelo":         "",
+    "Comentarios":             "",
+}
+
+# Alias de columnas industriales → nombre canónico.
+# Se aplican antes de cualquier validación de obligatorias.
+# Las columnas origen NO se eliminan del DataFrame.
+_PROG_ALIAS_MAP = {
+    "Codigo":          "Proyecto",
+    "CODIGO":          "Proyecto",
+    "Código":          "Proyecto",
+    "CÓDIGO":          "Proyecto",
+    "CLIENTE":         "Cliente / referencia",
+    "GAMA":            "Modelo / familia",
+    "EQUIPO":          "Equipo / modelo",
+    "TOTAL":           "Horas totales",
+    "ESTADO EQUIPO":   "Estado proyecto",
+    "COMENTARIOS":     "Comentarios",
+}
+
+
+def _parse_prog_excel(file) -> dict:
+    _result = {
+        "errors":      [],
+        "warnings":    [],
+        "proyectos":   None,
+        "n_proyectos": 0,
+    }
+    try:
+        _xls = pd.ExcelFile(io.BytesIO(file.read()), engine="openpyxl")
+    except Exception as _ex:
+        _result["errors"].append(f"No se pudo leer el archivo Excel: {_ex}")
+        return _result
+
+    if "PROGRAMACION_REAL" not in _xls.sheet_names:
+        _result["errors"].append(
+            f"Falta la hoja obligatoria PROGRAMACION_REAL. "
+            f"Hojas encontradas: {', '.join(_xls.sheet_names) or '(ninguna)'}."
+        )
+        return _result
+
+    _df_p = _xls.parse("PROGRAMACION_REAL")
+
+    # ── Fase 1: normalización de alias ────────────────────────────────────────
+    # Para cada alias conocido: si el alias está presente en el DataFrame y la
+    # columna canónica destino NO está presente, crear la canónica copiando el alias.
+    # Caso especial "Proyecto": también se acepta "Código proyecto/equipo" como fuente.
+    _alias_aplicados = []
+    for _alias, _canonica in _PROG_ALIAS_MAP.items():
+        if _alias in _df_p.columns and _canonica not in _df_p.columns:
+            _df_p[_canonica] = _df_p[_alias]
+            _alias_aplicados.append(f"'{_alias}' → '{_canonica}'")
+
+    # Caso especial: "Código proyecto/equipo" como fuente de "Proyecto"
+    if "Proyecto" not in _df_p.columns and "Código proyecto/equipo" in _df_p.columns:
+        _df_p["Proyecto"] = _df_p["Código proyecto/equipo"]
+        _alias_aplicados.append("'Código proyecto/equipo' → 'Proyecto'")
+
+    if _alias_aplicados:
+        _result["warnings"].append(
+            f"Columnas renombradas automáticamente: {', '.join(_alias_aplicados)}."
+        )
+
+    # ── Fase 2: validación de columnas obligatorias ───────────────────────────
+    _faltan_ob = _PROG_COLS_OBLIGATORIAS - set(_df_p.columns)
+    if _faltan_ob:
+        _result["errors"].append(
+            f"Faltan columnas obligatorias en PROGRAMACION_REAL: "
+            f"{', '.join(sorted(_faltan_ob))}."
+        )
+        return _result
+
+    _df_p = _df_p.dropna(how="all").reset_index(drop=True)
+    if len(_df_p) == 0:
+        _result["errors"].append("PROGRAMACION_REAL no contiene filas de datos.")
+        return _result
+
+    for _col, _default in _PROG_COLS_OPCIONALES_DEFAULTS.items():
+        if _col not in _df_p.columns:
+            _df_p[_col] = _default
+            _default_lbl = _default if _default is not None else "calculado automáticamente"
+            _result["warnings"].append(
+                f"Columna opcional '{_col}' no encontrada — "
+                f"valor por defecto aplicado: '{_default_lbl}'."
+            )
+
+    for _ncol in ("Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
+                  "Horas totales", "Prioridad", "Duración semanas"):
+        _df_p[_ncol] = pd.to_numeric(_df_p[_ncol], errors="coerce")
+
+    _bad_ini = _df_p["Semana inicio mínima"].notna() & (
+        (_df_p["Semana inicio mínima"] < 1) | (_df_p["Semana inicio mínima"] > 52)
+    )
+    if _bad_ini.any():
+        _result["warnings"].append(
+            f"{int(_bad_ini.sum())} fila(s) con 'Semana inicio mínima' fuera del rango 1–52."
+        )
+
+    _bad_ent = _df_p["Semana entrega objetivo"].notna() & (
+        (_df_p["Semana entrega objetivo"] < 1) | (_df_p["Semana entrega objetivo"] > 52)
+    )
+    if _bad_ent.any():
+        _result["warnings"].append(
+            f"{int(_bad_ent.sum())} fila(s) con 'Semana entrega objetivo' fuera del rango 1–52."
+        )
+
+    _cruce = (
+        _df_p["Semana inicio mínima"].notna()
+        & _df_p["Semana entrega objetivo"].notna()
+        & (_df_p["Semana inicio mínima"] > _df_p["Semana entrega objetivo"])
+    )
+    if _cruce.any():
+        _result["errors"].append(
+            f"{int(_cruce.sum())} fila(s) con 'Semana inicio mínima' mayor que "
+            f"'Semana entrega objetivo'. Revisa los proyectos: "
+            f"{', '.join(_df_p.loc[_cruce, 'Proyecto'].astype(str).tolist())}."
+        )
+        return _result
+
+    _dur_nula = _df_p["Duración semanas"].isna()
+    if _dur_nula.any():
+        _df_p.loc[_dur_nula, "Duración semanas"] = (
+            _df_p.loc[_dur_nula, "Semana entrega objetivo"]
+            - _df_p.loc[_dur_nula, "Semana inicio mínima"]
+            + 1
+        )
+        _result["warnings"].append(
+            f"'Duración semanas' calculada automáticamente para "
+            f"{int(_dur_nula.sum())} fila(s) (entrega − inicio + 1)."
+        )
+
+    for _tcol in ("Proyecto", "Modelo / familia", "Línea preferente",
+                  "Líneas alternativas", "Estado materiales", "Estado proyecto",
+                  "Cliente / referencia", "Código proyecto/equipo",
+                  "Equipo / modelo", "Comentarios"):
+        if _tcol in _df_p.columns:
+            _df_p[_tcol] = _df_p[_tcol].fillna("").astype(str).str.strip()
+
+    _sin_nombre = _df_p["Proyecto"] == ""
+    if _sin_nombre.any():
+        _result["warnings"].append(
+            f"{int(_sin_nombre.sum())} fila(s) sin nombre en 'Proyecto' — "
+            "se etiquetan como '(sin nombre)'."
+        )
+        _df_p.loc[_sin_nombre, "Proyecto"] = "(sin nombre)"
+
+    _malas_h = _df_p["Horas totales"].notna() & (_df_p["Horas totales"] <= 0)
+    if _malas_h.any():
+        _result["warnings"].append(
+            f"{int(_malas_h.sum())} fila(s) con 'Horas totales' ≤ 0: "
+            f"{', '.join(_df_p.loc[_malas_h, 'Proyecto'].tolist())}."
+        )
+
+    _crit_cols = ["Semana inicio mínima", "Semana entrega objetivo", "Horas totales"]
+    _nulos_crit = _df_p[_crit_cols].isna().any(axis=1)
+    if _nulos_crit.any():
+        _result["warnings"].append(
+            f"{int(_nulos_crit.sum())} fila(s) con valores vacíos en columnas clave "
+            "(inicio, entrega u horas) — no participarán en el cálculo cuando se implemente."
+        )
+
+    _df_p = _df_p.sort_values("Prioridad", na_position="last").reset_index(drop=True)
+
+    _result["proyectos"]   = _df_p
+    _result["n_proyectos"] = len(_df_p)
+    return _result
+
+
+if st.session_state.active_tab == "📋 Programación real":
+    st.subheader(t("prog_tab_header"))
+
+    # ── Resolver escenario activo — mismo patrón que Simulación anual ────────
+    _prog_raw_sc_id    = st.session_state.get(f"_session_sc_id_{plant_id}")
+    _prog_active_sc_id = _prog_raw_sc_id
+    _prog_sc_name      = st.session_state.get(f"_sc_name_map_{plant_id}", {}).get(_prog_raw_sc_id, "—")
+    if _prog_sc_name == "—" and _has_db():
+        _prog_sc_list = list_scenarios(plant_id)
+        if _prog_active_sc_id is None:
+            _prog_active_db = next((s for s in _prog_sc_list if s.get("is_active")), None)
+            if _prog_active_db:
+                _prog_active_sc_id = _prog_active_db["id"]
+        if _prog_active_sc_id is not None:
+            _prog_sc_name = {s["id"]: s["name"] for s in _prog_sc_list}.get(_prog_active_sc_id, "—")
+
+    if _prog_active_sc_id is None:
+        st.warning(t("prog_no_scenario"))
+    else:
+        _prog_planned_line_ids = [
+            _lid for _lid in sorted(
+                stations_df["line_id"].astype(str).str.strip().unique().tolist()
+            )
+            if st.session_state.get("line_model", {}).get(plant_id, {}).get(_lid)
+        ]
+
+        if not _prog_planned_line_ids:
+            st.warning(t("prog_no_lines"))
+        else:
+            st.markdown(f"**Planta:** {selected_plant_name} · **Escenario:** {_prog_sc_name}")
+
+            with st.expander("ℹ Sobre esta vista", expanded=False):
+                st.markdown(t("prog_intro"))
+
+            # ── Descarga de plantilla + uploader ─────────────────────────────
+            _pc_up, _pc_tmpl = st.columns([3, 1])
+            with _pc_up:
+                _prog_uploaded = st.file_uploader(
+                    t("prog_upload_label"),
+                    type=["xlsx"],
+                    key=f"prog_upload_{plant_id}",
+                )
+            with _pc_tmpl:
+                st.caption(t("prog_template_caption"))
+                st.download_button(
+                    label=t("prog_template_btn"),
+                    data=_build_prog_template_xlsx(),
+                    file_name="plantilla_programacion_real.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+            # ── Parse + validación ────────────────────────────────────────────
+            if _prog_uploaded is not None:
+                _prog_hash   = _hashlib.sha256(_prog_uploaded.getvalue()).hexdigest()
+                _prog_parsed_data = _parse_prog_excel(_prog_uploaded)
+
+                if _prog_parsed_data["errors"]:
+                    for _perr in _prog_parsed_data["errors"]:
+                        st.error(f"Error: {_perr}")
+                    st.session_state.pop(f"_prog_parsed_{plant_id}", None)
+                else:
+                    for _pwarn in _prog_parsed_data["warnings"]:
+                        st.warning(_pwarn)
+                    st.success(
+                        f"✓ {_prog_parsed_data['n_proyectos']} "
+                        f"proyecto{'s' if _prog_parsed_data['n_proyectos'] != 1 else ''} cargado{'s' if _prog_parsed_data['n_proyectos'] != 1 else ''}"
+                    )
+                    if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
+                        st.session_state.pop(f"_prog_parsed_{plant_id}", None)
+                    st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
+                    st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
+
+            # ── Vista previa ──────────────────────────────────────────────────
+            _prog_parsed = st.session_state.get(f"_prog_parsed_{plant_id}")
+            if _prog_parsed is not None:
+                st.divider()
+                st.markdown(t("prog_preview_header"))
+                _prog_col_orden = [
+                    "Prioridad", "Proyecto", "Código proyecto/equipo",
+                    "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
+                    "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
+                    "Duración semanas", "Horas totales",
+                    "Línea preferente", "Líneas alternativas",
+                    "Estado proyecto", "Estado materiales", "Comentarios",
+                ]
+                _df_prev = _prog_parsed["proyectos"][
+                    [c for c in _prog_col_orden if c in _prog_parsed["proyectos"].columns]
+                ]
+                st.dataframe(_df_prev, use_container_width=True, hide_index=True)
+                st.caption(
+                    f"{_prog_parsed['n_proyectos']} "
+                    f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
+                    f"Planta: {selected_plant_name} · "
+                    f"Escenario activo: {_prog_sc_name}"
+                )
