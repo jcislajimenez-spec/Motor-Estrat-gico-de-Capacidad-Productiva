@@ -165,6 +165,23 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_cap_header":         "#### Capacidad por línea del escenario activo",
         "prog_cap_total":          "Total capacidad por línea: {total} h/sem",
         "prog_cap_no_rows":        "No se ha podido calcular capacidad para las líneas planificadas.",
+        "prog_no_excel":           "Sube primero el Excel de programación real.",
+        "prog_calc_no_cap":        "No hay capacidad calculada para las líneas planificadas. Revisa la configuración del escenario.",
+        "prog_calc_btn":           "Calcular programación real",
+        "prog_calc_caption":       "Reparto uniforme V1: las Horas totales se distribuyen linealmente entre las semanas activas. No optimiza secuencia, materiales ni alternativas de línea.",
+        "prog_kpi_loaded":         "Proyectos cargados",
+        "prog_kpi_calculated":     "Proyectos calculados",
+        "prog_kpi_sin_linea":      "Sin línea",
+        "prog_kpi_no_calc":        "No calculables",
+        "prog_kpi_conflict_weeks": "Semanas con conflicto",
+        "prog_kpi_first_critical": "Primera semana crítica",
+        "prog_kpi_total_deficit":  "Horas en déficit",
+        "prog_kpi_most_tense":     "Línea más tensionada",
+        "prog_conflicts_header":   "#### Conflictos de capacidad detectados",
+        "prog_no_conflicts":       "No se detectan conflictos de capacidad con la programación cargada.",
+        "prog_sin_linea_header":   "#### Proyectos sin línea resuelta",
+        "prog_no_calc_header":     "#### Proyectos no calculables",
+        "prog_load_detail_header": "Carga calculada por semana y línea",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -398,6 +415,23 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_cap_header":         "#### Capacity by line for the active scenario",
         "prog_cap_total":          "Total capacity by line: {total} h/week",
         "prog_cap_no_rows":        "Capacity could not be calculated for the planned lines.",
+        "prog_no_excel":           "Upload the real scheduling Excel file first.",
+        "prog_calc_no_cap":        "No capacity calculated for the planned lines. Check the scenario configuration.",
+        "prog_calc_btn":           "Calculate real scheduling",
+        "prog_calc_caption":       "Uniform distribution V1: Total hours are distributed linearly across active weeks. Does not optimize sequence, materials or alternative lines.",
+        "prog_kpi_loaded":         "Projects loaded",
+        "prog_kpi_calculated":     "Projects calculated",
+        "prog_kpi_sin_linea":      "Without line",
+        "prog_kpi_no_calc":        "Not calculable",
+        "prog_kpi_conflict_weeks": "Weeks with conflict",
+        "prog_kpi_first_critical": "First critical week",
+        "prog_kpi_total_deficit":  "Hours in deficit",
+        "prog_kpi_most_tense":     "Most strained line",
+        "prog_conflicts_header":   "#### Detected capacity conflicts",
+        "prog_no_conflicts":       "No capacity conflicts detected with the loaded schedule.",
+        "prog_sin_linea_header":   "#### Projects without resolved line",
+        "prog_no_calc_header":     "#### Non-calculable projects",
+        "prog_load_detail_header": "Calculated load by week and line",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -631,6 +665,23 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_cap_header":         "#### Eszenatoki aktiboaren ahalmena lerroka",
         "prog_cap_total":          "Lerroen ahalmen guztira: {total} o/aste",
         "prog_cap_no_rows":        "Ezin izan da ahalmena kalkulatu planifikatutako lerroentzat.",
+        "prog_no_excel":           "Igo lehenik benetako programazioaren Excel fitxategia.",
+        "prog_calc_no_cap":        "Ez dago planifikatutako lerroentzat kalkulatutako ahalmenrik. Egiaztatu eszenatokiaren konfigurazioa.",
+        "prog_calc_btn":           "Kalkulatu benetako programazioa",
+        "prog_calc_caption":       "V1 banaketa uniformea: Ordu guztiak asteka banatzen dira linealtasunez. Ez du sekuentzia, materialak edo lerro alternatiboak optimizatzen.",
+        "prog_kpi_loaded":         "Kargatutako proiektuak",
+        "prog_kpi_calculated":     "Kalkulatutako proiektuak",
+        "prog_kpi_sin_linea":      "Lerrorik gabe",
+        "prog_kpi_no_calc":        "Kalkula ezinak",
+        "prog_kpi_conflict_weeks": "Gatazka duten asteak",
+        "prog_kpi_first_critical": "Lehen aste kritikoa",
+        "prog_kpi_total_deficit":  "Defiziteko orduak",
+        "prog_kpi_most_tense":     "Lerrorik tentsionatuena",
+        "prog_conflicts_header":   "#### Detektatutako ahalmen-gatazkak",
+        "prog_no_conflicts":       "Ez da ahalmen-gatazkarik detektatu kargatutako programazioarekin.",
+        "prog_sin_linea_header":   "#### Lerrorik gabe dauden proiektuak",
+        "prog_no_calc_header":     "#### Kalkula ezin diren proiektuak",
+        "prog_load_detail_header": "Kalkulatutako karga astez eta lerroz",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -7127,6 +7178,341 @@ def _compute_prog_cap_por_linea(
     return pd.DataFrame(_rows), _warnings
 
 
+def _resolver_prog_linea_preferente(
+    linea_raw,
+    line_ids_disponibles: list,
+) -> dict:
+    """
+    Resuelve una línea preferente raw contra las líneas disponibles del escenario.
+    Devuelve {"linea": str|None, "motivo": str, "warning": str|None}.
+    V1: no normaliza zero-padding (L7 ≠ L07).
+    """
+    if not line_ids_disponibles:
+        return {"linea": None, "motivo": "Sin líneas disponibles en el escenario", "warning": None}
+
+    if (
+        linea_raw is None
+        or (isinstance(linea_raw, float) and pd.isna(linea_raw))
+        or str(linea_raw).strip() == ""
+    ):
+        return {"linea": None, "motivo": "Sin línea preferente", "warning": None}
+
+    _raw = str(linea_raw).strip()
+
+    # 1 — Match exacto
+    if _raw in line_ids_disponibles:
+        return {"linea": _raw, "motivo": "", "warning": None}
+
+    # 2 — Match normalizado (strip + upper)
+    _raw_upper = _raw.upper()
+    _norm_map = {lid.strip().upper(): lid for lid in line_ids_disponibles}
+    if _raw_upper in _norm_map:
+        return {"linea": _norm_map[_raw_upper], "motivo": "", "warning": None}
+
+    # 3 — Match por sufijo (V1: sin normalización de zero-padding)
+    _suffix_matches = [lid for lid in line_ids_disponibles if lid.upper().endswith(_raw_upper)]
+    if len(_suffix_matches) == 1:
+        return {
+            "linea": _suffix_matches[0],
+            "motivo": "",
+            "warning": (
+                f"Línea preferente '{_raw}' resuelta por sufijo a '{_suffix_matches[0]}'. "
+                "Verifica que es la línea correcta. Nota V1: 'L7' y 'L07' se tratan como valores distintos."
+            ),
+        }
+    if len(_suffix_matches) > 1:
+        return {
+            "linea": None,
+            "motivo": f"Línea ambigua: '{_raw}' coincide con {', '.join(_suffix_matches)}",
+            "warning": None,
+        }
+
+    return {"linea": None, "motivo": f"Línea no encontrada: '{_raw}'", "warning": None}
+
+
+def _distribuir_prog_carga_proyectos(
+    df_proyectos: "pd.DataFrame",
+    cap_df: "pd.DataFrame",
+) -> dict:
+    """
+    Reparte Horas totales entre semanas (reparto uniforme V1) y detecta conflictos.
+    Devuelve load_df, conflict_df, sin_linea_df, no_calculables_df, warnings, kpis.
+    """
+    _empty_kpis = {
+        "n_loaded": 0, "n_calculated": 0, "n_sin_linea": 0,
+        "n_no_calc": 0, "n_conflict_weeks": 0,
+        "first_critical": "—", "total_deficit": 0.0, "most_tense": "—",
+    }
+    _empty_result = {
+        "load_df": pd.DataFrame(),
+        "conflict_df": pd.DataFrame(),
+        "sin_linea_df": pd.DataFrame(),
+        "no_calculables_df": pd.DataFrame(),
+        "warnings": [],
+        "kpis": _empty_kpis,
+    }
+
+    if df_proyectos is None or df_proyectos.empty:
+        return _empty_result
+    if cap_df is None or cap_df.empty:
+        return _empty_result
+
+    _cap_lookup   = cap_df.set_index("Línea")["Capacidad h/sem"].to_dict()
+    _model_lookup = (
+        cap_df.set_index("Línea")["Modelo asignado"].to_dict()
+        if "Modelo asignado" in cap_df.columns else {}
+    )
+    _line_ids_disp = list(_cap_lookup.keys())
+
+    _load_rows    = []
+    _sin_linea_rows = []
+    _no_calc_rows = []
+    _warnings     = []
+
+    for _, _row in df_proyectos.iterrows():
+        _proy      = str(_row.get("Proyecto", "")).strip()
+        _cliente   = str(_row.get("Cliente / referencia", "")).strip()
+        _mod_fam   = str(_row.get("Modelo / familia", "")).strip()
+        _eq_mod    = str(_row.get("Equipo / modelo", "")).strip()
+        _linea_raw = _row.get("Línea preferente")
+        _horas     = _row.get("Horas totales")
+        _sem_ini   = _row.get("Semana inicio mínima")
+        _dur       = _row.get("Duración semanas")
+        _sem_obj   = _row.get("Semana entrega objetivo")
+        _est_mat   = str(_row.get("Estado materiales", "")).strip()
+        _prioridad = _row.get("Prioridad")
+        _coment    = str(_row.get("Comentarios", "")).strip()
+
+        # ── Resolver línea preferente ─────────────────────────────────────
+        _res   = _resolver_prog_linea_preferente(_linea_raw, _line_ids_disp)
+        _linea = _res["linea"]
+        if _res["warning"]:
+            _warnings.append(f"[{_proy}] {_res['warning']}")
+
+        if _linea is None:
+            _sin_linea_rows.append({
+                "Proyecto": _proy,
+                "Línea preferente": str(_linea_raw) if _linea_raw is not None else "",
+                "Motivo": _res["motivo"],
+                "Cliente / referencia": _cliente,
+                "Modelo / familia": _mod_fam,
+                "Equipo / modelo": _eq_mod,
+                "Horas totales": _horas,
+                "Semana inicio mínima": _sem_ini,
+                "Duración semanas": _dur,
+            })
+            continue
+
+        # ── Validar capacidad de la línea resuelta ────────────────────────
+        _cap_linea = float(_cap_lookup.get(_linea, 0.0))
+        if _cap_linea <= 0:
+            _sin_linea_rows.append({
+                "Proyecto": _proy,
+                "Línea preferente": str(_linea_raw),
+                "Motivo": "Línea sin capacidad asignada en el escenario activo",
+                "Cliente / referencia": _cliente,
+                "Modelo / familia": _mod_fam,
+                "Equipo / modelo": _eq_mod,
+                "Horas totales": _horas,
+                "Semana inicio mínima": _sem_ini,
+                "Duración semanas": _dur,
+            })
+            continue
+
+        # ── Warning modelo/familia vs modelo de línea ─────────────────────
+        _modelo_linea = str(_model_lookup.get(_linea, "")).strip()
+        if _mod_fam and _modelo_linea and _mod_fam.upper() != _modelo_linea.upper():
+            _warnings.append(
+                f"[{_proy}] Modelo/familia '{_mod_fam}' indicado, pero la línea '{_linea}' "
+                f"está configurada con modelo '{_modelo_linea}'. Verificar compatibilidad."
+            )
+
+        # ── Warning estado materiales ─────────────────────────────────────
+        if _est_mat and _est_mat.upper() not in ("OK", "SI", "SÍ", "YES", ""):
+            _warnings.append(
+                f"[{_proy}] Estado materiales: '{_est_mat}'. El cálculo se realiza igualmente."
+            )
+
+        # ── Validar Horas totales ─────────────────────────────────────────
+        try:
+            _horas_f = float(_horas)
+        except (TypeError, ValueError):
+            _horas_f = None
+        if _horas_f is None or _horas_f < 1.0:
+            _no_calc_rows.append({
+                "Proyecto": _proy,
+                "Motivo": f"Horas totales inválidas o < 1 ({_horas})",
+                "Horas totales": _horas,
+                "Semana inicio mínima": _sem_ini,
+                "Duración semanas": _dur,
+                "Semana entrega objetivo": _sem_obj,
+                "Comentarios": _coment,
+            })
+            continue
+
+        # ── Validar Duración semanas ──────────────────────────────────────
+        try:
+            _dur_f = float(_dur)
+        except (TypeError, ValueError):
+            _dur_f = None
+        if _dur_f is None or _dur_f < 1.0:
+            _no_calc_rows.append({
+                "Proyecto": _proy,
+                "Motivo": f"Duración semanas inválida o < 1 ({_dur})",
+                "Horas totales": _horas,
+                "Semana inicio mínima": _sem_ini,
+                "Duración semanas": _dur,
+                "Semana entrega objetivo": _sem_obj,
+                "Comentarios": _coment,
+            })
+            continue
+        _dur_i = max(1, int(round(_dur_f)))
+
+        # ── Validar Semana inicio mínima ──────────────────────────────────
+        try:
+            _sem_ini_i = int(_sem_ini)
+        except (TypeError, ValueError):
+            _sem_ini_i = None
+        if _sem_ini_i is None or not (1 <= _sem_ini_i <= 52):
+            _no_calc_rows.append({
+                "Proyecto": _proy,
+                "Motivo": f"Semana inicio fuera de 1–52 ({_sem_ini})",
+                "Horas totales": _horas,
+                "Semana inicio mínima": _sem_ini,
+                "Duración semanas": _dur,
+                "Semana entrega objetivo": _sem_obj,
+                "Comentarios": _coment,
+            })
+            continue
+
+        # ── Semana fin y clip a horizonte anual ───────────────────────────
+        _sem_fin_teorica = _sem_ini_i + _dur_i - 1
+        _sem_fin_usada   = min(_sem_fin_teorica, 52)
+        _dur_usada       = _sem_fin_usada - _sem_ini_i + 1
+
+        if _sem_fin_teorica > 52:
+            _warnings.append(
+                f"[{_proy}] Excede semana 52 (fin teórico: semana {_sem_fin_teorica}). "
+                "Se calcula solo la carga dentro del horizonte visible (hasta semana 52)."
+            )
+
+        # ── Warning semana entrega objetivo ───────────────────────────────
+        try:
+            _sem_obj_i = int(_sem_obj)
+            if _sem_fin_teorica > _sem_obj_i:
+                _warnings.append(
+                    f"[{_proy}] La semana fin calculada ({_sem_fin_teorica}) supera "
+                    f"la semana de entrega objetivo ({_sem_obj_i})."
+                )
+        except (TypeError, ValueError):
+            pass
+
+        # ── Reparto uniforme ──────────────────────────────────────────────
+        _horas_sem = _horas_f / _dur_usada
+
+        for _sem in range(_sem_ini_i, _sem_fin_usada + 1):
+            _load_rows.append({
+                "Proyecto": _proy,
+                "Cliente / referencia": _cliente,
+                "Modelo / familia": _mod_fam,
+                "Equipo / modelo": _eq_mod,
+                "Semana": _sem,
+                "Línea": _linea,
+                "Horas proyecto semana": round(_horas_sem, 2),
+                "Horas totales": round(_horas_f, 1),
+                "Duración usada": _dur_usada,
+                "Prioridad": _prioridad,
+                "Estado materiales": _est_mat,
+            })
+
+    # ── DataFrames ───────────────────────────────────────────────────────────
+    _load_df = (
+        pd.DataFrame(_load_rows)
+        if _load_rows
+        else pd.DataFrame(columns=[
+            "Proyecto", "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
+            "Semana", "Línea", "Horas proyecto semana", "Horas totales",
+            "Duración usada", "Prioridad", "Estado materiales",
+        ])
+    )
+    _sin_linea_df = (
+        pd.DataFrame(_sin_linea_rows)
+        if _sin_linea_rows
+        else pd.DataFrame(columns=[
+            "Proyecto", "Línea preferente", "Motivo", "Cliente / referencia",
+            "Modelo / familia", "Equipo / modelo", "Horas totales",
+            "Semana inicio mínima", "Duración semanas",
+        ])
+    )
+    _no_calc_df = (
+        pd.DataFrame(_no_calc_rows)
+        if _no_calc_rows
+        else pd.DataFrame(columns=[
+            "Proyecto", "Motivo", "Horas totales", "Semana inicio mínima",
+            "Duración semanas", "Semana entrega objetivo", "Comentarios",
+        ])
+    )
+
+    # ── Comparación con capacidad ─────────────────────────────────────────────
+    if not _load_df.empty:
+        _agg = (
+            _load_df.groupby(["Semana", "Línea"])
+            .agg(**{
+                "Carga h": ("Horas proyecto semana", "sum"),
+                "Proyectos implicados": ("Proyecto", lambda x: ", ".join(sorted(set(x)))),
+            })
+            .reset_index()
+        )
+        _agg["Capacidad h"] = _agg["Línea"].map(_cap_lookup).fillna(0.0)
+        _agg["Carga h"]     = _agg["Carga h"].round(1)
+        _agg["Déficit h"]   = (_agg["Carga h"] - _agg["Capacidad h"]).clip(lower=0).round(1)
+        _conflict_df = (
+            _agg[_agg["Déficit h"] > 0]
+            [["Semana", "Línea", "Carga h", "Capacidad h", "Déficit h", "Proyectos implicados"]]
+            .sort_values(["Semana", "Línea"])
+            .reset_index(drop=True)
+        )
+    else:
+        _conflict_df = pd.DataFrame(columns=[
+            "Semana", "Línea", "Carga h", "Capacidad h", "Déficit h", "Proyectos implicados",
+        ])
+
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    _n_loaded    = len(df_proyectos)
+    _n_sin_linea = len(_sin_linea_df)
+    _n_no_calc   = len(_no_calc_df)
+    _n_calculated = _n_loaded - _n_sin_linea - _n_no_calc
+
+    if not _conflict_df.empty:
+        _n_conflict_weeks = len(_conflict_df)
+        _first_critical   = int(_conflict_df["Semana"].min())
+        _total_deficit    = float(_conflict_df["Déficit h"].sum())
+        _most_tense       = str(_conflict_df.groupby("Línea")["Déficit h"].sum().idxmax())
+    else:
+        _n_conflict_weeks = 0
+        _first_critical   = "—"
+        _total_deficit    = 0.0
+        _most_tense       = "—"
+
+    return {
+        "load_df":          _load_df,
+        "conflict_df":      _conflict_df,
+        "sin_linea_df":     _sin_linea_df,
+        "no_calculables_df": _no_calc_df,
+        "warnings":         _warnings,
+        "kpis": {
+            "n_loaded":         _n_loaded,
+            "n_calculated":     _n_calculated,
+            "n_sin_linea":      _n_sin_linea,
+            "n_no_calc":        _n_no_calc,
+            "n_conflict_weeks": _n_conflict_weeks,
+            "first_critical":   _first_critical,
+            "total_deficit":    _total_deficit,
+            "most_tense":       _most_tense,
+        },
+    }
+
+
 if st.session_state.active_tab == "📋 Programación real":
     st.subheader(t("prog_tab_header"))
 
@@ -7279,3 +7665,73 @@ if st.session_state.active_tab == "📋 Programación real":
                     f"Planta: {selected_plant_name} · "
                     f"Escenario activo: {_prog_sc_name}"
                 )
+
+            # ── Cálculo operativo — Bloque 14B.2 ─────────────────────────────
+            st.divider()
+            if _prog_parsed is None:
+                st.info(t("prog_no_excel"))
+            elif _prog_cap_df.empty:
+                st.warning(t("prog_calc_no_cap"))
+            else:
+                st.caption(t("prog_calc_caption"))
+                if st.button(t("prog_calc_btn"), key=f"prog_calc_btn_{plant_id}"):
+                    _prog_result_computed = _distribuir_prog_carga_proyectos(
+                        _prog_parsed["proyectos"], _prog_cap_df
+                    )
+                    st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
+
+            # ── Mostrar resultados si existen ─────────────────────────────────
+            _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
+            if _prog_result is not None:
+                _pkpis = _prog_result["kpis"]
+
+                _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+                _kc1.metric(t("prog_kpi_loaded"),     _pkpis["n_loaded"])
+                _kc2.metric(t("prog_kpi_calculated"), _pkpis["n_calculated"])
+                _kc3.metric(t("prog_kpi_sin_linea"),  _pkpis["n_sin_linea"])
+                _kc4.metric(t("prog_kpi_no_calc"),    _pkpis["n_no_calc"])
+
+                _kc5, _kc6, _kc7, _kc8 = st.columns(4)
+                _kc5.metric(t("prog_kpi_conflict_weeks"), _pkpis["n_conflict_weeks"])
+                _kc6.metric(t("prog_kpi_first_critical"), str(_pkpis["first_critical"]))
+                _kc7.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
+                _kc8.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
+
+                for _pw in _prog_result["warnings"]:
+                    st.warning(_pw)
+
+                st.markdown(t("prog_conflicts_header"))
+                if _prog_result["conflict_df"].empty:
+                    st.success(t("prog_no_conflicts"))
+                else:
+                    st.dataframe(
+                        _prog_result["conflict_df"],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                if not _prog_result["sin_linea_df"].empty:
+                    st.markdown(t("prog_sin_linea_header"))
+                    st.dataframe(
+                        _prog_result["sin_linea_df"],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                if not _prog_result["no_calculables_df"].empty:
+                    st.markdown(t("prog_no_calc_header"))
+                    st.dataframe(
+                        _prog_result["no_calculables_df"],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                with st.expander(t("prog_load_detail_header"), expanded=False):
+                    if _prog_result["load_df"].empty:
+                        st.info("Sin proyectos calculados.")
+                    else:
+                        st.dataframe(
+                            _prog_result["load_df"],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
