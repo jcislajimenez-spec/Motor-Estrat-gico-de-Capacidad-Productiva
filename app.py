@@ -7162,15 +7162,36 @@ if st.session_state.active_tab == "📋 Programación real":
                 st.markdown(t("prog_intro"))
 
             _prog_ov_sc_key = _prog_raw_sc_id if _prog_raw_sc_id is not None else 0
+
+            # ── Carga de overrides desde BD — mismas flags que Resultados ────────
+            st.session_state.setdefault("line_params_override", {})
+            st.session_state["line_params_override"].setdefault(plant_id, {})
+            st.session_state["line_params_override"][plant_id].setdefault(_prog_ov_sc_key, {})
+            _prog_ov_load_key = f"_line_ov_loaded_{plant_id}_{_prog_ov_sc_key}"
+            if not st.session_state.get(_prog_ov_load_key, False):
+                if _prog_active_sc_id:
+                    _prog_db_ov = load_scenario_line_overrides(_prog_active_sc_id)
+                else:
+                    _prog_db_ov = load_line_overrides(plant_id)
+                for _lid_ov, _ov_row in _prog_db_ov.items():
+                    st.session_state["line_params_override"][plant_id][_prog_ov_sc_key][_lid_ov] = _ov_row
+                st.session_state[_prog_ov_load_key] = True
+
+            st.session_state.setdefault("proc_shift_override", {})
+            st.session_state["proc_shift_override"].setdefault(plant_id, {})
+            st.session_state["proc_shift_override"][plant_id].setdefault(_prog_ov_sc_key, {})
+            _prog_proc_load_key = f"_proc_sh_loaded_{plant_id}_{_prog_ov_sc_key}"
+            if not st.session_state.get(_prog_proc_load_key, False):
+                if _prog_active_sc_id:
+                    for _lid_proc, _pd_proc in load_scenario_process_shifts(_prog_active_sc_id).items():
+                        st.session_state["proc_shift_override"][plant_id][_prog_ov_sc_key][_lid_proc] = _pd_proc
+                st.session_state[_prog_proc_load_key] = True
+
             _prog_plant_ov = (
-                st.session_state.get("line_params_override", {})
-                .get(plant_id, {})
-                .get(_prog_ov_sc_key, {})
+                st.session_state["line_params_override"][plant_id][_prog_ov_sc_key]
             )
             _prog_proc_ov = (
-                st.session_state.get("proc_shift_override", {})
-                .get(plant_id, {})
-                .get(_prog_ov_sc_key, {})
+                st.session_state["proc_shift_override"][plant_id][_prog_ov_sc_key]
             )
             _prog_cap_df, _prog_cap_warns = _compute_prog_cap_por_linea(
                 plant_id,
