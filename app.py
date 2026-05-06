@@ -162,6 +162,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_template_btn":       "⬇️ Plantilla Excel",
         "prog_preview_header":     "#### Vista previa — proyectos cargados",
         "prog_intro":              "Los promedios ayudan a ver tendencia. La programación real ayuda a decidir.\n\nAquí no miramos solo cuántas horas hay; miramos qué proyecto rompe la semana.\n\nSi hay conflicto, no tienes que buscarlo a mano: la herramienta lo señalará por semana, línea y proyecto.",
+        "prog_cap_header":         "#### Capacidad por línea del escenario activo",
+        "prog_cap_total":          "Total capacidad por línea: {total} h/sem",
+        "prog_cap_no_rows":        "No se ha podido calcular capacidad para las líneas planificadas.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -392,6 +395,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_template_btn":       "⬇️ Excel template",
         "prog_preview_header":     "#### Preview — loaded projects",
         "prog_intro":              "Averages help see trends. Real scheduling helps decide.\n\nHere we don't just look at how many hours there are; we look at which project breaks the week.\n\nIf there is a conflict, you don't have to find it manually: the tool will flag it by week, line and project.",
+        "prog_cap_header":         "#### Capacity by line for the active scenario",
+        "prog_cap_total":          "Total capacity by line: {total} h/week",
+        "prog_cap_no_rows":        "Capacity could not be calculated for the planned lines.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -622,6 +628,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_template_btn":       "⬇️ Excel txantiloia",
         "prog_preview_header":     "#### Aurrebista — kargatutako proiektuak",
         "prog_intro":              "Batez bestekoak joera ikusten laguntzen du. Benetako programazioak erabakitzen laguntzen du.\n\nHemen ez dugu bakarrik zenbat ordu dauden begiratzen; aste bat hausten duen proiektua zein den begiratzen dugu.\n\nGatazkaren bat badago, ez duzu eskuz bilatu beharrik: tresnak astez, lerroz eta proiektuz adieraziko du.",
+        "prog_cap_header":         "#### Eszenatoki aktiboaren ahalmena lerroka",
+        "prog_cap_total":          "Lerroen ahalmen guztira: {total} o/aste",
+        "prog_cap_no_rows":        "Ezin izan da ahalmena kalkulatu planifikatutako lerroentzat.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -7039,6 +7048,85 @@ def _parse_prog_excel(file) -> dict:
     return _result
 
 
+def _compute_prog_cap_por_linea(
+    plant_id: int,
+    planned_line_ids: list[str],
+    line_model_map: dict,
+    plant_overrides: dict,
+    process_overrides: dict,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+    hours_week_param: float,
+    shifts_param: int,
+    availability_param: float,
+    efficiency_param: float,
+    hours_eff_param: float,
+) -> tuple[pd.DataFrame, list[str]]:
+    _warnings = []
+    _rows = []
+
+    _tc = times_df_param.copy()
+    _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
+    _ctm = _tc.groupby("model")["cycle_time"].sum().to_dict()
+
+    for _lid in planned_line_ids:
+        _mdl = line_model_map.get(_lid)
+        if not _mdl:
+            _warnings.append(f"Línea {_lid}: no tiene modelo asignado.")
+            continue
+
+        _cycle_total = float(_ctm.get(_mdl, 0.0) or 0.0)
+        if _cycle_total <= 0:
+            _warnings.append(
+                f"Línea {_lid}: el modelo {_mdl} tiene cycle_time total = 0."
+            )
+
+        _ov = plant_overrides.get(_lid, {})
+        if _ov.get("enabled", False):
+            _he = (
+                hours_week_param
+                * int(_ov.get("shifts", shifts_param))
+                * float(_ov.get("availability", availability_param))
+                * float(_ov.get("efficiency", efficiency_param))
+            )
+        else:
+            _he = hours_eff_param
+
+        _phe = None
+        if _ov.get("enabled", False):
+            _pd = process_overrides.get(_lid)
+            if _pd:
+                _a = float(_ov.get("availability", availability_param))
+                _e = float(_ov.get("efficiency", efficiency_param))
+                _phe = {
+                    _proc: hours_week_param * float(_sh) * _a * _e
+                    for _proc, _sh in _pd.items()
+                }
+
+        if _phe is not None:
+            _, _, _cap_u_sem = compute_line_detail_v2(
+                _lid, _mdl, times_df_param, stations_df_param, _he, _phe
+            )
+        else:
+            _, _, _cap_u_sem = compute_line_detail(
+                _lid, _mdl, times_df_param, stations_df_param, _he
+            )
+
+        _cap_h_sem = float(_cap_u_sem) * _cycle_total
+        if _cap_h_sem <= 0:
+            _warnings.append(
+                f"Línea {_lid}: capacidad calculada 0 h/sem para el modelo {_mdl}."
+            )
+
+        _rows.append({
+            "Línea": _lid,
+            "Modelo asignado": _mdl,
+            "Capacidad h/sem": round(_cap_h_sem, 1),
+        })
+
+    return pd.DataFrame(_rows), _warnings
+
+
 if st.session_state.active_tab == "📋 Programación real":
     st.subheader(t("prog_tab_header"))
 
@@ -7072,6 +7160,42 @@ if st.session_state.active_tab == "📋 Programación real":
 
             with st.expander("ℹ Sobre esta vista", expanded=False):
                 st.markdown(t("prog_intro"))
+
+            _prog_ov_sc_key = _prog_raw_sc_id if _prog_raw_sc_id is not None else 0
+            _prog_plant_ov = (
+                st.session_state.get("line_params_override", {})
+                .get(plant_id, {})
+                .get(_prog_ov_sc_key, {})
+            )
+            _prog_proc_ov = (
+                st.session_state.get("proc_shift_override", {})
+                .get(plant_id, {})
+                .get(_prog_ov_sc_key, {})
+            )
+            _prog_cap_df, _prog_cap_warns = _compute_prog_cap_por_linea(
+                plant_id,
+                _prog_planned_line_ids,
+                st.session_state.get("line_model", {}).get(plant_id, {}),
+                _prog_plant_ov,
+                _prog_proc_ov,
+                times_df,
+                stations_df,
+                hours_week,
+                shifts,
+                availability,
+                efficiency,
+                hours_eff,
+            )
+
+            st.markdown(t("prog_cap_header"))
+            if _prog_cap_df.empty:
+                st.warning(t("prog_cap_no_rows"))
+            else:
+                st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
+                _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum())
+                st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
+            for _pcw in _prog_cap_warns:
+                st.warning(_pcw)
 
             # ── Descarga de plantilla + uploader ─────────────────────────────
             _pc_up, _pc_tmpl = st.columns([3, 1])
