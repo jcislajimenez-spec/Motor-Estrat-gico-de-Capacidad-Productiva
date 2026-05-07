@@ -196,6 +196,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_import_warns_expander":     "Avisos de importación ({n})",
         "prog_calc_warns_expander":       "Avisos de programación ({n})",
         "prog_excluded_expander":         "Proyectos excluidos del cálculo ({n})",
+        "prog_chart_header":              "Carga vs capacidad por semana",
+        "prog_chart_line_selector":       "Línea a visualizar",
+        "prog_chart_all_lines":           "Todas las líneas",
+        "prog_chart_caption":             "Las barras muestran la carga programada. La línea muestra la capacidad disponible. Si la barra supera la línea, hay déficit.",
+        "prog_chart_no_load":             "No hay carga calculada para representar el gráfico.",
+        "prog_chart_no_capacity":         "No hay capacidad disponible para construir el gráfico.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -460,6 +466,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_import_warns_expander":     "Import warnings ({n})",
         "prog_calc_warns_expander":       "Scheduling warnings ({n})",
         "prog_excluded_expander":         "Projects excluded from calculation ({n})",
+        "prog_chart_header":              "Load vs capacity by week",
+        "prog_chart_line_selector":       "Line to display",
+        "prog_chart_all_lines":           "All lines",
+        "prog_chart_caption":             "Bars show scheduled load. The line shows available capacity. If a bar exceeds the line, there is a deficit.",
+        "prog_chart_no_load":             "No calculated load available to display the chart.",
+        "prog_chart_no_capacity":         "No capacity available to build the chart.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -724,6 +736,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_import_warns_expander":     "Inportazio-abisuak ({n})",
         "prog_calc_warns_expander":       "Programazio-abisuak ({n})",
         "prog_excluded_expander":         "Kalkulutik kanpo utzitako proiektuak ({n})",
+        "prog_chart_header":              "Karga vs ahalmena astez",
+        "prog_chart_line_selector":       "Bistaratzeko lerroa",
+        "prog_chart_all_lines":           "Lerro guztiak",
+        "prog_chart_caption":             "Barrek programatutako karga erakusten dute. Lerroak ahalmen erabilgarria erakusten du. Barra lerroa gainditzen badu, defizita dago.",
+        "prog_chart_no_load":             "Ez dago kalkulatutako kargik grafikoa bistaratzeko.",
+        "prog_chart_no_capacity":         "Ez dago ahalmen erabilgarririk grafikoa eraikitzeko.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -7806,6 +7824,153 @@ if st.session_state.active_tab == "📋 Programación real":
                     ):
                         for _pw in _prog_result["warnings"]:
                             st.warning(_pw)
+
+                # ── 14C.3 Gráfico carga vs capacidad por semana ───────────────────────
+                _ch_load_df = _prog_result.get("load_df")
+                if _ch_load_df is not None and not _ch_load_df.empty:
+                    # capacidad por línea desde _prog_cap_df (ya en scope)
+                    _ch_cap_map: dict = {}
+                    if not _prog_cap_df.empty:
+                        for _, _chr in _prog_cap_df.iterrows():
+                            try:
+                                _ch_cap_map[str(_chr["Línea"])] = float(_chr["Capacidad h/sem"])
+                            except (ValueError, TypeError):
+                                pass
+
+                    # opciones del selector
+                    _ch_lines_all = sorted(
+                        set(_ch_load_df["Línea"].dropna().astype(str).unique().tolist())
+                        | set(_ch_cap_map.keys())
+                    )
+                    _ch_opts = [t("prog_chart_all_lines")] + _ch_lines_all
+
+                    # default: línea más tensionada si hay conflictos, si no "Todas"
+                    _ch_most_tense = str(_pkpis.get("most_tense", "—"))
+                    if (
+                        _pkpis["n_conflict_weeks"] > 0
+                        and _ch_most_tense not in ("—", "None", "")
+                        and _ch_most_tense in _ch_lines_all
+                    ):
+                        _ch_default_idx = _ch_opts.index(_ch_most_tense)
+                    else:
+                        _ch_default_idx = 0
+
+                    _ch_hdr_col, _ch_sel_col = st.columns([3, 2])
+                    _ch_hdr_col.markdown(f"#### {t('prog_chart_header')}")
+                    with _ch_sel_col:
+                        _ch_sel = st.selectbox(
+                            t("prog_chart_line_selector"),
+                            options=_ch_opts,
+                            index=_ch_default_idx,
+                            key=f"prog_chart_line_{plant_id}",
+                            label_visibility="collapsed",
+                        )
+
+                    # semanas del rango de load_df, ordenadas numéricamente
+                    try:
+                        _ch_weeks = sorted(
+                            _ch_load_df["Semana"].dropna().unique().tolist(),
+                            key=lambda _w: int(_w),
+                        )
+                    except (ValueError, TypeError):
+                        _ch_weeks = sorted(
+                            _ch_load_df["Semana"].dropna().unique().tolist(), key=str
+                        )
+
+                    # agregación de carga según selección
+                    _ch_all_sel = _ch_sel == t("prog_chart_all_lines")
+                    if _ch_all_sel:
+                        _ch_cap_value = sum(_ch_cap_map.values())
+                        _ch_load_agg = (
+                            _ch_load_df.copy()
+                            .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                            .sum()
+                            .rename(columns={"Horas proyecto semana": "Carga h"})
+                        )
+                    else:
+                        _ch_cap_value = _ch_cap_map.get(_ch_sel, 0.0)
+                        _ch_lf = _ch_load_df[
+                            _ch_load_df["Línea"].astype(str) == _ch_sel
+                        ].copy()
+                        _ch_load_agg = (
+                            _ch_lf
+                            .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                            .sum()
+                            .rename(columns={"Horas proyecto semana": "Carga h"})
+                        )
+
+                    if _ch_cap_value <= 0:
+                        st.warning(t("prog_chart_no_capacity"))
+                    elif _ch_load_agg.empty:
+                        st.info(t("prog_chart_no_load"))
+                    else:
+                        # completar semanas sin carga con 0
+                        _ch_weeks_df = pd.DataFrame({"Semana": _ch_weeks})
+                        _ch_plot = (
+                            _ch_weeks_df
+                            .merge(_ch_load_agg, on="Semana", how="left")
+                            .fillna({"Carga h": 0.0})
+                        )
+                        _ch_plot["Semana"]     = _ch_plot["Semana"].astype(int)
+                        _ch_plot               = _ch_plot.sort_values("Semana").reset_index(drop=True)
+                        _ch_plot["Capacidad h"] = float(_ch_cap_value)
+                        _ch_plot["Déficit h"]   = (
+                            (_ch_plot["Carga h"] - _ch_plot["Capacidad h"])
+                            .clip(lower=0.0)
+                            .round(1)
+                        )
+                        _ch_plot["Saturación %"] = _ch_plot.apply(
+                            lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1),
+                            axis=1,
+                        )
+                        _ch_xlabels    = _ch_plot["Semana"].astype(str).apply(lambda _s: f"S{_s}")
+                        _ch_bar_colors = [
+                            "#FF4B4B" if _d > 0 else "#4C8CF8"
+                            for _d in _ch_plot["Déficit h"]
+                        ]
+
+                        _ch_fig = go.Figure()
+                        _ch_fig.add_trace(go.Bar(
+                            x=_ch_xlabels,
+                            y=_ch_plot["Carga h"].round(1),
+                            name="Carga h",
+                            marker_color=_ch_bar_colors,
+                            customdata=_ch_plot[["Capacidad h", "Saturación %", "Déficit h"]].values,
+                            hovertemplate=(
+                                "Semana %{x}<br>"
+                                "Carga: %{y:.1f} h<br>"
+                                "Capacidad: %{customdata[0]:.1f} h<br>"
+                                "Saturación: %{customdata[1]:.1f}%<br>"
+                                "Déficit: %{customdata[2]:.1f} h"
+                                "<extra></extra>"
+                            ),
+                        ))
+                        _ch_fig.add_trace(go.Scatter(
+                            x=_ch_xlabels,
+                            y=_ch_plot["Capacidad h"].round(1),
+                            mode="lines",
+                            name="Capacidad h",
+                            line=dict(color="#21C354", width=2, dash="dot"),
+                            hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
+                        ))
+                        _ch_fig.update_layout(
+                            height=300,
+                            margin=dict(l=0, r=0, t=20, b=0),
+                            legend=dict(
+                                orientation="h", yanchor="bottom", y=1.02,
+                                xanchor="right", x=1,
+                            ),
+                            xaxis_title="Semana",
+                            yaxis_title="Horas",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            bargap=0.25,
+                        )
+                        st.plotly_chart(_ch_fig, use_container_width=True)
+                        st.caption(t("prog_chart_caption"))
+                else:
+                    st.info(t("prog_chart_no_load"))
+                # ── fin 14C.3 ─────────────────────────────────────────────────────────
 
                 # ── Tabla "Qué se rompe" ──────────────────────────────────────
                 st.markdown(t("prog_conflicts_header"))
