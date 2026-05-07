@@ -182,6 +182,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_sin_linea_header":   "#### Proyectos sin línea resuelta",
         "prog_no_calc_header":     "#### Proyectos no calculables",
         "prog_load_detail_header": "Carga calculada por semana y línea",
+        "prog_cap_expander":              "Ver capacidad por línea del escenario activo",
+        "prog_preview_expander":          "Ver proyectos cargados ({n})",
+        "prog_import_warns_expander":     "Avisos de importación ({n})",
+        "prog_calc_warns_expander":       "Avisos de programación ({n})",
+        "prog_excluded_expander":         "Proyectos excluidos del cálculo ({n})",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -432,6 +437,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_sin_linea_header":   "#### Projects without resolved line",
         "prog_no_calc_header":     "#### Non-calculable projects",
         "prog_load_detail_header": "Calculated load by week and line",
+        "prog_cap_expander":              "View capacity by line for the active scenario",
+        "prog_preview_expander":          "View loaded projects ({n})",
+        "prog_import_warns_expander":     "Import warnings ({n})",
+        "prog_calc_warns_expander":       "Scheduling warnings ({n})",
+        "prog_excluded_expander":         "Projects excluded from calculation ({n})",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -682,6 +692,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_sin_linea_header":   "#### Lerrorik gabe dauden proiektuak",
         "prog_no_calc_header":     "#### Kalkula ezin diren proiektuak",
         "prog_load_detail_header": "Kalkulatutako karga astez eta lerroz",
+        "prog_cap_expander":              "Ikusi eszenatoki aktiboko ahalmena lerroka",
+        "prog_preview_expander":          "Ikusi kargatutako proiektuak ({n})",
+        "prog_import_warns_expander":     "Inportazio-abisuak ({n})",
+        "prog_calc_warns_expander":       "Programazio-abisuak ({n})",
+        "prog_excluded_expander":         "Kalkulutik kanpo utzitako proiektuak ({n})",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -7571,11 +7586,6 @@ if st.session_state.active_tab == "📋 Programación real":
         if not _prog_planned_line_ids:
             st.warning(t("prog_no_lines"))
         else:
-            st.markdown(f"**Planta:** {selected_plant_name} · **Escenario:** {_prog_sc_name}")
-
-            with st.expander("ℹ Sobre esta vista", expanded=False):
-                st.markdown(t("prog_intro"))
-
             _prog_ov_sc_key = _prog_raw_sc_id if _prog_raw_sc_id is not None else 0
 
             # ── Carga de overrides desde BD — mismas flags que Resultados ────────
@@ -7623,15 +7633,25 @@ if st.session_state.active_tab == "📋 Programación real":
                 hours_eff,
             )
 
-            st.markdown(t("prog_cap_header"))
-            if _prog_cap_df.empty:
-                st.warning(t("prog_cap_no_rows"))
-            else:
-                st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
-                _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum())
-                st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
-            for _pcw in _prog_cap_warns:
-                st.warning(_pcw)
+            # ── Cabecera contextual compacta ──────────────────────────────────
+            _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum()) if not _prog_cap_df.empty else 0.0
+            st.markdown(
+                f"**Planta:** {selected_plant_name} · "
+                f"**Escenario:** {_prog_sc_name} · "
+                f"**{len(_prog_planned_line_ids)} líneas** · "
+                f"**Cap. disponible: {_fmt_num(_prog_cap_total)} h/sem**"
+            )
+
+            # ── Capacidad por línea → expander (referencia) ───────────────────
+            with st.expander(t("prog_cap_expander"), expanded=False):
+                st.caption(t("prog_intro"))
+                if _prog_cap_df.empty:
+                    st.warning(t("prog_cap_no_rows"))
+                else:
+                    st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
+                    st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
+                for _pcw in _prog_cap_warns:
+                    st.warning(_pcw)
 
             # ── Descarga de plantilla + uploader ─────────────────────────────
             _pc_up, _pc_tmpl = st.columns([3, 1])
@@ -7660,43 +7680,48 @@ if st.session_state.active_tab == "📋 Programación real":
                         st.error(f"Error: {_perr}")
                     st.session_state.pop(f"_prog_parsed_{plant_id}", None)
                 else:
-                    for _pwarn in _prog_parsed_data["warnings"]:
-                        st.warning(_pwarn)
-                    st.success(
-                        f"✓ {_prog_parsed_data['n_proyectos']} "
-                        f"proyecto{'s' if _prog_parsed_data['n_proyectos'] != 1 else ''} cargado{'s' if _prog_parsed_data['n_proyectos'] != 1 else ''}"
-                    )
+                    _np = _prog_parsed_data["n_proyectos"]
+                    st.success(f"✓ Excel cargado correctamente: {_np} proyecto{'s' if _np != 1 else ''}.")
+                    if _prog_parsed_data["warnings"]:
+                        with st.expander(
+                            t("prog_import_warns_expander").format(n=len(_prog_parsed_data["warnings"])),
+                            expanded=False,
+                        ):
+                            for _piw in _prog_parsed_data["warnings"]:
+                                st.warning(_piw)
                     if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
                         st.session_state.pop(f"_prog_parsed_{plant_id}", None)
                     st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                     st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
-            # ── Vista previa ──────────────────────────────────────────────────
+            # ── Vista previa → expander ───────────────────────────────────────
             _prog_parsed = st.session_state.get(f"_prog_parsed_{plant_id}")
             if _prog_parsed is not None:
-                st.divider()
-                st.markdown(t("prog_preview_header"))
-                _prog_col_orden = [
-                    "Prioridad", "Proyecto", "Código proyecto/equipo",
-                    "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
-                    "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
-                    "Duración semanas", "Horas totales",
-                    "Línea preferente", "Líneas alternativas",
-                    "Estado proyecto", "Estado materiales", "Comentarios",
-                ]
-                _df_prev = _prog_parsed["proyectos"][
-                    [c for c in _prog_col_orden if c in _prog_parsed["proyectos"].columns]
-                ]
-                st.dataframe(_df_prev, use_container_width=True, hide_index=True)
-                st.caption(
-                    f"{_prog_parsed['n_proyectos']} "
-                    f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
-                    f"Planta: {selected_plant_name} · "
-                    f"Escenario activo: {_prog_sc_name}"
-                )
+                _np_prev = _prog_parsed["n_proyectos"]
+                with st.expander(
+                    t("prog_preview_expander").format(n=_np_prev),
+                    expanded=False,
+                ):
+                    _prog_col_orden = [
+                        "Prioridad", "Proyecto", "Código proyecto/equipo",
+                        "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
+                        "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
+                        "Duración semanas", "Horas totales",
+                        "Línea preferente", "Líneas alternativas",
+                        "Estado proyecto", "Estado materiales", "Comentarios",
+                    ]
+                    _df_prev = _prog_parsed["proyectos"][
+                        [c for c in _prog_col_orden if c in _prog_parsed["proyectos"].columns]
+                    ]
+                    st.dataframe(_df_prev, use_container_width=True, hide_index=True)
+                    st.caption(
+                        f"{_np_prev} "
+                        f"proyecto{'s' if _np_prev != 1 else ''} · "
+                        f"Planta: {selected_plant_name} · "
+                        f"Escenario activo: {_prog_sc_name}"
+                    )
 
-            # ── Cálculo operativo — Bloque 14B.2 ─────────────────────────────
-            st.divider()
+            # ── Botón calcular ────────────────────────────────────────────────
             if _prog_parsed is None:
                 st.info(t("prog_no_excel"))
             elif _prog_cap_df.empty:
@@ -7709,9 +7734,10 @@ if st.session_state.active_tab == "📋 Programación real":
                     )
                     st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
 
-            # ── Mostrar resultados si existen ─────────────────────────────────
+            # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
             if _prog_result is not None:
+                st.divider()
                 _pkpis = _prog_result["kpis"]
 
                 _kc1, _kc2, _kc3, _kc4 = st.columns(4)
@@ -7726,9 +7752,16 @@ if st.session_state.active_tab == "📋 Programación real":
                 _kc7.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
                 _kc8.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
-                for _pw in _prog_result["warnings"]:
-                    st.warning(_pw)
+                # Warnings agrupados en expander
+                if _prog_result["warnings"]:
+                    with st.expander(
+                        t("prog_calc_warns_expander").format(n=len(_prog_result["warnings"])),
+                        expanded=False,
+                    ):
+                        for _pw in _prog_result["warnings"]:
+                            st.warning(_pw)
 
+                # Tabla de conflictos
                 st.markdown(t("prog_conflicts_header"))
                 if _prog_result["conflict_df"].empty:
                     st.success(t("prog_no_conflicts"))
@@ -7739,22 +7772,29 @@ if st.session_state.active_tab == "📋 Programación real":
                         hide_index=True,
                     )
 
-                if not _prog_result["sin_linea_df"].empty:
-                    st.markdown(t("prog_sin_linea_header"))
-                    st.dataframe(
-                        _prog_result["sin_linea_df"],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                # Proyectos excluidos → expander unificado
+                _n_excl = len(_prog_result["sin_linea_df"]) + len(_prog_result["no_calculables_df"])
+                if _n_excl > 0:
+                    with st.expander(
+                        t("prog_excluded_expander").format(n=_n_excl),
+                        expanded=False,
+                    ):
+                        if not _prog_result["sin_linea_df"].empty:
+                            st.markdown(t("prog_sin_linea_header"))
+                            st.dataframe(
+                                _prog_result["sin_linea_df"],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        if not _prog_result["no_calculables_df"].empty:
+                            st.markdown(t("prog_no_calc_header"))
+                            st.dataframe(
+                                _prog_result["no_calculables_df"],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
 
-                if not _prog_result["no_calculables_df"].empty:
-                    st.markdown(t("prog_no_calc_header"))
-                    st.dataframe(
-                        _prog_result["no_calculables_df"],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
+                # Carga calculada (expander, sin cambios)
                 with st.expander(t("prog_load_detail_header"), expanded=False):
                     if _prog_result["load_df"].empty:
                         st.info("Sin proyectos calculados.")
