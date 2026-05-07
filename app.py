@@ -6510,6 +6510,35 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             "calc_ts":        datetime.now().strftime("%Y-%m-%d %H:%M"),
                             "series_resumen": _series_resumen,
                         }
+                        st.session_state[f"_sim_fp_{plant_id}"] = (
+                            plant_id,
+                            _sim_active_sc_id,
+                            float(hours_week),
+                            int(shifts),
+                            float(availability),
+                            float(efficiency),
+                        )
+
+                # ── Invalidar resultado si cambian parámetros que afectan capacidad ──
+                _sim_fp = (
+                    plant_id,
+                    _sim_active_sc_id,
+                    float(hours_week),
+                    int(shifts),
+                    float(availability),
+                    float(efficiency),
+                )
+                _sim_fp_key      = f"_sim_fp_{plant_id}"
+                _sim_result_key  = f"_sim_result_{plant_id}"
+                if st.session_state.get(_sim_fp_key) != _sim_fp:
+                    _had_sim_result = _sim_result_key in st.session_state
+                    st.session_state.pop(_sim_result_key, None)
+                    st.session_state[_sim_fp_key] = _sim_fp
+                    if _had_sim_result:
+                        st.info(
+                            "Los parámetros de capacidad han cambiado. "
+                            "Pulsa 'Calcular simulación anual' para actualizar el gráfico."
+                        )
 
                 _sim_result = st.session_state.get(f"_sim_result_{plant_id}")
                 if _sim_result is not None:
