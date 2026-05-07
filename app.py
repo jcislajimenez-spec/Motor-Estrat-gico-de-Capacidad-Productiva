@@ -177,8 +177,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_kpi_first_critical": "Primera semana crítica",
         "prog_kpi_total_deficit":  "Horas en déficit",
         "prog_kpi_most_tense":     "Línea más tensionada",
-        "prog_conflicts_header":   "#### Conflictos de capacidad detectados",
+        "prog_conflicts_header":   "#### Qué se rompe — por semana y línea",
         "prog_no_conflicts":       "No se detectan conflictos de capacidad con la programación cargada.",
+        "prog_verdict_ok":         "Resultado: la programación calculada cabe en la capacidad disponible. Proyectos calculados: {n_calc} de {n_total}.",
+        "prog_verdict_ok_excl":    "Resultado: la programación no presenta conflictos de capacidad, pero hay {n_excl} proyecto(s) excluido(s) del cálculo. Revisa el bloque de proyectos excluidos.",
+        "prog_verdict_conflict":   "Resultado: se detectan conflictos de capacidad. Primera semana crítica: {first}. Línea más tensionada: {line}. Déficit acumulado: {deficit} h.",
+        "prog_conflicts_reading":  "Lectura: la tabla muestra semanas y líneas donde la carga programada supera la capacidad disponible. Los proyectos indicados son proyectos implicados, no culpables únicos.",
+        "prog_kpi_excluded":       "Excluidos",
         "prog_sin_linea_header":   "#### Proyectos sin línea resuelta",
         "prog_no_calc_header":     "#### Proyectos no calculables",
         "prog_load_detail_header": "Carga calculada por semana y línea",
@@ -432,8 +437,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_kpi_first_critical": "First critical week",
         "prog_kpi_total_deficit":  "Hours in deficit",
         "prog_kpi_most_tense":     "Most strained line",
-        "prog_conflicts_header":   "#### Detected capacity conflicts",
+        "prog_conflicts_header":   "#### What breaks — by week and line",
         "prog_no_conflicts":       "No capacity conflicts detected with the loaded schedule.",
+        "prog_verdict_ok":         "Result: the scheduled load fits within available capacity. Projects calculated: {n_calc} of {n_total}.",
+        "prog_verdict_ok_excl":    "Result: no capacity conflicts detected, but {n_excl} project(s) excluded from calculation. Check the excluded projects section.",
+        "prog_verdict_conflict":   "Result: capacity conflicts detected. First critical week: {first}. Most strained line: {line}. Accumulated deficit: {deficit} h.",
+        "prog_conflicts_reading":  "Reading: this table shows weeks and lines where scheduled load exceeds available capacity. Listed projects are involved projects, not sole culprits.",
+        "prog_kpi_excluded":       "Excluded",
         "prog_sin_linea_header":   "#### Projects without resolved line",
         "prog_no_calc_header":     "#### Non-calculable projects",
         "prog_load_detail_header": "Calculated load by week and line",
@@ -687,8 +697,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_kpi_first_critical": "Lehen aste kritikoa",
         "prog_kpi_total_deficit":  "Defiziteko orduak",
         "prog_kpi_most_tense":     "Lerrorik tentsionatuena",
-        "prog_conflicts_header":   "#### Detektatutako ahalmen-gatazkak",
+        "prog_conflicts_header":   "#### Zer apurtzen da — astez eta lerroz",
         "prog_no_conflicts":       "Ez da ahalmen-gatazkarik detektatu kargatutako programazioarekin.",
+        "prog_verdict_ok":         "Emaitza: programatutako karga ahalmen erabilgarriaren barruan sartzen da. Kalkulatutako proiektuak: {n_calc} / {n_total}.",
+        "prog_verdict_ok_excl":    "Emaitza: ez da ahalmen-gatazkarik detektatu, baina {n_excl} proiektu kanpo utzi da kalkulutik. Egiaztatu kanpo utzitako proiektuen blokea.",
+        "prog_verdict_conflict":   "Emaitza: ahalmen-gatazkak detektatu dira. Lehen aste kritikoa: {first}. Lerrorik tentsionatuena: {line}. Metatutako defizita: {deficit} h.",
+        "prog_conflicts_reading":  "Irakurketa: taula honek programatutako karga ahalmen erabilgarria gainditzen duten asteak eta lerroak erakusten ditu. Adierazitako proiektuak inplikatutako proiektuak dira, ez errudun bakarrak.",
+        "prog_kpi_excluded":       "Kanpo utzitakoak",
         "prog_sin_linea_header":   "#### Lerrorik gabe dauden proiektuak",
         "prog_no_calc_header":     "#### Kalkula ezin diren proiektuak",
         "prog_load_detail_header": "Kalkulatutako karga astez eta lerroz",
@@ -7528,7 +7543,7 @@ def _distribuir_prog_carga_proyectos(
     _n_calculated = _n_loaded - _n_sin_linea - _n_no_calc
 
     if not _conflict_df.empty:
-        _n_conflict_weeks = len(_conflict_df)
+        _n_conflict_weeks = _conflict_df["Semana"].nunique()
         _first_critical   = int(_conflict_df["Semana"].min())
         _total_deficit    = float(_conflict_df["Déficit h"].sum())
         _most_tense       = str(_conflict_df.groupby("Línea")["Déficit h"].sum().idxmax())
@@ -7738,19 +7753,38 @@ if st.session_state.active_tab == "📋 Programación real":
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
             if _prog_result is not None:
                 st.divider()
-                _pkpis = _prog_result["kpis"]
+                _pkpis  = _prog_result["kpis"]
+                _n_excl = _pkpis["n_sin_linea"] + _pkpis["n_no_calc"]
 
-                _kc1, _kc2, _kc3, _kc4 = st.columns(4)
-                _kc1.metric(t("prog_kpi_loaded"),     _pkpis["n_loaded"])
-                _kc2.metric(t("prog_kpi_calculated"), _pkpis["n_calculated"])
-                _kc3.metric(t("prog_kpi_sin_linea"),  _pkpis["n_sin_linea"])
-                _kc4.metric(t("prog_kpi_no_calc"),    _pkpis["n_no_calc"])
+                # ── Veredicto ejecutivo ───────────────────────────────────────
+                if _pkpis["n_conflict_weeks"] > 0:
+                    st.error(
+                        t("prog_verdict_conflict").format(
+                            first=_pkpis["first_critical"],
+                            line=_pkpis["most_tense"],
+                            deficit=_fmt_num(_pkpis["total_deficit"]),
+                        )
+                    )
+                elif _n_excl > 0:
+                    st.warning(
+                        t("prog_verdict_ok_excl").format(n_excl=_n_excl)
+                    )
+                else:
+                    st.success(
+                        t("prog_verdict_ok").format(
+                            n_calc=_pkpis["n_calculated"],
+                            n_total=_pkpis["n_loaded"],
+                        )
+                    )
 
-                _kc5, _kc6, _kc7, _kc8 = st.columns(4)
-                _kc5.metric(t("prog_kpi_conflict_weeks"), _pkpis["n_conflict_weeks"])
-                _kc6.metric(t("prog_kpi_first_critical"), str(_pkpis["first_critical"]))
-                _kc7.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
-                _kc8.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
+                # ── KPIs compactos — 1 fila de 6 ─────────────────────────────
+                _kc1, _kc2, _kc3, _kc4, _kc5, _kc6 = st.columns(6)
+                _kc1.metric(t("prog_kpi_calculated"),     _pkpis["n_calculated"])
+                _kc2.metric(t("prog_kpi_excluded"),       _n_excl)
+                _kc3.metric(t("prog_kpi_conflict_weeks"), _pkpis["n_conflict_weeks"])
+                _kc4.metric(t("prog_kpi_first_critical"), str(_pkpis["first_critical"]))
+                _kc5.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
+                _kc6.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
                 # Warnings agrupados en expander
                 if _prog_result["warnings"]:
@@ -7761,19 +7795,35 @@ if st.session_state.active_tab == "📋 Programación real":
                         for _pw in _prog_result["warnings"]:
                             st.warning(_pw)
 
-                # Tabla de conflictos
+                # ── Tabla "Qué se rompe" ──────────────────────────────────────
                 st.markdown(t("prog_conflicts_header"))
                 if _prog_result["conflict_df"].empty:
                     st.success(t("prog_no_conflicts"))
                 else:
+                    st.caption(t("prog_conflicts_reading"))
+                    _cdf = _prog_result["conflict_df"].copy()
+                    if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
+                        _cdf["Saturación %"] = _cdf.apply(
+                            lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                            if _r["Capacidad h"] > 0 else 0.0,
+                            axis=1,
+                        )
+                    _cdf = _cdf[
+                        [c for c in [
+                            "Semana", "Línea", "Carga h", "Capacidad h",
+                            "Déficit h", "Saturación %", "Proyectos implicados",
+                        ] if c in _cdf.columns]
+                    ].sort_values(
+                        ["Semana", "Déficit h"], ascending=[True, False]
+                    ).reset_index(drop=True)
                     st.dataframe(
-                        _prog_result["conflict_df"],
+                        _cdf,
                         use_container_width=True,
                         hide_index=True,
+                        height=min(400, max(200, len(_cdf) * 36 + 56)),
                     )
 
                 # Proyectos excluidos → expander unificado
-                _n_excl = len(_prog_result["sin_linea_df"]) + len(_prog_result["no_calculables_df"])
                 if _n_excl > 0:
                     with st.expander(
                         t("prog_excluded_expander").format(n=_n_excl),
