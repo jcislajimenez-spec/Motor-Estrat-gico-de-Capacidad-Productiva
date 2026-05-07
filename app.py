@@ -184,6 +184,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_verdict_conflict":   "Resultado: se detectan conflictos de capacidad. Primera semana crítica: {first}. Línea más tensionada: {line}. Déficit acumulado: {deficit} h.",
         "prog_conflicts_reading":  "Lectura: la tabla muestra semanas y líneas donde la carga programada supera la capacidad disponible. Los proyectos indicados son proyectos implicados, no culpables únicos.",
         "prog_kpi_excluded":       "Excluidos",
+        "prog_gantt_header":       "Vista temporal por proyecto",
+        "prog_gantt_caption":      "La vista temporal es una lectura visual V1. No optimiza la secuencia ni asigna alternativas.",
+        "prog_gantt_empty":        "No hay proyectos calculados para mostrar en la vista temporal.",
+        "prog_gantt_desc":         "Cada fila es un proyecto calculado. OK = activo sin conflicto de capacidad · DEF = activo en semana con conflicto.",
         "prog_sin_linea_header":   "#### Proyectos sin línea resuelta",
         "prog_no_calc_header":     "#### Proyectos no calculables",
         "prog_load_detail_header": "Carga calculada por semana y línea",
@@ -444,6 +448,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_verdict_conflict":   "Result: capacity conflicts detected. First critical week: {first}. Most strained line: {line}. Accumulated deficit: {deficit} h.",
         "prog_conflicts_reading":  "Reading: this table shows weeks and lines where scheduled load exceeds available capacity. Listed projects are involved projects, not sole culprits.",
         "prog_kpi_excluded":       "Excluded",
+        "prog_gantt_header":       "Temporal view by project",
+        "prog_gantt_caption":      "The temporal view is a V1 visual read. It does not optimise the sequence or assign alternatives.",
+        "prog_gantt_empty":        "No calculated projects to display in the temporal view.",
+        "prog_gantt_desc":         "Each row is a calculated project. OK = active with no capacity conflict · DEF = active in a conflicted week.",
         "prog_sin_linea_header":   "#### Projects without resolved line",
         "prog_no_calc_header":     "#### Non-calculable projects",
         "prog_load_detail_header": "Calculated load by week and line",
@@ -704,6 +712,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_verdict_conflict":   "Emaitza: ahalmen-gatazkak detektatu dira. Lehen aste kritikoa: {first}. Lerrorik tentsionatuena: {line}. Metatutako defizita: {deficit} h.",
         "prog_conflicts_reading":  "Irakurketa: taula honek programatutako karga ahalmen erabilgarria gainditzen duten asteak eta lerroak erakusten ditu. Adierazitako proiektuak inplikatutako proiektuak dira, ez errudun bakarrak.",
         "prog_kpi_excluded":       "Kanpo utzitakoak",
+        "prog_gantt_header":       "Proiektuen denbora-ikuspegia",
+        "prog_gantt_caption":      "Denbora-ikuspegia V1 bisual-irakurketa da. Ez du sekuentzia optimizatzen ez alternatibak esleitzen.",
+        "prog_gantt_empty":        "Ez dago kalkulatutako proiekturik denbora-ikuspegian erakusteko.",
+        "prog_gantt_desc":         "Errenkada bakoitza kalkulatutako proiektu bat da. OK = aktibo, ahalmen-gatazkik gabe · DEF = aktibo, gatazka duen aste batean.",
         "prog_sin_linea_header":   "#### Lerrorik gabe dauden proiektuak",
         "prog_no_calc_header":     "#### Kalkula ezin diren proiektuak",
         "prog_load_detail_header": "Kalkulatutako karga astez eta lerroz",
@@ -7822,6 +7834,116 @@ if st.session_state.active_tab == "📋 Programación real":
                         hide_index=True,
                         height=min(400, max(200, len(_cdf) * 36 + 56)),
                     )
+
+                # ── 14C.2 Vista temporal por proyecto (Gantt simple) ──────────────────
+                _gt_load_df = _prog_result.get("load_df")
+                _gt_conflict_df = _prog_result.get("conflict_df")
+                if _gt_load_df is not None and not _gt_load_df.empty:
+                    # build conflict set: (semana_int, linea_str)
+                    _gt_conflict_set: set = set()
+                    if _gt_conflict_df is not None and not _gt_conflict_df.empty:
+                        for _, _gcr in _gt_conflict_df.iterrows():
+                            try:
+                                _gt_conflict_set.add((int(_gcr["Semana"]), str(_gcr["Línea"])))
+                            except (ValueError, TypeError):
+                                pass
+
+                    # week range
+                    try:
+                        _gt_weeks_sorted = sorted(_gt_load_df["Semana"].dropna().unique().tolist(), key=lambda _w: int(_w))
+                    except (ValueError, TypeError):
+                        _gt_weeks_sorted = sorted(_gt_load_df["Semana"].dropna().unique().tolist(), key=str)
+
+                    if _gt_weeks_sorted:
+                        # per-project: (linea, modelo, horas_totales, prioridad)
+                        _gt_proj_meta: dict = {}
+                        for _, _glr in _gt_load_df.iterrows():
+                            _gp = str(_glr["Proyecto"])
+                            if _gp not in _gt_proj_meta:
+                                _gt_proj_meta[_gp] = {
+                                    "Línea": str(_glr.get("Línea", "")),
+                                    "Modelo/familia": str(_glr.get("Modelo/familia", "")),
+                                    "Horas totales": _glr.get("Horas totales", 0),
+                                    "Prioridad": _glr.get("Prioridad", 9999),
+                                }
+
+                        # estados por (proyecto, semana)
+                        _gt_estados: dict = {}
+                        for _, _glr in _gt_load_df.iterrows():
+                            _gp = str(_glr["Proyecto"])
+                            try:
+                                _gs = int(_glr["Semana"])
+                            except (ValueError, TypeError):
+                                continue
+                            _gl = str(_glr.get("Línea", ""))
+                            _cell = "DEF" if (_gs, _gl) in _gt_conflict_set else "OK"
+                            _gt_estados[(_gp, _gs)] = _cell
+
+                        # sort projects by Prioridad (ascending), then name
+                        def _gt_sort_key(_proj: str) -> tuple:
+                            try:
+                                return (float(_gt_proj_meta[_proj]["Prioridad"]), _proj)
+                            except (ValueError, TypeError):
+                                return (9999.0, _proj)
+
+                        _gt_projs_sorted = sorted(_gt_proj_meta.keys(), key=_gt_sort_key)
+
+                        # build pivot rows
+                        _gt_rows = []
+                        for _gp in _gt_projs_sorted:
+                            _gm = _gt_proj_meta[_gp]
+                            _row: dict = {"Proyecto": _gp}
+                            _row["Línea"] = _gm["Línea"]
+                            _mf = _gm["Modelo/familia"]
+                            if _mf and _mf not in ("", "nan", "None"):
+                                _row["Modelo/familia"] = _mf
+                            _row["Horas tot."] = _gt_load_df.loc[
+                                _gt_load_df["Proyecto"].astype(str) == _gp, "Horas totales"
+                            ].iloc[0] if not _gt_load_df.loc[_gt_load_df["Proyecto"].astype(str) == _gp].empty else 0
+                            for _gw in _gt_weeks_sorted:
+                                try:
+                                    _gi = int(_gw)
+                                except (ValueError, TypeError):
+                                    _gi = _gw
+                                _row[f"S{_gw}"] = _gt_estados.get((_gp, _gi), "")
+                            _gt_rows.append(_row)
+
+                        import pandas as _pd_gt
+                        _gt_df = _pd_gt.DataFrame(_gt_rows)
+
+                        # week columns subset for styling
+                        _gt_scols = [c for c in _gt_df.columns if c.startswith("S")]
+
+                        def _gt_style_cell(_v: object) -> str:
+                            if _v == "DEF":
+                                return "background-color:#FF4B4B;color:white;font-weight:bold;text-align:center;"
+                            if _v == "OK":
+                                return "background-color:#21C354;color:white;text-align:center;"
+                            return "color:transparent;"
+
+                        _gt_styled = (
+                            _gt_df.style
+                            .map(_gt_style_cell, subset=_gt_scols)
+                            .format(
+                                {c: lambda _x: "" if _x == "" else _x for c in _gt_scols},
+                                na_rep="",
+                            )
+                        )
+
+                        _gt_expanded = _pkpis["n_conflict_weeks"] > 0
+                        with st.expander(t("prog_gantt_header"), expanded=_gt_expanded):
+                            st.caption(t("prog_gantt_desc"))
+                            st.caption(t("prog_gantt_caption"))
+                            st.dataframe(
+                                _gt_styled,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=min(420, max(200, len(_gt_df) * 38 + 60)),
+                            )
+                else:
+                    with st.expander(t("prog_gantt_header"), expanded=False):
+                        st.caption(t("prog_gantt_empty"))
+                # ── fin 14C.2 ────────────────────────────────────────────────────────
 
                 # Proyectos excluidos → expander unificado
                 if _n_excl > 0:
