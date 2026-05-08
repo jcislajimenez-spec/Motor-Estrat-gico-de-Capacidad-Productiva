@@ -202,6 +202,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Las barras muestran la carga programada. La línea muestra la capacidad disponible. Si la barra supera la línea, hay déficit.",
         "prog_chart_no_load":             "No hay carga calculada para representar el gráfico.",
         "prog_chart_no_capacity":         "No hay capacidad disponible para construir el gráfico.",
+        "prog_alt_btn":           "Calcular alternativas candidatas",
+        "prog_alt_header":        "Alternativas candidatas",
+        "prog_alt_caption":       "Simulación individual V1: cada candidata evalúa mover un proyecto de forma aislada, sin combinar movimientos. No aplica cambios automáticamente.",
+        "prog_alt_no_conflicts":  "Sin conflictos activos; no se calculan alternativas de línea.",
+        "prog_alt_no_alts_found": "No se encontraron alternativas que mejoren el déficit global con las líneas alternativas declaradas.",
+        "prog_alt_tech_expander": "Alternativas descartadas / avisos ({n})",
+        "prog_alt_warn_model":    "Modelo del proyecto distinto del modelo asignado de la línea candidata. Capacidad puede no ser representativa.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -472,6 +479,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Bars show scheduled load. The line shows available capacity. If a bar exceeds the line, there is a deficit.",
         "prog_chart_no_load":             "No calculated load available to display the chart.",
         "prog_chart_no_capacity":         "No capacity available to build the chart.",
+        "prog_alt_btn":           "Calculate alternative candidates",
+        "prog_alt_header":        "Alternative candidates",
+        "prog_alt_caption":       "Individual V1 simulation: each candidate evaluates moving one project in isolation, without combining movements. Does not apply changes automatically.",
+        "prog_alt_no_conflicts":  "No active conflicts; line alternatives are not calculated.",
+        "prog_alt_no_alts_found": "No alternatives found that improve the global deficit with the declared alternative lines.",
+        "prog_alt_tech_expander": "Discarded alternatives / warnings ({n})",
+        "prog_alt_warn_model":    "Project model differs from the model assigned to the candidate line. Capacity may not be representative.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -742,6 +756,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Barrek programatutako karga erakusten dute. Lerroak ahalmen erabilgarria erakusten du. Barra lerroa gainditzen badu, defizita dago.",
         "prog_chart_no_load":             "Ez dago kalkulatutako kargik grafikoa bistaratzeko.",
         "prog_chart_no_capacity":         "Ez dago ahalmen erabilgarririk grafikoa eraikitzeko.",
+        "prog_alt_btn":           "Lerro-alternatiba hautagaiak kalkulatu",
+        "prog_alt_header":        "Alternatiba hautagaiak",
+        "prog_alt_caption":       "V1 banakako simulazioa: hautagaiak proiektu bat bakarka mugitzea ebaluatzen du, mugimenduak konbinatu gabe. Ez du aldaketak automatikoki aplikatzen.",
+        "prog_alt_no_conflicts":  "Ez dago gatazka aktiborik; ez dira lerro-alternatibak kalkulatzen.",
+        "prog_alt_no_alts_found": "Ez da adierazitako lerro alternatiboekin defizit globala hobetzen duen alternatiba aurkitu.",
+        "prog_alt_tech_expander": "Baztertutako alternatibak / abisuak ({n})",
+        "prog_alt_warn_model":    "Proiektuaren eredua lerro hautagaiaren eredu esleituaren desberdina da. Ahalmena ez da ordezkagarria.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -7968,6 +7989,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         _prog_parsed["proyectos"], _prog_cap_df
                     )
                     st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
+                    st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
 
             # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
@@ -8189,6 +8211,217 @@ if st.session_state.active_tab == "📋 Programación real":
                         hide_index=True,
                         height=min(400, max(200, len(_cdf) * 36 + 56)),
                     )
+
+                # ── 14D.1A Alternativas candidatas de línea ───────────────────────────
+                _da_has_conflicts = not _prog_result["conflict_df"].empty
+                _da_has_load      = not _prog_result.get("load_df", pd.DataFrame()).empty
+                if _da_has_conflicts and _da_has_load:
+                    st.markdown(f"#### {t('prog_alt_header')}")
+                    st.caption(t("prog_alt_caption"))
+
+                    if st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}"):
+                        _da_load_base     = _prog_result["load_df"]
+                        _da_conflict_base = _prog_result["conflict_df"]
+                        _da_parsed_now    = st.session_state.get(f"_prog_parsed_{plant_id}")
+
+                        if _da_parsed_now is None or _da_parsed_now.get("proyectos") is None:
+                            st.session_state[f"_prog_alt_result_{plant_id}"] = {
+                                "candidatas": [], "descartadas": [],
+                                "error": "Datos de Excel no disponibles para calcular alternativas.",
+                            }
+                        else:
+                            _da_df_proy     = _da_parsed_now["proyectos"]
+                            _da_implicados  = _get_prog_projects_in_conflict(_da_load_base, _da_conflict_base)
+                            _da_base_result = _recompute_prog_deficit_global(_da_load_base, _prog_cap_df)
+                            _da_def_antes   = _da_base_result["deficit_total_h"]
+
+                            _da_cap_model_map: dict = {}
+                            if "Modelo asignado" in _prog_cap_df.columns:
+                                for _, _dacr in _prog_cap_df.iterrows():
+                                    _da_cap_model_map[str(_dacr["Línea"])] = str(_dacr.get("Modelo asignado", ""))
+
+                            _da_conflict_pairs_base: set = set()
+                            for _, _dacbr in _da_conflict_base.iterrows():
+                                try:
+                                    _da_conflict_pairs_base.add((int(_dacbr["Semana"]), str(_dacbr["Línea"])))
+                                except (ValueError, TypeError):
+                                    pass
+
+                            _da_candidatas: list = []
+                            _da_descartadas: list = []
+
+                            for _da_proj in _da_implicados:
+                                _da_proj_rows = _da_load_base[
+                                    _da_load_base["Proyecto"].astype(str) == _da_proj
+                                ]
+                                if _da_proj_rows.empty:
+                                    continue
+
+                                _da_lineas_act = _da_proj_rows["Línea"].astype(str).unique().tolist()
+                                if len(_da_lineas_act) > 1:
+                                    _da_descartadas.append({
+                                        "Proyecto": _da_proj, "Línea alternativa": "—",
+                                        "Motivo": f"Carga en múltiples líneas ({', '.join(_da_lineas_act)}). No soportado en V1.",
+                                        "Tipo": "No soportado",
+                                    })
+                                    continue
+
+                                _da_linea_act = _da_lineas_act[0]
+                                _da_mask_p = _da_df_proy["Proyecto"].astype(str) == _da_proj
+
+                                if not _da_mask_p.any():
+                                    _da_descartadas.append({
+                                        "Proyecto": _da_proj, "Línea alternativa": "—",
+                                        "Motivo": "Proyecto no encontrado en datos del Excel.",
+                                        "Tipo": "No encontrado",
+                                    })
+                                    continue
+
+                                _da_alt_raw  = str(_da_df_proy.loc[_da_mask_p, "Líneas alternativas"].iloc[0])
+                                _da_alt_list = _parse_prog_lineas_alternativas(_da_alt_raw)
+
+                                if not _da_alt_list:
+                                    _da_descartadas.append({
+                                        "Proyecto": _da_proj, "Línea alternativa": "(sin alternativas)",
+                                        "Motivo": "Sin líneas alternativas en el Excel.",
+                                        "Tipo": "Sin alternativas",
+                                    })
+                                    continue
+
+                                _da_modelo_p = (
+                                    str(_da_df_proy.loc[_da_mask_p, "Modelo / familia"].iloc[0])
+                                    if "Modelo / familia" in _da_df_proy.columns else ""
+                                )
+
+                                for _da_alt_raw_l in _da_alt_list:
+                                    _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _prog_cap_df)
+                                    if _da_res["linea"] is None:
+                                        _da_descartadas.append({
+                                            "Proyecto": _da_proj, "Línea alternativa": _da_alt_raw_l,
+                                            "Motivo": _da_res["motivo"],
+                                            "Tipo": "Ambigua" if "ambigua" in _da_res["motivo"].lower() else "No encontrada",
+                                        })
+                                        continue
+
+                                    _da_ldest = _da_res["linea"]
+
+                                    if _da_ldest == _da_linea_act:
+                                        _da_descartadas.append({
+                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
+                                            "Motivo": "La línea alternativa es la misma que la línea actual.",
+                                            "Tipo": "Misma línea",
+                                        })
+                                        continue
+
+                                    _da_cap_row = _prog_cap_df[_prog_cap_df["Línea"].astype(str) == _da_ldest]
+                                    if _da_cap_row.empty or float(_da_cap_row["Capacidad h/sem"].iloc[0]) <= 0:
+                                        _da_descartadas.append({
+                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
+                                            "Motivo": "Capacidad = 0 o línea no disponible en escenario.",
+                                            "Tipo": "Sin capacidad",
+                                        })
+                                        continue
+
+                                    _da_sim      = _simulate_prog_move_line(_da_load_base, _da_proj, _da_linea_act, _da_ldest)
+                                    _da_after    = _recompute_prog_deficit_global(_da_sim, _prog_cap_df)
+                                    _da_def_desp = _da_after["deficit_total_h"]
+                                    _da_mejora   = round(_da_def_antes - _da_def_desp, 1)
+
+                                    if _da_mejora <= 0:
+                                        _da_descartadas.append({
+                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
+                                            "Motivo": f"Δ déficit = {_da_mejora} h ({'No mejora' if _da_mejora == 0 else 'Empeora'}).",
+                                            "Tipo": "No mejora" if _da_mejora == 0 else "Empeora",
+                                        })
+                                        continue
+
+                                    # Conflict pairs after simulation
+                                    _da_cp_desp: set = set()
+                                    if not _da_after["conflict_df"].empty:
+                                        for _, _dadr in _da_after["conflict_df"].iterrows():
+                                            try:
+                                                _da_cp_desp.add((int(_dadr["Semana"]), str(_dadr["Línea"])))
+                                            except (ValueError, TypeError):
+                                                pass
+
+                                    _da_nuevos = _da_cp_desp - _da_conflict_pairs_base
+
+                                    # Is project still in conflict?
+                                    _da_sim_proj = _da_sim[_da_sim["Proyecto"].astype(str) == _da_proj]
+                                    _da_en_conf = any(
+                                        (int(_dasr["Semana"]), str(_dasr["Línea"])) in _da_cp_desp
+                                        for _, _dasr in _da_sim_proj.iterrows()
+                                    ) if not _da_sim_proj.empty else False
+                                    _da_resultado = "Libera" if not _da_en_conf else "Reduce"
+
+                                    # Build aviso
+                                    _da_avisos: list = []
+                                    if _da_nuevos:
+                                        _n_dest  = sorted([f"S{s}/{l}" for s, l in _da_nuevos if str(l) == _da_ldest])
+                                        _n_otros = sorted([f"S{s}/{l}" for s, l in _da_nuevos if str(l) != _da_ldest])
+                                        if _n_dest:
+                                            _da_avisos.append(f"Nuevo conflicto en línea candidata: {', '.join(_n_dest)}")
+                                        if _n_otros:
+                                            _da_avisos.append(f"Nuevo conflicto en otra línea: {', '.join(_n_otros)}")
+
+                                    if (
+                                        _da_modelo_p not in ("", "nan", "None")
+                                        and _da_cap_model_map.get(_da_ldest, "") not in ("", "nan", "None")
+                                        and _da_modelo_p.upper() != _da_cap_model_map[_da_ldest].upper()
+                                    ):
+                                        _da_avisos.append(t("prog_alt_warn_model"))
+
+                                    _da_candidatas.append({
+                                        "Proyecto":           _da_proj,
+                                        "Línea actual":       _da_linea_act,
+                                        "Línea candidata":    _da_ldest,
+                                        "Resultado":          _da_resultado,
+                                        "Mejora h":           _da_mejora,
+                                        "Déficit actual h":   _da_def_antes,
+                                        "Déficit simulado h": _da_def_desp,
+                                        "Aviso":              " · ".join(_da_avisos),
+                                    })
+
+                            st.session_state[f"_prog_alt_result_{plant_id}"] = {
+                                "candidatas":  _da_candidatas,
+                                "descartadas": _da_descartadas,
+                            }
+
+                    # Mostrar resultado si existe
+                    _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
+                    if _da_alt_result is not None:
+                        _da_error = _da_alt_result.get("error")
+                        if _da_error:
+                            st.warning(_da_error)
+                        else:
+                            _da_cands = _da_alt_result.get("candidatas", [])
+                            _da_desc  = _da_alt_result.get("descartadas", [])
+                            if _da_cands:
+                                _da_df_c = pd.DataFrame(_da_cands)
+                                _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                _da_df_c = (
+                                    _da_df_c
+                                    .sort_values(["_sort", "Mejora h", "Proyecto"],
+                                                 ascending=[True, False, True])
+                                    .drop(columns=["_sort"])
+                                    .reset_index(drop=True)
+                                )
+                                st.dataframe(_da_df_c, use_container_width=True, hide_index=True)
+                            else:
+                                st.info(t("prog_alt_no_alts_found"))
+                            if _da_desc:
+                                with st.expander(
+                                    t("prog_alt_tech_expander").format(n=len(_da_desc)),
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        pd.DataFrame(_da_desc),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+                else:
+                    st.info(t("prog_alt_no_conflicts"))
+                # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
                 _gt_load_df = _prog_result.get("load_df")
