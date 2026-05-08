@@ -7602,6 +7602,196 @@ def _distribuir_prog_carga_proyectos(
     }
 
 
+# ── 14D helpers — alternativas (puros, sin UI, sin efecto en cálculo oficial) ──
+
+def _parse_prog_lineas_alternativas(valor) -> list:
+    """
+    Parsea la celda 'Líneas alternativas' del Excel.
+    Acepta separadores: coma, punto y coma, barra, pipe, salto de línea.
+    Devuelve lista de strings sin duplicados, conservando orden.
+    """
+    import re as _re_alt
+    if valor is None or str(valor).strip() in ("", "nan", "None"):
+        return []
+    _partes = _re_alt.split(r"[,;/|\n\r]+", str(valor))
+    _vistas: list = []
+    _vistas_set: set = set()
+    for _p in _partes:
+        _s = _p.strip()
+        if _s and _s not in _vistas_set:
+            _vistas.append(_s)
+            _vistas_set.add(_s)
+    return _vistas
+
+
+def _get_prog_projects_in_conflict(load_df, conflict_df) -> list:
+    """
+    Devuelve proyectos implicados en conflictos cruzando load_df con
+    las parejas (Semana, Línea) de conflict_df.
+    NO usa el texto 'Proyectos implicados' de conflict_df.
+    Robusto ante DataFrames vacíos y Semana como texto o número.
+    """
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        return []
+    if conflict_df is None or (hasattr(conflict_df, "empty") and conflict_df.empty):
+        return []
+    for _col in ("Semana", "Línea"):
+        if _col not in conflict_df.columns or _col not in load_df.columns:
+            return []
+    if "Proyecto" not in load_df.columns:
+        return []
+
+    _conflict_pairs: set = set()
+    for _, _cr in conflict_df.iterrows():
+        try:
+            _conflict_pairs.add((int(_cr["Semana"]), str(_cr["Línea"])))
+        except (ValueError, TypeError):
+            pass
+
+    if not _conflict_pairs:
+        return []
+
+    _implicados: list = []
+    _seen: set = set()
+    for _, _lr in load_df.iterrows():
+        try:
+            _key = (int(_lr["Semana"]), str(_lr["Línea"]))
+        except (ValueError, TypeError):
+            continue
+        if _key in _conflict_pairs:
+            _p = str(_lr["Proyecto"])
+            if _p not in _seen:
+                _implicados.append(_p)
+                _seen.add(_p)
+
+    return _implicados
+
+
+def _recompute_prog_deficit_global(load_df, cap_df) -> dict:
+    """
+    Recalcula déficit global desde cero usando load_df y cap_df.
+    No usa conflict_df original — misma función para antes y después,
+    garantizando comparabilidad al simular alternativas.
+    Devuelve {"deficit_total_h": float, "conflict_df": DataFrame}.
+    """
+    _empty_cdf = pd.DataFrame(
+        columns=["Semana", "Línea", "Carga h", "Capacidad h", "Déficit h"]
+    )
+    _empty_result = {"deficit_total_h": 0.0, "conflict_df": _empty_cdf}
+
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        return _empty_result
+    if cap_df is None or (hasattr(cap_df, "empty") and cap_df.empty):
+        return _empty_result
+    for _col in ("Semana", "Línea", "Horas proyecto semana"):
+        if _col not in load_df.columns:
+            return _empty_result
+    if "Línea" not in cap_df.columns or "Capacidad h/sem" not in cap_df.columns:
+        return _empty_result
+
+    _cap_lookup: dict = {}
+    for _, _cr in cap_df.iterrows():
+        try:
+            _cap_lookup[str(_cr["Línea"])] = float(_cr["Capacidad h/sem"])
+        except (ValueError, TypeError):
+            pass
+
+    _agg = (
+        load_df.copy()
+        .groupby(["Semana", "Línea"], as_index=False)["Horas proyecto semana"]
+        .sum()
+        .rename(columns={"Horas proyecto semana": "Carga h"})
+    )
+    _agg["Carga h"]     = _agg["Carga h"].round(1)
+    _agg["Capacidad h"] = _agg["Línea"].astype(str).map(_cap_lookup).fillna(0.0)
+    _agg["Déficit h"]   = (_agg["Carga h"] - _agg["Capacidad h"]).clip(lower=0.0).round(1)
+
+    _cdf = (
+        _agg[_agg["Déficit h"] > 0]
+        [["Semana", "Línea", "Carga h", "Capacidad h", "Déficit h"]]
+        .sort_values(["Semana", "Línea"])
+        .reset_index(drop=True)
+    )
+    return {
+        "deficit_total_h": round(float(_cdf["Déficit h"].sum()), 1),
+        "conflict_df":     _cdf,
+    }
+
+
+def _simulate_prog_move_line(
+    load_df,
+    proyecto: str,
+    linea_actual: str,
+    linea_destino: str,
+):
+    """
+    Simula mover el proyecto completo de linea_actual a linea_destino.
+    Devuelve copia modificada de load_df. No modifica el original.
+    Si el proyecto no tiene filas en linea_actual, devuelve copia intacta.
+    """
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        return load_df.copy() if load_df is not None else pd.DataFrame()
+
+    _sim = load_df.copy()
+    _mask = (
+        (_sim["Proyecto"].astype(str) == str(proyecto)) &
+        (_sim["Línea"].astype(str)    == str(linea_actual))
+    )
+    _filas = _sim[_mask].copy()
+    if _filas.empty:
+        return _sim
+
+    _sim = _sim[~_mask].copy()
+    _filas_alt = _filas.copy()
+    _filas_alt["Línea"] = str(linea_destino)
+    return pd.concat([_sim, _filas_alt], ignore_index=True)
+
+
+def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
+    """
+    Resuelve una línea alternativa raw contra las líneas de cap_df.
+    Devuelve {"linea": str|None, "motivo": str}.
+    Lógica propia (no llama a _resolver_prog_linea_preferente).
+    Pasos: exacto → normalizado (strip+upper) → sufijo único.
+    Si ambiguo o no encontrado → linea: None + motivo descriptivo.
+    """
+    if cap_df is None or (hasattr(cap_df, "empty") and cap_df.empty):
+        return {"linea": None, "motivo": "cap_df no disponible"}
+    if "Línea" not in cap_df.columns:
+        return {"linea": None, "motivo": "cap_df sin columna Línea"}
+
+    _lineas_validas: list = cap_df["Línea"].astype(str).tolist()
+    _candidata = str(linea_raw).strip()
+
+    if not _candidata:
+        return {"linea": None, "motivo": "Línea vacía"}
+
+    # 1. Exacto
+    if _candidata in _lineas_validas:
+        return {"linea": _candidata, "motivo": "exacto"}
+
+    # 2. Normalizado strip + upper
+    _cand_upper = _candidata.upper()
+    for _l in _lineas_validas:
+        if _l.strip().upper() == _cand_upper:
+            return {"linea": _l, "motivo": "normalizado"}
+
+    # 3. Sufijo único (V1: sin normalización de zero-padding, igual que línea preferente)
+    _sufijo_matches = [_l for _l in _lineas_validas if _l.upper().endswith(_cand_upper)]
+    if len(_sufijo_matches) == 1:
+        return {"linea": _sufijo_matches[0], "motivo": "sufijo"}
+    if len(_sufijo_matches) > 1:
+        return {
+            "linea": None,
+            "motivo": f"Línea ambigua: '{_candidata}' coincide con {', '.join(_sufijo_matches)}",
+        }
+
+    return {"linea": None, "motivo": f"Línea '{linea_raw}' no encontrada en escenario activo"}
+
+
+# ── fin 14D helpers ──────────────────────────────────────────────────────────
+
+
 if st.session_state.active_tab == "📋 Programación real":
     st.subheader(t("prog_tab_header"))
 
