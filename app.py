@@ -7987,8 +7987,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 _da_has_conflicts = not _prog_result["conflict_df"].empty
                 _da_has_load      = not _prog_result.get("load_df", pd.DataFrame()).empty
                 if _da_has_conflicts and _da_has_load:
-                    st.markdown(f"#### {t('prog_alt_header')}")
-                    st.caption(t("prog_alt_caption"))
                     if st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}"):
                         _da_load_base     = _prog_result["load_df"]
                         _da_conflict_base = _prog_result["conflict_df"]
@@ -8292,6 +8290,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 with _da_main_col:
                     if _da_has_conflicts and _da_has_load:
+                        st.markdown(f"#### {t('prog_alt_header')}")
                         _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
                         if _da_alt_result is not None:
                             _da_error = _da_alt_result.get("error")
@@ -8317,7 +8316,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_df_c[_da_slim_cols],
                                         use_container_width=True,
                                         hide_index=True,
-                                        height=200,
+                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
                                     )
                                 else:
                                     st.caption(t("prog_alt_no_alts_found"))
