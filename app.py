@@ -7983,63 +7983,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 _kc4.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
                 _kc5.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
-                # ── Tabla "Qué se rompe" ──────────────────────────────────────
-                st.markdown(t("prog_conflicts_header"))
-                if _prog_result["conflict_df"].empty:
-                    st.success(t("prog_no_conflicts"))
-                else:
-                    st.caption(t("prog_conflicts_reading"))
-                    _cdf = _prog_result["conflict_df"].copy()
-                    if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
-                        _cdf["Saturación %"] = _cdf.apply(
-                            lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
-                            if _r["Capacidad h"] > 0 else 0.0,
-                            axis=1,
-                        )
-                    _cdf = _cdf[
-                        [c for c in [
-                            "Semana", "Línea", "Carga h", "Capacidad h",
-                            "Déficit h", "Saturación %", "Proyectos implicados",
-                        ] if c in _cdf.columns]
-                    ].sort_values(
-                        ["Semana", "Déficit h"], ascending=[True, False]
-                    ).reset_index(drop=True)
-                    _cdf_display = _cdf[
-                        [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
-                         if c in _cdf.columns]
-                    ]
-                    _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
-                    if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
-                        _enrich_agg = (
-                            _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
-                            .apply(lambda _g: pd.Series({
-                                "Modelos implicados": ", ".join(sorted(set(
-                                    str(_v) for _v in _g["Modelo / familia"]
-                                    if str(_v) not in ("", "nan", "None")
-                                ))) or "—",
-                                "Equipos implicados": ", ".join(sorted(set(
-                                    str(_v) for _v in _g["Equipo / modelo"]
-                                    if str(_v) not in ("", "nan", "None")
-                                ))) or "—",
-                            }))
-                        )
-                        _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
-                        _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
-                        _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
-                        st.dataframe(
-                            _cdf_display_enriched,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(400, max(200, len(_cdf_display_enriched) * 36 + 56)),
-                        )
-                    else:
-                        st.dataframe(
-                            _cdf_display,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(400, max(200, len(_cdf_display) * 36 + 56)),
-                        )
-
                 # ── 14D.1A Alternativas candidatas de línea ───────────────────────────
                 _da_has_conflicts = not _prog_result["conflict_df"].empty
                 _da_has_load      = not _prog_result.get("load_df", pd.DataFrame()).empty
@@ -8331,7 +8274,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
                             ))
                             _ch_fig.update_layout(
-                                height=300,
+                                height=260,
                                 margin=dict(l=0, r=0, t=20, b=0),
                                 legend=dict(
                                     orientation="h", yanchor="bottom", y=1.02,
@@ -8344,7 +8287,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 bargap=0.25,
                             )
                             st.plotly_chart(_ch_fig, use_container_width=True)
-                            st.caption(t("prog_chart_caption"))
                     else:
                         st.info(t("prog_chart_no_load"))
 
@@ -8375,13 +8317,72 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_df_c[_da_slim_cols],
                                         use_container_width=True,
                                         hide_index=True,
-                                        height=240,
+                                        height=200,
                                     )
                                 else:
-                                    st.info(t("prog_alt_no_alts_found"))
+                                    st.caption(t("prog_alt_no_alts_found"))
+                        else:
+                            st.caption("Pulsa el botón para ver alternativas candidatas.")
                     else:
-                        st.info(t("prog_alt_no_conflicts"))
+                        st.caption(t("prog_alt_no_conflicts"))
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
+
+                # ── Tabla "Qué se rompe" ──────────────────────────────────────
+                _cdf = _prog_result["conflict_df"].copy()
+                st.markdown(t("prog_conflicts_header"))
+                if _prog_result["conflict_df"].empty:
+                    st.success(t("prog_no_conflicts"))
+                else:
+                    st.caption(t("prog_conflicts_reading"))
+                    if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
+                        _cdf["Saturación %"] = _cdf.apply(
+                            lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                            if _r["Capacidad h"] > 0 else 0.0,
+                            axis=1,
+                        )
+                    _cdf = _cdf[
+                        [c for c in [
+                            "Semana", "Línea", "Carga h", "Capacidad h",
+                            "Déficit h", "Saturación %", "Proyectos implicados",
+                        ] if c in _cdf.columns]
+                    ].sort_values(
+                        ["Semana", "Déficit h"], ascending=[True, False]
+                    ).reset_index(drop=True)
+                    _cdf_display = _cdf[
+                        [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
+                         if c in _cdf.columns]
+                    ]
+                    _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
+                    if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
+                        _enrich_agg = (
+                            _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
+                            .apply(lambda _g: pd.Series({
+                                "Modelos implicados": ", ".join(sorted(set(
+                                    str(_v) for _v in _g["Modelo / familia"]
+                                    if str(_v) not in ("", "nan", "None")
+                                ))) or "—",
+                                "Equipos implicados": ", ".join(sorted(set(
+                                    str(_v) for _v in _g["Equipo / modelo"]
+                                    if str(_v) not in ("", "nan", "None")
+                                ))) or "—",
+                            }))
+                        )
+                        _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
+                        _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
+                        _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
+                        st.dataframe(
+                            _cdf_display_enriched,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
+                        )
+                    else:
+                        st.dataframe(
+                            _cdf_display,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(320, max(120, len(_cdf_display) * 32 + 48)),
+                        )
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
                 _gt_styled = None
@@ -8547,7 +8548,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 st.divider()
                 st.markdown(f"#### {t('prog_gantt_header')}")
                 if _gt_styled is not None:
-                    st.caption(t("prog_gantt_desc"))
                     st.caption(t("prog_gantt_caption"))
                     st.dataframe(
                         _gt_styled,
