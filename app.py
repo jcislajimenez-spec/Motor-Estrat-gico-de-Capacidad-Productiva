@@ -7814,7 +7814,8 @@ def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
 
 
 if st.session_state.active_tab == "📋 Programación real":
-    st.subheader(t("prog_tab_header"))
+    st.subheader("Programación real — ¿Qué proyecto rompe el plan?")
+    st.caption("Carga proyectos reales, cruza capacidad y detecta dónde rompe el plan.")
 
     # ── Resolver escenario activo — mismo patrón que Simulación anual ────────
     _prog_raw_sc_id    = st.session_state.get(f"_session_sc_id_{plant_id}")
@@ -8007,12 +8008,37 @@ if st.session_state.active_tab == "📋 Programación real":
                         [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
                          if c in _cdf.columns]
                     ]
-                    st.dataframe(
-                        _cdf_display,
-                        use_container_width=True,
-                        hide_index=True,
-                        height=min(400, max(200, len(_cdf_display) * 36 + 56)),
-                    )
+                    _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
+                    if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
+                        _enrich_agg = (
+                            _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
+                            .apply(lambda _g: pd.Series({
+                                "Modelos implicados": ", ".join(sorted(set(
+                                    str(_v) for _v in _g["Modelo / familia"]
+                                    if str(_v) not in ("", "nan", "None")
+                                ))) or "—",
+                                "Equipos implicados": ", ".join(sorted(set(
+                                    str(_v) for _v in _g["Equipo / modelo"]
+                                    if str(_v) not in ("", "nan", "None")
+                                ))) or "—",
+                            }))
+                        )
+                        _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
+                        _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
+                        _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
+                        st.dataframe(
+                            _cdf_display_enriched,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(400, max(200, len(_cdf_display_enriched) * 36 + 56)),
+                        )
+                    else:
+                        st.dataframe(
+                            _cdf_display,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(400, max(200, len(_cdf_display) * 36 + 56)),
+                        )
 
                 # ── 14D.1A Alternativas candidatas de línea ───────────────────────────
                 _da_has_conflicts = not _prog_result["conflict_df"].empty
@@ -8020,7 +8046,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 if _da_has_conflicts and _da_has_load:
                     st.markdown(f"#### {t('prog_alt_header')}")
                     st.caption(t("prog_alt_caption"))
-
                     if st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}"):
                         _da_load_base     = _prog_result["load_df"]
                         _da_conflict_base = _prog_result["conflict_df"]
@@ -8189,30 +8214,173 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "descartadas": _da_descartadas,
                             }
 
-                    # Mostrar resultado si existe
-                    _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                    if _da_alt_result is not None:
-                        _da_error = _da_alt_result.get("error")
-                        if _da_error:
-                            st.warning(_da_error)
+                # ── Gráfico carga vs capacidad (izq) + Alternativas candidatas (der) ──
+                _ch_main_col, _da_main_col = st.columns([3, 2])
+
+                with _ch_main_col:
+                    _ch_load_df = _prog_result.get("load_df")
+                    if _ch_load_df is not None and not _ch_load_df.empty:
+                        _ch_cap_map: dict = {}
+                        if not _prog_cap_df.empty:
+                            for _, _chr in _prog_cap_df.iterrows():
+                                try:
+                                    _ch_cap_map[str(_chr["Línea"])] = float(_chr["Capacidad h/sem"])
+                                except (ValueError, TypeError):
+                                    pass
+                        _ch_lines_all = sorted(
+                            set(_ch_load_df["Línea"].dropna().astype(str).unique().tolist())
+                            | set(_ch_cap_map.keys())
+                        )
+                        _ch_opts = [t("prog_chart_all_lines")] + _ch_lines_all
+                        _ch_most_tense = str(_pkpis.get("most_tense", "—"))
+                        if (
+                            _pkpis["n_conflict_weeks"] > 0
+                            and _ch_most_tense not in ("—", "None", "")
+                            and _ch_most_tense in _ch_lines_all
+                        ):
+                            _ch_default_idx = _ch_opts.index(_ch_most_tense)
                         else:
-                            _da_cands = _da_alt_result.get("candidatas", [])
-                            _da_desc  = _da_alt_result.get("descartadas", [])
-                            if _da_cands:
-                                _da_df_c = pd.DataFrame(_da_cands)
-                                _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
-                                _da_df_c = (
-                                    _da_df_c
-                                    .sort_values(["_sort", "Mejora h", "Proyecto"],
-                                                 ascending=[True, False, True])
-                                    .drop(columns=["_sort"])
-                                    .reset_index(drop=True)
-                                )
-                                st.dataframe(_da_df_c, use_container_width=True, hide_index=True)
+                            _ch_default_idx = 0
+                        st.markdown(f"#### {t('prog_chart_header')}")
+                        _ch_sel = st.selectbox(
+                            t("prog_chart_line_selector"),
+                            options=_ch_opts,
+                            index=_ch_default_idx,
+                            key=f"prog_chart_line_{plant_id}",
+                            label_visibility="collapsed",
+                        )
+                        try:
+                            _ch_weeks = sorted(
+                                _ch_load_df["Semana"].dropna().unique().tolist(),
+                                key=lambda _w: int(_w),
+                            )
+                        except (ValueError, TypeError):
+                            _ch_weeks = sorted(
+                                _ch_load_df["Semana"].dropna().unique().tolist(), key=str
+                            )
+                        _ch_all_sel = _ch_sel == t("prog_chart_all_lines")
+                        if _ch_all_sel:
+                            _ch_cap_value = sum(_ch_cap_map.values())
+                            _ch_load_agg = (
+                                _ch_load_df.copy()
+                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                                .sum()
+                                .rename(columns={"Horas proyecto semana": "Carga h"})
+                            )
+                        else:
+                            _ch_cap_value = _ch_cap_map.get(_ch_sel, 0.0)
+                            _ch_lf = _ch_load_df[
+                                _ch_load_df["Línea"].astype(str) == _ch_sel
+                            ].copy()
+                            _ch_load_agg = (
+                                _ch_lf
+                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                                .sum()
+                                .rename(columns={"Horas proyecto semana": "Carga h"})
+                            )
+                        if _ch_cap_value <= 0:
+                            st.warning(t("prog_chart_no_capacity"))
+                        elif _ch_load_agg.empty:
+                            st.info(t("prog_chart_no_load"))
+                        else:
+                            _ch_weeks_df = pd.DataFrame({"Semana": _ch_weeks})
+                            _ch_plot = (
+                                _ch_weeks_df
+                                .merge(_ch_load_agg, on="Semana", how="left")
+                                .fillna({"Carga h": 0.0})
+                            )
+                            _ch_plot["Semana"]      = _ch_plot["Semana"].astype(int)
+                            _ch_plot                = _ch_plot.sort_values("Semana").reset_index(drop=True)
+                            _ch_plot["Capacidad h"] = float(_ch_cap_value)
+                            _ch_plot["Déficit h"]   = (
+                                (_ch_plot["Carga h"] - _ch_plot["Capacidad h"])
+                                .clip(lower=0.0)
+                                .round(1)
+                            )
+                            _ch_plot["Saturación %"] = _ch_plot.apply(
+                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1),
+                                axis=1,
+                            )
+                            _ch_xlabels    = _ch_plot["Semana"].astype(str).apply(lambda _s: f"S{_s}")
+                            _ch_bar_colors = [
+                                "#FF4B4B" if _d > 0 else "#4C8CF8"
+                                for _d in _ch_plot["Déficit h"]
+                            ]
+                            _ch_fig = go.Figure()
+                            _ch_fig.add_trace(go.Bar(
+                                x=_ch_xlabels,
+                                y=_ch_plot["Carga h"].round(1),
+                                name="Carga h",
+                                marker_color=_ch_bar_colors,
+                                customdata=_ch_plot[["Capacidad h", "Saturación %", "Déficit h"]].values,
+                                hovertemplate=(
+                                    "Semana %{x}<br>"
+                                    "Carga: %{y:.1f} h<br>"
+                                    "Capacidad: %{customdata[0]:.1f} h<br>"
+                                    "Saturación: %{customdata[1]:.1f}%<br>"
+                                    "Déficit: %{customdata[2]:.1f} h"
+                                    "<extra></extra>"
+                                ),
+                            ))
+                            _ch_fig.add_trace(go.Scatter(
+                                x=_ch_xlabels,
+                                y=_ch_plot["Capacidad h"].round(1),
+                                mode="lines",
+                                name="Capacidad h",
+                                line=dict(color="#21C354", width=2, dash="dot"),
+                                hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
+                            ))
+                            _ch_fig.update_layout(
+                                height=300,
+                                margin=dict(l=0, r=0, t=20, b=0),
+                                legend=dict(
+                                    orientation="h", yanchor="bottom", y=1.02,
+                                    xanchor="right", x=1,
+                                ),
+                                xaxis_title="Semana",
+                                yaxis_title="Horas",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                bargap=0.25,
+                            )
+                            st.plotly_chart(_ch_fig, use_container_width=True)
+                            st.caption(t("prog_chart_caption"))
+                    else:
+                        st.info(t("prog_chart_no_load"))
+
+                with _da_main_col:
+                    if _da_has_conflicts and _da_has_load:
+                        _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
+                        if _da_alt_result is not None:
+                            _da_error = _da_alt_result.get("error")
+                            if _da_error:
+                                st.warning(_da_error)
                             else:
-                                st.info(t("prog_alt_no_alts_found"))
-                else:
-                    st.info(t("prog_alt_no_conflicts"))
+                                _da_cands = _da_alt_result.get("candidatas", [])
+                                if _da_cands:
+                                    _da_df_c = pd.DataFrame(_da_cands)
+                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                    _da_df_c = (
+                                        _da_df_c
+                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
+                                                     ascending=[True, False, True])
+                                        .drop(columns=["_sort"])
+                                        .reset_index(drop=True)
+                                    )
+                                    _da_slim_cols = [c for c in [
+                                        "Proyecto", "Línea actual", "Línea candidata",
+                                        "Resultado", "Mejora h", "Aviso",
+                                    ] if c in _da_df_c.columns]
+                                    st.dataframe(
+                                        _da_df_c[_da_slim_cols],
+                                        use_container_width=True,
+                                        hide_index=True,
+                                        height=240,
+                                    )
+                                else:
+                                    st.info(t("prog_alt_no_alts_found"))
+                    else:
+                        st.info(t("prog_alt_no_conflicts"))
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
@@ -8375,6 +8543,21 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
+                # ── Gantt: vista temporal por proyecto ───────────────────────────────
+                st.divider()
+                st.markdown(f"#### {t('prog_gantt_header')}")
+                if _gt_styled is not None:
+                    st.caption(t("prog_gantt_desc"))
+                    st.caption(t("prog_gantt_caption"))
+                    st.dataframe(
+                        _gt_styled,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=min(320, max(180, len(_gt_df) * 32 + 60)),
+                    )
+                else:
+                    st.caption(t("prog_gantt_empty"))
+
                 # ── Detalle técnico / auditoría ───────────────────────────────────────
                 with st.expander("🔍 Detalle técnico / auditoría", expanded=False):
                     # Capacidad por línea
@@ -8418,139 +8601,6 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_result["warnings"]:
                         for _pw_aud in _prog_result["warnings"]:
                             st.warning(_pw_aud)
-                    # Gráfico carga vs capacidad (completo, sin modificar)
-                    st.divider()
-                    _ch_load_df_aud = _prog_result.get("load_df")
-                    if _ch_load_df_aud is not None and not _ch_load_df_aud.empty:
-                        _ch_cap_map_aud: dict = {}
-                        if not _prog_cap_df.empty:
-                            for _, _chr_aud in _prog_cap_df.iterrows():
-                                try:
-                                    _ch_cap_map_aud[str(_chr_aud["Línea"])] = float(_chr_aud["Capacidad h/sem"])
-                                except (ValueError, TypeError):
-                                    pass
-                        _ch_lines_all_aud = sorted(
-                            set(_ch_load_df_aud["Línea"].dropna().astype(str).unique().tolist())
-                            | set(_ch_cap_map_aud.keys())
-                        )
-                        _ch_opts_aud = [t("prog_chart_all_lines")] + _ch_lines_all_aud
-                        _ch_most_tense_aud = str(_pkpis.get("most_tense", "—"))
-                        if (
-                            _pkpis["n_conflict_weeks"] > 0
-                            and _ch_most_tense_aud not in ("—", "None", "")
-                            and _ch_most_tense_aud in _ch_lines_all_aud
-                        ):
-                            _ch_default_idx_aud = _ch_opts_aud.index(_ch_most_tense_aud)
-                        else:
-                            _ch_default_idx_aud = 0
-                        _ch_hdr_col_aud, _ch_sel_col_aud = st.columns([3, 2])
-                        _ch_hdr_col_aud.markdown(f"#### {t('prog_chart_header')}")
-                        with _ch_sel_col_aud:
-                            _ch_sel_aud = st.selectbox(
-                                t("prog_chart_line_selector"),
-                                options=_ch_opts_aud,
-                                index=_ch_default_idx_aud,
-                                key=f"prog_chart_line_{plant_id}",
-                                label_visibility="collapsed",
-                            )
-                        try:
-                            _ch_weeks_aud = sorted(
-                                _ch_load_df_aud["Semana"].dropna().unique().tolist(),
-                                key=lambda _w: int(_w),
-                            )
-                        except (ValueError, TypeError):
-                            _ch_weeks_aud = sorted(
-                                _ch_load_df_aud["Semana"].dropna().unique().tolist(), key=str
-                            )
-                        _ch_all_sel_aud = _ch_sel_aud == t("prog_chart_all_lines")
-                        if _ch_all_sel_aud:
-                            _ch_cap_value_aud = sum(_ch_cap_map_aud.values())
-                            _ch_load_agg_aud = (
-                                _ch_load_df_aud.copy()
-                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
-                                .sum()
-                                .rename(columns={"Horas proyecto semana": "Carga h"})
-                            )
-                        else:
-                            _ch_cap_value_aud = _ch_cap_map_aud.get(_ch_sel_aud, 0.0)
-                            _ch_lf_aud = _ch_load_df_aud[
-                                _ch_load_df_aud["Línea"].astype(str) == _ch_sel_aud
-                            ].copy()
-                            _ch_load_agg_aud = (
-                                _ch_lf_aud
-                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
-                                .sum()
-                                .rename(columns={"Horas proyecto semana": "Carga h"})
-                            )
-                        if _ch_cap_value_aud <= 0:
-                            st.warning(t("prog_chart_no_capacity"))
-                        elif _ch_load_agg_aud.empty:
-                            st.info(t("prog_chart_no_load"))
-                        else:
-                            _ch_weeks_df_aud = pd.DataFrame({"Semana": _ch_weeks_aud})
-                            _ch_plot_aud = (
-                                _ch_weeks_df_aud
-                                .merge(_ch_load_agg_aud, on="Semana", how="left")
-                                .fillna({"Carga h": 0.0})
-                            )
-                            _ch_plot_aud["Semana"]      = _ch_plot_aud["Semana"].astype(int)
-                            _ch_plot_aud                = _ch_plot_aud.sort_values("Semana").reset_index(drop=True)
-                            _ch_plot_aud["Capacidad h"] = float(_ch_cap_value_aud)
-                            _ch_plot_aud["Déficit h"]   = (
-                                (_ch_plot_aud["Carga h"] - _ch_plot_aud["Capacidad h"])
-                                .clip(lower=0.0)
-                                .round(1)
-                            )
-                            _ch_plot_aud["Saturación %"] = _ch_plot_aud.apply(
-                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1),
-                                axis=1,
-                            )
-                            _ch_xlabels_aud    = _ch_plot_aud["Semana"].astype(str).apply(lambda _s: f"S{_s}")
-                            _ch_bar_colors_aud = [
-                                "#FF4B4B" if _d > 0 else "#4C8CF8"
-                                for _d in _ch_plot_aud["Déficit h"]
-                            ]
-                            _ch_fig_aud = go.Figure()
-                            _ch_fig_aud.add_trace(go.Bar(
-                                x=_ch_xlabels_aud,
-                                y=_ch_plot_aud["Carga h"].round(1),
-                                name="Carga h",
-                                marker_color=_ch_bar_colors_aud,
-                                customdata=_ch_plot_aud[["Capacidad h", "Saturación %", "Déficit h"]].values,
-                                hovertemplate=(
-                                    "Semana %{x}<br>"
-                                    "Carga: %{y:.1f} h<br>"
-                                    "Capacidad: %{customdata[0]:.1f} h<br>"
-                                    "Saturación: %{customdata[1]:.1f}%<br>"
-                                    "Déficit: %{customdata[2]:.1f} h"
-                                    "<extra></extra>"
-                                ),
-                            ))
-                            _ch_fig_aud.add_trace(go.Scatter(
-                                x=_ch_xlabels_aud,
-                                y=_ch_plot_aud["Capacidad h"].round(1),
-                                mode="lines",
-                                name="Capacidad h",
-                                line=dict(color="#21C354", width=2, dash="dot"),
-                                hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
-                            ))
-                            _ch_fig_aud.update_layout(
-                                height=300,
-                                margin=dict(l=0, r=0, t=20, b=0),
-                                legend=dict(
-                                    orientation="h", yanchor="bottom", y=1.02,
-                                    xanchor="right", x=1,
-                                ),
-                                xaxis_title="Semana",
-                                yaxis_title="Horas",
-                                plot_bgcolor="rgba(0,0,0,0)",
-                                paper_bgcolor="rgba(0,0,0,0)",
-                                bargap=0.25,
-                            )
-                            st.plotly_chart(_ch_fig_aud, use_container_width=True)
-                            st.caption(t("prog_chart_caption"))
-                    else:
-                        st.info(t("prog_chart_no_load"))
                     # Tabla "Qué se rompe" completa (7 cols)
                     if not _prog_result["conflict_df"].empty:
                         st.divider()
@@ -8562,21 +8612,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             hide_index=True,
                             height=min(400, max(200, len(_cdf) * 36 + 56)),
                         )
-                    # Vista temporal / Gantt
-                    st.divider()
-                    if _gt_styled is not None:
-                        with st.expander(t("prog_gantt_header"), expanded=False):
-                            st.caption(t("prog_gantt_desc"))
-                            st.caption(t("prog_gantt_caption"))
-                            st.dataframe(
-                                _gt_styled,
-                                use_container_width=True,
-                                hide_index=True,
-                                height=min(420, max(200, len(_gt_df) * 38 + 60)),
-                            )
-                    else:
-                        with st.expander(t("prog_gantt_header"), expanded=False):
-                            st.caption(t("prog_gantt_empty"))
                     # Proyectos excluidos
                     if _n_excl > 0:
                         st.divider()
