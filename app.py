@@ -7917,11 +7917,18 @@ if st.session_state.active_tab == "📋 Programación real":
 [class*="st-key-prog_hdr_franja"] [data-testid="stFileUploaderDropzoneInstructions"] {
     display: none;
 }
+[class*="st-key-prog_hdr_calcular"] {
+    margin-top: 0.1rem;
+}
 [class*="st-key-prog_hdr_calcular"] button {
-    margin-top: 0.5rem;
+    padding: 0.2rem 0.6rem !important;
+    font-size: 0.85rem !important;
+    min-height: unset !important;
+    line-height: 1.2;
 }
 [class*="st-key-prog_title_block"] {
     margin-top: -0.75rem;
+    margin-bottom: -0.5rem;
 }
 </style>""", unsafe_allow_html=True)
 
