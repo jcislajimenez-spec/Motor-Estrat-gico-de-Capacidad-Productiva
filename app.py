@@ -8539,8 +8539,10 @@ if st.session_state.active_tab == "📋 Programación real":
                             ["Semana", "Déficit h"], ascending=[True, False]
                         ).reset_index(drop=True)
                         _cdf_display = _cdf[
-                            [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
-                             if c in _cdf.columns]
+                            [c for c in [
+                                "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
+                                "Saturación %", "Proyectos implicados",
+                            ] if c in _cdf.columns]
                         ]
                         _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
                         if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
