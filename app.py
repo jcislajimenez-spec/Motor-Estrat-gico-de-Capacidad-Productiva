@@ -7814,7 +7814,7 @@ def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
 
 
 if st.session_state.active_tab == "📋 Programación real":
-    st.subheader("Programación real — ¿Qué proyecto rompe el plan?")
+    st.markdown("#### Motor Estratégico de Capacidad Productiva · Programación real")
     st.caption("Carga proyectos reales, cruza capacidad y detecta dónde rompe el plan.")
 
     # ── Resolver escenario activo — mismo patrón que Simulación anual ────────
@@ -7892,23 +7892,22 @@ if st.session_state.active_tab == "📋 Programación real":
 
             # ── Cabecera contextual compacta ──────────────────────────────────
             _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum()) if not _prog_cap_df.empty else 0.0
-            st.markdown(
-                f"**Planta:** {selected_plant_name} · "
-                f"**Escenario:** {_prog_sc_name} · "
-                f"**{len(_prog_planned_line_ids)} líneas** · "
-                f"**Cap. disponible: {_fmt_num(_prog_cap_total)} h/sem**"
+            st.caption(
+                f"Planta: {selected_plant_name} · "
+                f"Escenario: {_prog_sc_name} · "
+                f"{len(_prog_planned_line_ids)} líneas · "
+                f"Capacidad: {_fmt_num(_prog_cap_total)} h/sem"
             )
 
             # ── Descarga de plantilla + uploader ─────────────────────────────
             _pc_up, _pc_tmpl = st.columns([3, 1])
             with _pc_up:
                 _prog_uploaded = st.file_uploader(
-                    t("prog_upload_label"),
+                    "Excel · hoja PROGRAMACION_REAL",
                     type=["xlsx"],
                     key=f"prog_upload_{plant_id}",
                 )
             with _pc_tmpl:
-                st.caption(t("prog_template_caption"))
                 st.download_button(
                     label=t("prog_template_btn"),
                     data=_build_prog_template_xlsx(),
