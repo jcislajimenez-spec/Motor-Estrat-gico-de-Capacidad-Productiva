@@ -7907,18 +7907,24 @@ if st.session_state.active_tab == "📋 Programación real":
     background: rgba(128,128,128,0.06);
     border: 1px solid rgba(128,128,128,0.18);
     border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem 0.4rem 0.75rem;
-    margin-bottom: 0.25rem;
+    padding: 0.3rem 0.55rem 0.25rem 0.55rem;
+    margin-bottom: 0.05rem;
+}
+[class*="st-key-prog_hdr_franja"] [data-testid="stVerticalBlock"] {
+    gap: 0.2rem;
+}
+[class*="st-key-prog_hdr_franja"] p {
+    margin-bottom: 0.15rem;
 }
 [class*="st-key-prog_hdr_franja"] [data-testid="stFileUploaderDropzone"] {
-    padding: 0.3rem 0.5rem;
+    padding: 0.15rem 0.45rem;
     min-height: unset;
 }
 [class*="st-key-prog_hdr_franja"] [data-testid="stFileUploaderDropzoneInstructions"] {
     display: none;
 }
 [class*="st-key-prog_hdr_calcular"] button {
-    margin-top: 0.5rem;
+    margin-top: 0.15rem;
 }
 [class*="st-key-prog_title_block"] {
     margin-top: -0.75rem;
@@ -7983,7 +7989,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                     # ── Escenario / planta / capacidad ────────────────────────
                     st.caption(
-                        f"**{_prog_sc_name}** · {selected_plant_name}  \n"
+                        f"**{_prog_sc_name}** · {selected_plant_name} · "
                         f"{len(_prog_planned_line_ids)} lín · {_fmt_num(_prog_cap_total)} h/sem"
                     )
 
