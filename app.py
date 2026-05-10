@@ -8504,7 +8504,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     st.caption(t("prog_gantt_empty"))
 
                 # ── Franja: Qué se rompe (izq) | Auditoría índice (der) ──────────────
-                _qa_left_col, _qa_right_col = st.columns([4, 1])
+                _qa_left_col, _qa_right_col = st.columns([3, 1])
 
                 with _qa_left_col:
                     # ── Tabla "Qué se rompe" ──────────────────────────────────────
@@ -8565,13 +8565,13 @@ if st.session_state.active_tab == "📋 Programación real":
                             )
 
                 with _qa_right_col:
-                    st.markdown("#### 🔍 Detalle técnico / auditoría")
+                    st.markdown("##### 🔍 Detalle técnico / auditoría")
                     _aud_sections = [
                         ("excluidos",   "Proyectos excluidos"),
                         ("capacidad",   "Capacidad por línea"),
-                        ("carga",       "Carga calculada por semana y línea"),
-                        ("descartadas", "Alternativas descartadas / avisos técnicos"),
-                        ("avisos",      "Avisos de importación y programación"),
+                        ("carga",       "Carga calculada"),
+                        ("descartadas", "Descartadas / avisos"),
+                        ("avisos",      "Avisos"),
                         ("conflictos",  "Conflictos completos"),
                     ]
                     for _aud_k, _aud_lbl in _aud_sections:
