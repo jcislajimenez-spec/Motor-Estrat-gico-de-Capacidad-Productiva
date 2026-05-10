@@ -7986,8 +7986,182 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── 14D.1A Alternativas candidatas de línea ───────────────────────────
                 _da_has_conflicts = not _prog_result["conflict_df"].empty
                 _da_has_load      = not _prog_result.get("load_df", pd.DataFrame()).empty
+                _da_btn_clicked = False
+
+                # ── Gráfico carga vs capacidad (izq) + Alternativas candidatas (der) ──
+                _ch_main_col, _da_main_col = st.columns([3, 2])
+
+                with _ch_main_col:
+                    _ch_load_df = _prog_result.get("load_df")
+                    if _ch_load_df is not None and not _ch_load_df.empty:
+                        _ch_cap_map: dict = {}
+                        if not _prog_cap_df.empty:
+                            for _, _chr in _prog_cap_df.iterrows():
+                                try:
+                                    _ch_cap_map[str(_chr["Línea"])] = float(_chr["Capacidad h/sem"])
+                                except (ValueError, TypeError):
+                                    pass
+                        _ch_lines_all = sorted(
+                            set(_ch_load_df["Línea"].dropna().astype(str).unique().tolist())
+                            | set(_ch_cap_map.keys())
+                        )
+                        _ch_opts = [t("prog_chart_all_lines")] + _ch_lines_all
+                        _ch_most_tense = str(_pkpis.get("most_tense", "—"))
+                        if (
+                            _pkpis["n_conflict_weeks"] > 0
+                            and _ch_most_tense not in ("—", "None", "")
+                            and _ch_most_tense in _ch_lines_all
+                        ):
+                            _ch_default_idx = _ch_opts.index(_ch_most_tense)
+                        else:
+                            _ch_default_idx = 0
+                        st.markdown(f"#### {t('prog_chart_header')}")
+                        _ch_sel = st.selectbox(
+                            t("prog_chart_line_selector"),
+                            options=_ch_opts,
+                            index=_ch_default_idx,
+                            key=f"prog_chart_line_{plant_id}",
+                            label_visibility="collapsed",
+                        )
+                        try:
+                            _ch_weeks = sorted(
+                                _ch_load_df["Semana"].dropna().unique().tolist(),
+                                key=lambda _w: int(_w),
+                            )
+                        except (ValueError, TypeError):
+                            _ch_weeks = sorted(
+                                _ch_load_df["Semana"].dropna().unique().tolist(), key=str
+                            )
+                        _ch_all_sel = _ch_sel == t("prog_chart_all_lines")
+                        if _ch_all_sel:
+                            _ch_cap_value = sum(_ch_cap_map.values())
+                            _ch_load_agg = (
+                                _ch_load_df.copy()
+                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                                .sum()
+                                .rename(columns={"Horas proyecto semana": "Carga h"})
+                            )
+                        else:
+                            _ch_cap_value = _ch_cap_map.get(_ch_sel, 0.0)
+                            _ch_lf = _ch_load_df[
+                                _ch_load_df["Línea"].astype(str) == _ch_sel
+                            ].copy()
+                            _ch_load_agg = (
+                                _ch_lf
+                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
+                                .sum()
+                                .rename(columns={"Horas proyecto semana": "Carga h"})
+                            )
+                        if _ch_cap_value <= 0:
+                            st.warning(t("prog_chart_no_capacity"))
+                        elif _ch_load_agg.empty:
+                            st.info(t("prog_chart_no_load"))
+                        else:
+                            _ch_weeks_df = pd.DataFrame({"Semana": _ch_weeks})
+                            _ch_plot = (
+                                _ch_weeks_df
+                                .merge(_ch_load_agg, on="Semana", how="left")
+                                .fillna({"Carga h": 0.0})
+                            )
+                            _ch_plot["Semana"]      = _ch_plot["Semana"].astype(int)
+                            _ch_plot                = _ch_plot.sort_values("Semana").reset_index(drop=True)
+                            _ch_plot["Capacidad h"] = float(_ch_cap_value)
+                            _ch_plot["Déficit h"]   = (
+                                (_ch_plot["Carga h"] - _ch_plot["Capacidad h"])
+                                .clip(lower=0.0)
+                                .round(1)
+                            )
+                            _ch_plot["Saturación %"] = _ch_plot.apply(
+                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1),
+                                axis=1,
+                            )
+                            _ch_xlabels    = _ch_plot["Semana"].astype(str).apply(lambda _s: f"S{_s}")
+                            _ch_bar_colors = [
+                                "#FF4B4B" if _d > 0 else "#4C8CF8"
+                                for _d in _ch_plot["Déficit h"]
+                            ]
+                            _ch_fig = go.Figure()
+                            _ch_fig.add_trace(go.Bar(
+                                x=_ch_xlabels,
+                                y=_ch_plot["Carga h"].round(1),
+                                name="Carga h",
+                                marker_color=_ch_bar_colors,
+                                customdata=_ch_plot[["Capacidad h", "Saturación %", "Déficit h"]].values,
+                                hovertemplate=(
+                                    "Semana %{x}<br>"
+                                    "Carga: %{y:.1f} h<br>"
+                                    "Capacidad: %{customdata[0]:.1f} h<br>"
+                                    "Saturación: %{customdata[1]:.1f}%<br>"
+                                    "Déficit: %{customdata[2]:.1f} h"
+                                    "<extra></extra>"
+                                ),
+                            ))
+                            _ch_fig.add_trace(go.Scatter(
+                                x=_ch_xlabels,
+                                y=_ch_plot["Capacidad h"].round(1),
+                                mode="lines",
+                                name="Capacidad h",
+                                line=dict(color="#21C354", width=2, dash="dot"),
+                                hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
+                            ))
+                            _ch_fig.update_layout(
+                                height=260,
+                                margin=dict(l=0, r=0, t=20, b=0),
+                                legend=dict(
+                                    orientation="h", yanchor="bottom", y=1.02,
+                                    xanchor="right", x=1,
+                                ),
+                                xaxis_title="Semana",
+                                yaxis_title="Horas",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                bargap=0.25,
+                            )
+                            st.plotly_chart(_ch_fig, use_container_width=True)
+                    else:
+                        st.info(t("prog_chart_no_load"))
+
+                with _da_main_col:
+                    if _da_has_conflicts and _da_has_load:
+                        st.markdown(f"#### {t('prog_alt_header')}")
+                        _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
+                        _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
+                        if _da_alt_result is not None:
+                            _da_error = _da_alt_result.get("error")
+                            if _da_error:
+                                st.warning(_da_error)
+                            else:
+                                _da_cands = _da_alt_result.get("candidatas", [])
+                                if _da_cands:
+                                    _da_df_c = pd.DataFrame(_da_cands)
+                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                    _da_df_c = (
+                                        _da_df_c
+                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
+                                                     ascending=[True, False, True])
+                                        .drop(columns=["_sort"])
+                                        .reset_index(drop=True)
+                                    )
+                                    _da_slim_cols = [c for c in [
+                                        "Proyecto", "Línea actual", "Línea candidata",
+                                        "Resultado", "Mejora h", "Aviso",
+                                    ] if c in _da_df_c.columns]
+                                    st.dataframe(
+                                        _da_df_c[_da_slim_cols],
+                                        use_container_width=True,
+                                        hide_index=True,
+                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
+                                    )
+                                else:
+                                    st.caption(t("prog_alt_no_alts_found"))
+                        else:
+                            st.caption("Pulsa el botón para ver alternativas candidatas.")
+                    else:
+                        st.caption(t("prog_alt_no_conflicts"))
+                # ── fin 14D.1A ─────────────────────────────────────────────────────────
+
                 if _da_has_conflicts and _da_has_load:
-                    if st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}"):
+                    if _da_btn_clicked:
                         _da_load_base     = _prog_result["load_df"]
                         _da_conflict_base = _prog_result["conflict_df"]
                         _da_parsed_now    = st.session_state.get(f"_prog_parsed_{plant_id}")
@@ -8154,177 +8328,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "candidatas":  _da_candidatas,
                                 "descartadas": _da_descartadas,
                             }
-
-                # ── Gráfico carga vs capacidad (izq) + Alternativas candidatas (der) ──
-                _ch_main_col, _da_main_col = st.columns([3, 2])
-
-                with _ch_main_col:
-                    _ch_load_df = _prog_result.get("load_df")
-                    if _ch_load_df is not None and not _ch_load_df.empty:
-                        _ch_cap_map: dict = {}
-                        if not _prog_cap_df.empty:
-                            for _, _chr in _prog_cap_df.iterrows():
-                                try:
-                                    _ch_cap_map[str(_chr["Línea"])] = float(_chr["Capacidad h/sem"])
-                                except (ValueError, TypeError):
-                                    pass
-                        _ch_lines_all = sorted(
-                            set(_ch_load_df["Línea"].dropna().astype(str).unique().tolist())
-                            | set(_ch_cap_map.keys())
-                        )
-                        _ch_opts = [t("prog_chart_all_lines")] + _ch_lines_all
-                        _ch_most_tense = str(_pkpis.get("most_tense", "—"))
-                        if (
-                            _pkpis["n_conflict_weeks"] > 0
-                            and _ch_most_tense not in ("—", "None", "")
-                            and _ch_most_tense in _ch_lines_all
-                        ):
-                            _ch_default_idx = _ch_opts.index(_ch_most_tense)
-                        else:
-                            _ch_default_idx = 0
-                        st.markdown(f"#### {t('prog_chart_header')}")
-                        _ch_sel = st.selectbox(
-                            t("prog_chart_line_selector"),
-                            options=_ch_opts,
-                            index=_ch_default_idx,
-                            key=f"prog_chart_line_{plant_id}",
-                            label_visibility="collapsed",
-                        )
-                        try:
-                            _ch_weeks = sorted(
-                                _ch_load_df["Semana"].dropna().unique().tolist(),
-                                key=lambda _w: int(_w),
-                            )
-                        except (ValueError, TypeError):
-                            _ch_weeks = sorted(
-                                _ch_load_df["Semana"].dropna().unique().tolist(), key=str
-                            )
-                        _ch_all_sel = _ch_sel == t("prog_chart_all_lines")
-                        if _ch_all_sel:
-                            _ch_cap_value = sum(_ch_cap_map.values())
-                            _ch_load_agg = (
-                                _ch_load_df.copy()
-                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
-                                .sum()
-                                .rename(columns={"Horas proyecto semana": "Carga h"})
-                            )
-                        else:
-                            _ch_cap_value = _ch_cap_map.get(_ch_sel, 0.0)
-                            _ch_lf = _ch_load_df[
-                                _ch_load_df["Línea"].astype(str) == _ch_sel
-                            ].copy()
-                            _ch_load_agg = (
-                                _ch_lf
-                                .groupby("Semana", as_index=False)["Horas proyecto semana"]
-                                .sum()
-                                .rename(columns={"Horas proyecto semana": "Carga h"})
-                            )
-                        if _ch_cap_value <= 0:
-                            st.warning(t("prog_chart_no_capacity"))
-                        elif _ch_load_agg.empty:
-                            st.info(t("prog_chart_no_load"))
-                        else:
-                            _ch_weeks_df = pd.DataFrame({"Semana": _ch_weeks})
-                            _ch_plot = (
-                                _ch_weeks_df
-                                .merge(_ch_load_agg, on="Semana", how="left")
-                                .fillna({"Carga h": 0.0})
-                            )
-                            _ch_plot["Semana"]      = _ch_plot["Semana"].astype(int)
-                            _ch_plot                = _ch_plot.sort_values("Semana").reset_index(drop=True)
-                            _ch_plot["Capacidad h"] = float(_ch_cap_value)
-                            _ch_plot["Déficit h"]   = (
-                                (_ch_plot["Carga h"] - _ch_plot["Capacidad h"])
-                                .clip(lower=0.0)
-                                .round(1)
-                            )
-                            _ch_plot["Saturación %"] = _ch_plot.apply(
-                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1),
-                                axis=1,
-                            )
-                            _ch_xlabels    = _ch_plot["Semana"].astype(str).apply(lambda _s: f"S{_s}")
-                            _ch_bar_colors = [
-                                "#FF4B4B" if _d > 0 else "#4C8CF8"
-                                for _d in _ch_plot["Déficit h"]
-                            ]
-                            _ch_fig = go.Figure()
-                            _ch_fig.add_trace(go.Bar(
-                                x=_ch_xlabels,
-                                y=_ch_plot["Carga h"].round(1),
-                                name="Carga h",
-                                marker_color=_ch_bar_colors,
-                                customdata=_ch_plot[["Capacidad h", "Saturación %", "Déficit h"]].values,
-                                hovertemplate=(
-                                    "Semana %{x}<br>"
-                                    "Carga: %{y:.1f} h<br>"
-                                    "Capacidad: %{customdata[0]:.1f} h<br>"
-                                    "Saturación: %{customdata[1]:.1f}%<br>"
-                                    "Déficit: %{customdata[2]:.1f} h"
-                                    "<extra></extra>"
-                                ),
-                            ))
-                            _ch_fig.add_trace(go.Scatter(
-                                x=_ch_xlabels,
-                                y=_ch_plot["Capacidad h"].round(1),
-                                mode="lines",
-                                name="Capacidad h",
-                                line=dict(color="#21C354", width=2, dash="dot"),
-                                hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
-                            ))
-                            _ch_fig.update_layout(
-                                height=260,
-                                margin=dict(l=0, r=0, t=20, b=0),
-                                legend=dict(
-                                    orientation="h", yanchor="bottom", y=1.02,
-                                    xanchor="right", x=1,
-                                ),
-                                xaxis_title="Semana",
-                                yaxis_title="Horas",
-                                plot_bgcolor="rgba(0,0,0,0)",
-                                paper_bgcolor="rgba(0,0,0,0)",
-                                bargap=0.25,
-                            )
-                            st.plotly_chart(_ch_fig, use_container_width=True)
-                    else:
-                        st.info(t("prog_chart_no_load"))
-
-                with _da_main_col:
-                    if _da_has_conflicts and _da_has_load:
-                        st.markdown(f"#### {t('prog_alt_header')}")
-                        _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                        if _da_alt_result is not None:
-                            _da_error = _da_alt_result.get("error")
-                            if _da_error:
-                                st.warning(_da_error)
-                            else:
-                                _da_cands = _da_alt_result.get("candidatas", [])
-                                if _da_cands:
-                                    _da_df_c = pd.DataFrame(_da_cands)
-                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
-                                    _da_df_c = (
-                                        _da_df_c
-                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
-                                                     ascending=[True, False, True])
-                                        .drop(columns=["_sort"])
-                                        .reset_index(drop=True)
-                                    )
-                                    _da_slim_cols = [c for c in [
-                                        "Proyecto", "Línea actual", "Línea candidata",
-                                        "Resultado", "Mejora h", "Aviso",
-                                    ] if c in _da_df_c.columns]
-                                    st.dataframe(
-                                        _da_df_c[_da_slim_cols],
-                                        use_container_width=True,
-                                        hide_index=True,
-                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
-                                    )
-                                else:
-                                    st.caption(t("prog_alt_no_alts_found"))
-                        else:
-                            st.caption("Pulsa el botón para ver alternativas candidatas.")
-                    else:
-                        st.caption(t("prog_alt_no_conflicts"))
-                # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 # ── Tabla "Qué se rompe" ──────────────────────────────────────
                 _cdf = _prog_result["conflict_df"].copy()
