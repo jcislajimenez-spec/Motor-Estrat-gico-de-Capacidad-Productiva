@@ -7907,24 +7907,18 @@ if st.session_state.active_tab == "📋 Programación real":
     background: rgba(128,128,128,0.06);
     border: 1px solid rgba(128,128,128,0.18);
     border-radius: 0.5rem;
-    padding: 0.3rem 0.55rem 0.25rem 0.55rem;
-    margin-bottom: 0.05rem;
-}
-[class*="st-key-prog_hdr_franja"] [data-testid="stVerticalBlock"] {
-    gap: 0.2rem;
-}
-[class*="st-key-prog_hdr_franja"] p {
-    margin-bottom: 0.15rem;
+    padding: 0.5rem 0.75rem 0.4rem 0.75rem;
+    margin-bottom: 0.25rem;
 }
 [class*="st-key-prog_hdr_franja"] [data-testid="stFileUploaderDropzone"] {
-    padding: 0.15rem 0.45rem;
+    padding: 0.3rem 0.5rem;
     min-height: unset;
 }
 [class*="st-key-prog_hdr_franja"] [data-testid="stFileUploaderDropzoneInstructions"] {
     display: none;
 }
 [class*="st-key-prog_hdr_calcular"] button {
-    margin-top: 0.15rem;
+    margin-top: 0.5rem;
 }
 [class*="st-key-prog_title_block"] {
     margin-top: -0.75rem;
@@ -7933,19 +7927,21 @@ if st.session_state.active_tab == "📋 Programación real":
 
             _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum()) if not _prog_cap_df.empty else 0.0
 
-            # ── Franja compacta: plantilla + uploader + contexto/calcular ───────
+            # ── Etiqueta Excel + plantilla ────────────────────────────────────
+            _fr0_lbl, _fr0_tmpl = st.columns([5, 1])
+            with _fr0_lbl:
+                st.caption("Excel · PROGRAMACION_REAL")
+            with _fr0_tmpl:
+                st.download_button(
+                    label=t("prog_template_btn"),
+                    data=_build_prog_template_xlsx(),
+                    file_name="plantilla_programacion_real.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
+            # ── Franja compacta: uploader + contexto/calcular ─────────────────
             with st.container(key=f"prog_hdr_franja_{plant_id}"):
-                _fr0_lbl, _fr0_tmpl = st.columns([5, 1])
-                with _fr0_lbl:
-                    st.caption("Excel · PROGRAMACION_REAL")
-                with _fr0_tmpl:
-                    st.download_button(
-                        label=t("prog_template_btn"),
-                        data=_build_prog_template_xlsx(),
-                        file_name="plantilla_programacion_real.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
 
                 _col_up, _col_ctx = st.columns([3, 2])
 
@@ -7989,7 +7985,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                     # ── Escenario / planta / capacidad ────────────────────────
                     st.caption(
-                        f"**{_prog_sc_name}** · {selected_plant_name} · "
+                        f"**{_prog_sc_name}** · {selected_plant_name}  \n"
                         f"{len(_prog_planned_line_ids)} lín · {_fmt_num(_prog_cap_total)} h/sem"
                     )
 
