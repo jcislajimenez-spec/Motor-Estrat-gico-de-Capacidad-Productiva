@@ -8571,29 +8571,29 @@ if st.session_state.active_tab == "📋 Programación real":
                     for _gcc_w in _gt_weeks_sorted:
                         _gt_col_cfg[f"S{_gcc_w}"] = st.column_config.TextColumn(
                             label=str(_gcc_w),
-                            width="small",
+                            width=52,
                         )
                     for _gcc_txt, _gcc_width in [
-                        ("Proyecto",       "medium"),
-                        ("Línea",          "small"),
-                        ("Modelo/familia", "medium"),
-                        ("Equipo / modelo","medium"),
-                        ("Nota",           "medium"),
+                        ("Proyecto",        105),
+                        ("Línea",            62),
+                        ("Modelo/familia",   85),
+                        ("Equipo / modelo",  85),
+                        ("Nota",            125),
                     ]:
                         if _gcc_txt in _gt_df.columns:
                             _gt_col_cfg[_gcc_txt] = st.column_config.TextColumn(
                                 label=_gcc_txt,
                                 width=_gcc_width,
                             )
-                    for _gcc_num, _gcc_fmt in [
-                        ("DEF sem.",      "%d"),
-                        ("Sat. máx %",   "%.1f"),
-                        ("Déficit tot. h","%.1f"),
+                    for _gcc_num, _gcc_fmt, _gcc_width in [
+                        ("DEF sem.",       "%d",   58),
+                        ("Sat. máx %",    "%.1f",  66),
+                        ("Déficit tot. h","%.1f",  72),
                     ]:
                         if _gcc_num in _gt_df.columns:
                             _gt_col_cfg[_gcc_num] = st.column_config.NumberColumn(
                                 label=_gcc_num,
-                                width="small",
+                                width=_gcc_width,
                                 format=_gcc_fmt,
                             )
                     st.dataframe(
