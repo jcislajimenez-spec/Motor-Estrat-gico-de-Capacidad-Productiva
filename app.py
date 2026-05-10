@@ -8576,19 +8576,16 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 with _qa_right_col:
                     st.markdown("""<style>
-[class*="st-key-prog_audit_panel"] { margin-top: 2.0rem; }
-[class*="st-key-prog_audit_panel"] .prog-audit-title {
-    font-weight: 700; font-size: 0.95rem;
-    line-height: 1.1; margin: 0 0 0.25rem 0; white-space: nowrap;
-}
-[class*="st-key-prog_audit_panel"] div[data-testid="stButton"] { margin-bottom: 0.25rem; }
-[class*="st-key-prog_audit_panel"] div[data-testid="stButton"] button {
-    min-height: 2.0rem; padding: 0.25rem 0.5rem;
+[class*="st-key-prog_audit_buttons"] { margin-top: 0.65rem; }
+[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] { margin-bottom: 0.22rem; }
+[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] button {
+    min-height: 2.0rem; padding: 0.22rem 0.55rem;
     line-height: 1.1; white-space: nowrap;
 }
 </style>""", unsafe_allow_html=True)
-                    with st.container(key=f"prog_audit_panel_{plant_id}"):
-                        st.markdown('<div class="prog-audit-title">Detalle técnico</div>', unsafe_allow_html=True)
+                    st.markdown("#### Auditoría")
+                    st.caption("Detalle técnico")
+                    with st.container(key=f"prog_audit_buttons_{plant_id}"):
                         if st.button("Proyectos excluidos",    key=f"prog_audit_btn_excl_{plant_id}",   use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
                         if st.button("Capacidad por línea",    key=f"prog_audit_btn_cap_{plant_id}",    use_container_width=True):
