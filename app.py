@@ -8188,41 +8188,11 @@ if st.session_state.active_tab == "📋 Programación real":
                     else:
                         st.info(t("prog_chart_no_load"))
 
+                _da_btn_clicked = False
                 with _da_main_col:
                     if _da_has_conflicts and _da_has_load:
                         st.markdown(f"#### {t('prog_alt_header')}")
                         _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
-                        _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                        if _da_alt_result is not None:
-                            _da_error = _da_alt_result.get("error")
-                            if _da_error:
-                                st.warning(_da_error)
-                            else:
-                                _da_cands = _da_alt_result.get("candidatas", [])
-                                if _da_cands:
-                                    _da_df_c = pd.DataFrame(_da_cands)
-                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
-                                    _da_df_c = (
-                                        _da_df_c
-                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
-                                                     ascending=[True, False, True])
-                                        .drop(columns=["_sort"])
-                                        .reset_index(drop=True)
-                                    )
-                                    _da_slim_cols = [c for c in [
-                                        "Proyecto", "Línea actual", "Línea candidata",
-                                        "Resultado", "Mejora h", "Aviso",
-                                    ] if c in _da_df_c.columns]
-                                    st.dataframe(
-                                        _prog_round_display_df(_da_df_c[_da_slim_cols]),
-                                        use_container_width=True,
-                                        hide_index=True,
-                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
-                                    )
-                                else:
-                                    st.caption(t("prog_alt_no_alts_found"))
-                        else:
-                            st.caption("Pulsa el botón para ver alternativas candidatas.")
                     else:
                         st.caption(t("prog_alt_no_conflicts"))
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
@@ -8395,6 +8365,47 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "candidatas":  _da_candidatas,
                                 "descartadas": _da_descartadas,
                             }
+
+                # ── Mostrar resultado alternativas (tras cálculo, un solo clic) ─────────
+                if _da_has_conflicts and _da_has_load:
+                    _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
+                    with _da_main_col:
+                        if _da_alt_result is not None:
+                            _da_error = _da_alt_result.get("error")
+                            if _da_error:
+                                st.warning(_da_error)
+                            else:
+                                _da_cands = _da_alt_result.get("candidatas", [])
+                                if _da_cands:
+                                    _da_df_c = pd.DataFrame(_da_cands)
+                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                    _da_df_c = (
+                                        _da_df_c
+                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
+                                                     ascending=[True, False, True])
+                                        .drop(columns=["_sort"])
+                                        .reset_index(drop=True)
+                                    )
+                                    _da_slim_cols = [c for c in [
+                                        "Proyecto", "Línea actual", "Línea candidata",
+                                        "Resultado", "Mejora h", "Aviso",
+                                    ] if c in _da_df_c.columns]
+                                    _da_alt_col_cfg = {}
+                                    if "Aviso" in _da_df_c.columns:
+                                        _da_alt_col_cfg["Aviso"] = st.column_config.TextColumn(
+                                            label="Aviso", width=260,
+                                        )
+                                    st.dataframe(
+                                        _prog_round_display_df(_da_df_c[_da_slim_cols]),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
+                                        column_config=_da_alt_col_cfg or None,
+                                    )
+                                else:
+                                    st.caption(t("prog_alt_no_alts_found"))
+                        else:
+                            st.caption("Pulsa el botón para ver alternativas candidatas.")
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
                 _gt_styled = None
@@ -8571,14 +8582,14 @@ if st.session_state.active_tab == "📋 Programación real":
                     for _gcc_w in _gt_weeks_sorted:
                         _gt_col_cfg[f"S{_gcc_w}"] = st.column_config.TextColumn(
                             label=str(_gcc_w),
-                            width=52,
+                            width=54,
                         )
                     for _gcc_txt, _gcc_width in [
-                        ("Proyecto",        105),
+                        ("Proyecto",        115),
                         ("Línea",            62),
-                        ("Modelo/familia",   85),
-                        ("Equipo / modelo",  85),
-                        ("Nota",            125),
+                        ("Modelo/familia",   90),
+                        ("Equipo / modelo",  95),
+                        ("Nota",            190),
                     ]:
                         if _gcc_txt in _gt_df.columns:
                             _gt_col_cfg[_gcc_txt] = st.column_config.TextColumn(
@@ -8607,6 +8618,14 @@ if st.session_state.active_tab == "📋 Programación real":
                     st.caption(t("prog_gantt_empty"))
 
                 # ── Franja: Qué se rompe (izq) | Auditoría índice (der) ──────────────
+                st.markdown("""<style>
+[class*="st-key-prog_audit_buttons"] { margin-top: 0.65rem; }
+[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] { margin-bottom: 0.22rem; }
+[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] button {
+    min-height: 2.0rem; padding: 0.22rem 0.55rem;
+    line-height: 1.1; white-space: nowrap;
+}
+</style>""", unsafe_allow_html=True)
                 _qa_left_col, _qa_right_col = st.columns([3, 1])
 
                 with _qa_left_col:
@@ -8670,14 +8689,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             )
 
                 with _qa_right_col:
-                    st.markdown("""<style>
-[class*="st-key-prog_audit_buttons"] { margin-top: 0.65rem; }
-[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] { margin-bottom: 0.22rem; }
-[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] button {
-    min-height: 2.0rem; padding: 0.22rem 0.55rem;
-    line-height: 1.1; white-space: nowrap;
-}
-</style>""", unsafe_allow_html=True)
                     st.markdown("#### Auditoría")
                     st.caption("Detalle técnico")
                     with st.container(key=f"prog_audit_buttons_{plant_id}"):
@@ -8748,10 +8759,16 @@ if st.session_state.active_tab == "📋 Programación real":
                         _da_desc_aud = _da_alt_result_aud.get("descartadas", [])
                         if _da_desc_aud:
                             st.markdown(f"**{t('prog_alt_tech_expander').format(n=len(_da_desc_aud))}**")
+                            _da_desc_df = _prog_round_display_df(pd.DataFrame(_da_desc_aud))
+                            _da_desc_col_cfg = {}
+                            for _ddc, _ddw in [("Motivo", 220), ("Aviso", 260), ("Detalle", 260), ("Nota", 220)]:
+                                if _ddc in _da_desc_df.columns:
+                                    _da_desc_col_cfg[_ddc] = st.column_config.TextColumn(label=_ddc, width=_ddw)
                             st.dataframe(
-                                _prog_round_display_df(pd.DataFrame(_da_desc_aud)),
+                                _da_desc_df,
                                 use_container_width=True,
                                 hide_index=True,
+                                column_config=_da_desc_col_cfg or None,
                             )
                         else:
                             st.caption("Sin alternativas descartadas.")
