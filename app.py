@@ -8565,20 +8565,28 @@ if st.session_state.active_tab == "📋 Programación real":
                             )
 
                 with _qa_right_col:
-                    st.markdown("##### 🔍 Detalle técnico / auditoría")
-                    _ab1, _ab2 = st.columns(2)
-                    if _ab1.button("Excluidos",   key=f"prog_audit_btn_excl_{plant_id}",   use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
-                    if _ab2.button("Capacidad",   key=f"prog_audit_btn_cap_{plant_id}",    use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "capacidad"
-                    if _ab1.button("Carga",       key=f"prog_audit_btn_carga_{plant_id}",  use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
-                    if _ab2.button("Descartadas", key=f"prog_audit_btn_desc_{plant_id}",   use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "descartadas"
-                    if _ab1.button("Avisos",      key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
-                    if _ab2.button("Conflictos",  key=f"prog_audit_btn_conf_{plant_id}",   use_container_width=True):
-                        st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
+                    st.markdown("""<style>
+[class*="st-key-prog_audit_panel"] { margin-top: 2.4rem; }
+[class*="st-key-prog_audit_panel"] div[data-testid="stButton"] { margin-bottom: 0.25rem; }
+[class*="st-key-prog_audit_panel"] div[data-testid="stButton"] button {
+    min-height: 2.0rem; padding: 0.25rem 0.5rem;
+    line-height: 1.1; white-space: nowrap;
+}
+</style>""", unsafe_allow_html=True)
+                    with st.container(key=f"prog_audit_panel_{plant_id}"):
+                        st.caption("Detalle técnico")
+                        if st.button("Proyectos excluidos",    key=f"prog_audit_btn_excl_{plant_id}",   use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
+                        if st.button("Capacidad por línea",    key=f"prog_audit_btn_cap_{plant_id}",    use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "capacidad"
+                        if st.button("Carga calculada",        key=f"prog_audit_btn_carga_{plant_id}",  use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
+                        if st.button("Alternativas descartadas", key=f"prog_audit_btn_desc_{plant_id}", use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "descartadas"
+                        if st.button("Avisos",                 key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
+                        if st.button("Conflictos completos",   key=f"prog_audit_btn_conf_{plant_id}",   use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
 
                 # ── Contenido técnico seleccionado ──────────────────────────────────
                 _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
