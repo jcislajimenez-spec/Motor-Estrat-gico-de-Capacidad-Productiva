@@ -7920,12 +7920,6 @@ if st.session_state.active_tab == "📋 Programación real":
 [class*="st-key-prog_hdr_calcular"] {
     margin-top: 0.1rem;
 }
-[class*="st-key-prog_hdr_calcular"] button {
-    padding: 0.2rem 0.6rem !important;
-    font-size: 0.85rem !important;
-    min-height: unset !important;
-    line-height: 1.2;
-}
 [class*="st-key-prog_title_block"] {
     margin-top: -0.75rem;
     margin-bottom: -0.5rem;
@@ -8003,7 +7997,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             _prog_calc_clicked = st.button(
                                 t("prog_calc_btn"),
                                 key=f"prog_calc_btn_{plant_id}",
-                                use_container_width=True,
                             )
                     elif _prog_cap_df.empty:
                         st.caption(t("prog_calc_no_cap"))
@@ -8465,9 +8458,10 @@ if st.session_state.active_tab == "📋 Programación real":
                             _gp = str(_glr["Proyecto"])
                             if _gp not in _gt_proj_meta:
                                 _gt_proj_meta[_gp] = {
-                                    "Línea":          str(_glr.get("Línea", "")),
-                                    "Modelo/familia": str(_glr.get("Modelo/familia", "")),
-                                    "Prioridad":      _glr.get("Prioridad", 9999),
+                                    "Línea":           str(_glr.get("Línea", "")),
+                                    "Modelo/familia":  str(_glr.get("Modelo/familia", "")),
+                                    "Equipo / modelo": str(_glr.get("Equipo / modelo", "")),
+                                    "Prioridad":       _glr.get("Prioridad", 9999),
                                 }
 
                         # estado y display por (proyecto, semana_int)
@@ -8530,8 +8524,10 @@ if st.session_state.active_tab == "📋 Programación real":
 
                             _row: dict = {"Proyecto": _gp, "Línea": _gm["Línea"]}
                             _mf = _gm["Modelo/familia"]
-                            if _mf and _mf not in ("", "nan", "None"):
-                                _row["Modelo/familia"] = _mf
+                            _row["Modelo/familia"] = _mf if _mf and _mf not in ("", "nan", "None") else "—"
+                            _eq = _gm.get("Equipo / modelo", "")
+                            if _eq and _eq not in ("", "nan", "None"):
+                                _row["Equipo / modelo"] = _eq
                             _row["DEF sem."]       = _gp_def
                             _row["Sat. máx %"]     = _gp_sat_max
                             _row["Déficit tot. h"] = _gp_def_h
@@ -8570,12 +8566,42 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── Gantt: vista temporal por proyecto — ancho completo ──────────────
                 st.markdown(f"#### {t('prog_gantt_header')}")
                 if _gt_styled is not None:
-                    st.caption(t("prog_gantt_caption"))
+                    st.caption("🔴 Déficit de línea · 🟠 Alta saturación · 🟢 Sin conflicto")
+                    _gt_col_cfg = {}
+                    for _gcc_w in _gt_weeks_sorted:
+                        _gt_col_cfg[f"S{_gcc_w}"] = st.column_config.TextColumn(
+                            label=str(_gcc_w),
+                            width="small",
+                        )
+                    for _gcc_txt, _gcc_width in [
+                        ("Proyecto",       "medium"),
+                        ("Línea",          "small"),
+                        ("Modelo/familia", "medium"),
+                        ("Equipo / modelo","medium"),
+                        ("Nota",           "medium"),
+                    ]:
+                        if _gcc_txt in _gt_df.columns:
+                            _gt_col_cfg[_gcc_txt] = st.column_config.TextColumn(
+                                label=_gcc_txt,
+                                width=_gcc_width,
+                            )
+                    for _gcc_num, _gcc_fmt in [
+                        ("DEF sem.",      "%d"),
+                        ("Sat. máx %",   "%.1f"),
+                        ("Déficit tot. h","%.1f"),
+                    ]:
+                        if _gcc_num in _gt_df.columns:
+                            _gt_col_cfg[_gcc_num] = st.column_config.NumberColumn(
+                                label=_gcc_num,
+                                width="small",
+                                format=_gcc_fmt,
+                            )
                     st.dataframe(
                         _gt_styled,
                         use_container_width=True,
                         hide_index=True,
-                        height=min(320, max(180, len(_gt_df) * 32 + 60)),
+                        height=min(320, max(150, len(_gt_df) * 32 + 60)),
+                        column_config=_gt_col_cfg,
                     )
                 else:
                     st.caption(t("prog_gantt_empty"))
