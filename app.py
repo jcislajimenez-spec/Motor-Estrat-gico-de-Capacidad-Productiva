@@ -8329,63 +8329,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "descartadas": _da_descartadas,
                             }
 
-                # ── Tabla "Qué se rompe" ──────────────────────────────────────
-                _cdf = _prog_result["conflict_df"].copy()
-                st.markdown(t("prog_conflicts_header"))
-                if _prog_result["conflict_df"].empty:
-                    st.success(t("prog_no_conflicts"))
-                else:
-                    st.caption(t("prog_conflicts_reading"))
-                    if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
-                        _cdf["Saturación %"] = _cdf.apply(
-                            lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
-                            if _r["Capacidad h"] > 0 else 0.0,
-                            axis=1,
-                        )
-                    _cdf = _cdf[
-                        [c for c in [
-                            "Semana", "Línea", "Carga h", "Capacidad h",
-                            "Déficit h", "Saturación %", "Proyectos implicados",
-                        ] if c in _cdf.columns]
-                    ].sort_values(
-                        ["Semana", "Déficit h"], ascending=[True, False]
-                    ).reset_index(drop=True)
-                    _cdf_display = _cdf[
-                        [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
-                         if c in _cdf.columns]
-                    ]
-                    _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
-                    if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
-                        _enrich_agg = (
-                            _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
-                            .apply(lambda _g: pd.Series({
-                                "Modelos implicados": ", ".join(sorted(set(
-                                    str(_v) for _v in _g["Modelo / familia"]
-                                    if str(_v) not in ("", "nan", "None")
-                                ))) or "—",
-                                "Equipos implicados": ", ".join(sorted(set(
-                                    str(_v) for _v in _g["Equipo / modelo"]
-                                    if str(_v) not in ("", "nan", "None")
-                                ))) or "—",
-                            }))
-                        )
-                        _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
-                        _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
-                        _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
-                        st.dataframe(
-                            _cdf_display_enriched,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
-                        )
-                    else:
-                        st.dataframe(
-                            _cdf_display,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(320, max(120, len(_cdf_display) * 32 + 48)),
-                        )
-
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
                 _gt_styled = None
                 _gt_df = None
@@ -8546,78 +8489,103 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
-                # ── Gantt: vista temporal por proyecto ───────────────────────────────
-                st.divider()
-                st.markdown(f"#### {t('prog_gantt_header')}")
-                if _gt_styled is not None:
-                    st.caption(t("prog_gantt_caption"))
-                    st.dataframe(
-                        _gt_styled,
-                        use_container_width=True,
-                        hide_index=True,
-                        height=min(320, max(180, len(_gt_df) * 32 + 60)),
-                    )
-                else:
-                    st.caption(t("prog_gantt_empty"))
+                # ── Franja: Qué se rompe + Gantt (izq) | Auditoría índice (der) ──────
+                _qa_left_col, _qa_right_col = st.columns([3, 2])
 
-                # ── Detalle técnico / auditoría ───────────────────────────────────────
-                with st.expander("🔍 Detalle técnico / auditoría", expanded=False):
-                    # Capacidad por línea
-                    st.markdown(f"**{t('prog_cap_expander')}**")
-                    st.caption(t("prog_intro"))
-                    if _prog_cap_df.empty:
-                        st.warning(t("prog_cap_no_rows"))
+                with _qa_left_col:
+                    # ── Tabla "Qué se rompe" ──────────────────────────────────────
+                    _cdf = _prog_result["conflict_df"].copy()
+                    st.markdown(t("prog_conflicts_header"))
+                    if _prog_result["conflict_df"].empty:
+                        st.success(t("prog_no_conflicts"))
                     else:
-                        st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
-                        st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
-                    for _pcw in _prog_cap_warns:
-                        st.warning(_pcw)
-                    # Preview Excel + avisos de importación
-                    if _prog_parsed is not None:
-                        st.divider()
-                        st.markdown(f"**{t('prog_preview_expander').format(n=_prog_parsed['n_proyectos'])}**")
-                        _prog_col_orden_aud = [
-                            "Prioridad", "Proyecto", "Código proyecto/equipo",
-                            "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
-                            "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
-                            "Duración semanas", "Horas totales",
-                            "Línea preferente", "Líneas alternativas",
-                            "Estado proyecto", "Estado materiales", "Comentarios",
-                        ]
-                        _df_prev_aud = _prog_parsed["proyectos"][
-                            [c for c in _prog_col_orden_aud if c in _prog_parsed["proyectos"].columns]
-                        ]
-                        st.dataframe(_df_prev_aud, use_container_width=True, hide_index=True)
-                        st.caption(
-                            f"{_prog_parsed['n_proyectos']} "
-                            f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
-                            f"Planta: {selected_plant_name} · "
-                            f"Escenario activo: {_prog_sc_name}"
-                        )
-                        if _prog_parsed.get("warnings"):
-                            for _piw_aud in _prog_parsed["warnings"]:
-                                st.warning(_piw_aud)
-                    # prog_calc_caption + warnings de cálculo
-                    st.divider()
-                    st.caption(t("prog_calc_caption"))
-                    if _prog_result["warnings"]:
-                        for _pw_aud in _prog_result["warnings"]:
-                            st.warning(_pw_aud)
-                    # Tabla "Qué se rompe" completa (7 cols)
-                    if not _prog_result["conflict_df"].empty:
-                        st.divider()
-                        st.markdown(t("prog_conflicts_header"))
                         st.caption(t("prog_conflicts_reading"))
+                        if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
+                            _cdf["Saturación %"] = _cdf.apply(
+                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                                if _r["Capacidad h"] > 0 else 0.0,
+                                axis=1,
+                            )
+                        _cdf = _cdf[
+                            [c for c in [
+                                "Semana", "Línea", "Carga h", "Capacidad h",
+                                "Déficit h", "Saturación %", "Proyectos implicados",
+                            ] if c in _cdf.columns]
+                        ].sort_values(
+                            ["Semana", "Déficit h"], ascending=[True, False]
+                        ).reset_index(drop=True)
+                        _cdf_display = _cdf[
+                            [c for c in ["Semana", "Línea", "Déficit h", "Proyectos implicados"]
+                             if c in _cdf.columns]
+                        ]
+                        _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
+                        if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
+                            _enrich_agg = (
+                                _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
+                                .apply(lambda _g: pd.Series({
+                                    "Modelos implicados": ", ".join(sorted(set(
+                                        str(_v) for _v in _g["Modelo / familia"]
+                                        if str(_v) not in ("", "nan", "None")
+                                    ))) or "—",
+                                    "Equipos implicados": ", ".join(sorted(set(
+                                        str(_v) for _v in _g["Equipo / modelo"]
+                                        if str(_v) not in ("", "nan", "None")
+                                    ))) or "—",
+                                }))
+                            )
+                            _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
+                            _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
+                            _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
+                            st.dataframe(
+                                _cdf_display_enriched,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
+                            )
+                        else:
+                            st.dataframe(
+                                _cdf_display,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=min(320, max(120, len(_cdf_display) * 32 + 48)),
+                            )
+
+                    # ── Gantt: vista temporal por proyecto ──
+                    st.divider()
+                    st.markdown(f"#### {t('prog_gantt_header')}")
+                    if _gt_styled is not None:
+                        st.caption(t("prog_gantt_caption"))
                         st.dataframe(
-                            _cdf,
+                            _gt_styled,
                             use_container_width=True,
                             hide_index=True,
-                            height=min(400, max(200, len(_cdf) * 36 + 56)),
+                            height=min(320, max(180, len(_gt_df) * 32 + 60)),
                         )
-                    # Proyectos excluidos
-                    if _n_excl > 0:
-                        st.divider()
-                        st.markdown(f"**{t('prog_excluded_expander').format(n=_n_excl)}**")
+                    else:
+                        st.caption(t("prog_gantt_empty"))
+
+                with _qa_right_col:
+                    st.markdown("#### 🔍 Detalle técnico / auditoría")
+                    _aud_sections = [
+                        ("excluidos",   "Proyectos excluidos"),
+                        ("capacidad",   "Capacidad por línea"),
+                        ("carga",       "Carga calculada por semana y línea"),
+                        ("descartadas", "Alternativas descartadas / avisos técnicos"),
+                        ("avisos",      "Avisos de importación y programación"),
+                        ("conflictos",  "Conflictos completos"),
+                    ]
+                    for _aud_k, _aud_lbl in _aud_sections:
+                        if st.button(_aud_lbl, key=f"prog_aud_btn_{_aud_k}_{plant_id}", use_container_width=True):
+                            st.session_state[f"prog_audit_section_{plant_id}"] = _aud_k
+
+                # ── Contenido técnico seleccionado ──────────────────────────────────
+                _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
+
+                if _aud_sel == "excluidos":
+                    st.markdown("##### Proyectos excluidos")
+                    if _n_excl == 0:
+                        st.caption("Sin proyectos excluidos en este cálculo.")
+                    else:
                         if not _prog_result["sin_linea_df"].empty:
                             st.markdown(t("prog_sin_linea_header"))
                             st.dataframe(
@@ -8632,26 +8600,91 @@ if st.session_state.active_tab == "📋 Programación real":
                                 use_container_width=True,
                                 hide_index=True,
                             )
-                    # Carga calculada
-                    st.divider()
-                    st.markdown(f"**{t('prog_load_detail_header')}**")
+
+                elif _aud_sel == "capacidad":
+                    st.markdown("##### Capacidad por línea")
+                    st.caption(t("prog_intro"))
+                    if _prog_cap_df.empty:
+                        st.warning(t("prog_cap_no_rows"))
+                    else:
+                        st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
+                        st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
+                    for _pcw in _prog_cap_warns:
+                        st.warning(_pcw)
+
+                elif _aud_sel == "carga":
+                    st.markdown("##### Carga calculada por semana y línea")
                     if _prog_result["load_df"].empty:
-                        st.info("Sin proyectos calculados.")
+                        st.caption("Sin proyectos calculados.")
                     else:
                         st.dataframe(
                             _prog_result["load_df"],
                             use_container_width=True,
                             hide_index=True,
                         )
-                    # Alternativas descartadas
+
+                elif _aud_sel == "descartadas":
+                    st.markdown("##### Alternativas descartadas / avisos técnicos")
                     _da_alt_result_aud = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                    if _da_alt_result_aud is not None:
+                    if _da_alt_result_aud is None:
+                        st.caption("Ejecuta 'Calcular alternativas candidatas' para ver alternativas descartadas.")
+                    else:
                         _da_desc_aud = _da_alt_result_aud.get("descartadas", [])
                         if _da_desc_aud:
-                            st.divider()
                             st.markdown(f"**{t('prog_alt_tech_expander').format(n=len(_da_desc_aud))}**")
                             st.dataframe(
                                 pd.DataFrame(_da_desc_aud),
                                 use_container_width=True,
                                 hide_index=True,
                             )
+                        else:
+                            st.caption("Sin alternativas descartadas.")
+
+                elif _aud_sel == "avisos":
+                    st.markdown("##### Avisos de importación y programación")
+                    st.caption(t("prog_calc_caption"))
+                    _avisos_mostrados = False
+                    if _prog_parsed is not None:
+                        if _prog_parsed.get("warnings"):
+                            for _piw_aud in _prog_parsed["warnings"]:
+                                st.warning(_piw_aud)
+                            _avisos_mostrados = True
+                        _prog_col_orden_aud = [
+                            "Prioridad", "Proyecto", "Código proyecto/equipo",
+                            "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
+                            "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
+                            "Duración semanas", "Horas totales",
+                            "Línea preferente", "Líneas alternativas",
+                            "Estado proyecto", "Estado materiales", "Comentarios",
+                        ]
+                        _df_prev_aud = _prog_parsed["proyectos"][
+                            [c for c in _prog_col_orden_aud if c in _prog_parsed["proyectos"].columns]
+                        ]
+                        st.markdown(f"**{t('prog_preview_expander').format(n=_prog_parsed['n_proyectos'])}**")
+                        st.dataframe(_df_prev_aud, use_container_width=True, hide_index=True)
+                        st.caption(
+                            f"{_prog_parsed['n_proyectos']} "
+                            f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
+                            f"Planta: {selected_plant_name} · "
+                            f"Escenario activo: {_prog_sc_name}"
+                        )
+                        _avisos_mostrados = True
+                    if _prog_result["warnings"]:
+                        for _pw_aud in _prog_result["warnings"]:
+                            st.warning(_pw_aud)
+                        _avisos_mostrados = True
+                    if not _avisos_mostrados:
+                        st.caption("Sin avisos de importación ni de programación.")
+
+                elif _aud_sel == "conflictos":
+                    st.markdown("##### Conflictos completos")
+                    if _prog_result["conflict_df"].empty:
+                        st.success(t("prog_no_conflicts"))
+                    else:
+                        st.caption(t("prog_conflicts_reading"))
+                        st.dataframe(
+                            _cdf,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(400, max(200, len(_cdf) * 36 + 56)),
+                        )
