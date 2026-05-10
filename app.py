@@ -7814,18 +7814,19 @@ def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
 
 
 if st.session_state.active_tab == "📋 Programación real":
-    st.markdown("### Programación real — ¿Qué proyecto rompe el plan?")
+    with st.container(key=f"prog_title_block_{plant_id}"):
+        st.markdown("### Programación real — ¿Qué proyecto rompe el plan?")
 
-    # ── Flujo de trabajo ──────────────────────────────────────────────────
-    st.markdown(
-        "1️⃣&nbsp;**Cargar Excel**&nbsp;→&nbsp;"
-        "2️⃣&nbsp;**Validar datos**&nbsp;→&nbsp;"
-        "3️⃣&nbsp;**Repartir carga**&nbsp;→&nbsp;"
-        "4️⃣&nbsp;**Cruzar capacidad**&nbsp;→&nbsp;"
-        "5️⃣&nbsp;**Detectar conflictos**&nbsp;→&nbsp;"
-        "6️⃣&nbsp;**Proponer alternativas**",
-        unsafe_allow_html=True,
-    )
+        # ── Flujo de trabajo ──────────────────────────────────────────────────
+        st.markdown(
+            "1️⃣&nbsp;**Cargar Excel**&nbsp;→&nbsp;"
+            "2️⃣&nbsp;**Validar datos**&nbsp;→&nbsp;"
+            "3️⃣&nbsp;**Repartir carga**&nbsp;→&nbsp;"
+            "4️⃣&nbsp;**Cruzar capacidad**&nbsp;→&nbsp;"
+            "5️⃣&nbsp;**Detectar conflictos**&nbsp;→&nbsp;"
+            "6️⃣&nbsp;**Proponer alternativas**",
+            unsafe_allow_html=True,
+        )
 
     # ── Resolver escenario activo — mismo patrón que Simulación anual ────────
     _prog_raw_sc_id    = st.session_state.get(f"_session_sc_id_{plant_id}")
@@ -7919,25 +7920,27 @@ if st.session_state.active_tab == "📋 Programación real":
 [class*="st-key-prog_hdr_calcular"] button {
     margin-top: 0.5rem;
 }
+[class*="st-key-prog_title_block"] {
+    margin-top: -0.75rem;
+}
 </style>""", unsafe_allow_html=True)
 
             _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum()) if not _prog_cap_df.empty else 0.0
 
-            # ── Fila A: label Excel + plantilla (compacta, sin altura de uploader) ──
-            _fa_lbl, _fa_tmpl = st.columns([5, 1])
-            with _fa_lbl:
-                st.caption("Excel · PROGRAMACION_REAL")
-            with _fa_tmpl:
-                st.download_button(
-                    label=t("prog_template_btn"),
-                    data=_build_prog_template_xlsx(),
-                    file_name="plantilla_programacion_real.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
-
-            # ── Fila B: uploader (izq) + contexto/calcular (der) ─────────────
+            # ── Franja compacta: plantilla + uploader + contexto/calcular ───────
             with st.container(key=f"prog_hdr_franja_{plant_id}"):
+                _fr0_lbl, _fr0_tmpl = st.columns([5, 1])
+                with _fr0_lbl:
+                    st.caption("Excel · PROGRAMACION_REAL")
+                with _fr0_tmpl:
+                    st.download_button(
+                        label=t("prog_template_btn"),
+                        data=_build_prog_template_xlsx(),
+                        file_name="plantilla_programacion_real.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+
                 _col_up, _col_ctx = st.columns([3, 2])
 
                 with _col_up:
@@ -8007,7 +8010,6 @@ if st.session_state.active_tab == "📋 Programación real":
             # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
             if _prog_result is not None:
-                st.divider()
                 _pkpis  = _prog_result["kpis"]
                 _n_excl = _pkpis["n_sin_linea"] + _pkpis["n_no_calc"]
 
@@ -8557,7 +8559,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
                 # ── Gantt: vista temporal por proyecto — ancho completo ──────────────
-                st.divider()
                 st.markdown(f"#### {t('prog_gantt_header')}")
                 if _gt_styled is not None:
                     st.caption(t("prog_gantt_caption"))
