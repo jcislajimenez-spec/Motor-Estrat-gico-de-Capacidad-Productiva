@@ -7983,6 +7983,12 @@ if st.session_state.active_tab == "📋 Programación real":
                 _kc4.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
                 _kc5.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
+                def _prog_round_display_df(_df):
+                    _d = _df.copy()
+                    for _c in _d.select_dtypes(include="float").columns:
+                        _d[_c] = _d[_c].round(1)
+                    return _d
+
                 # ── 14D.1A Alternativas candidatas de línea ───────────────────────────
                 _da_has_conflicts = not _prog_result["conflict_df"].empty
                 _da_has_load      = not _prog_result.get("load_df", pd.DataFrame()).empty
@@ -8147,7 +8153,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "Resultado", "Mejora h", "Aviso",
                                     ] if c in _da_df_c.columns]
                                     st.dataframe(
-                                        _da_df_c[_da_slim_cols],
+                                        _prog_round_display_df(_da_df_c[_da_slim_cols]),
                                         use_container_width=True,
                                         hide_index=True,
                                         height=min(200, max(110, len(_da_df_c) * 32 + 42)),
@@ -8551,14 +8557,14 @@ if st.session_state.active_tab == "📋 Programación real":
                             _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
                             _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
                             st.dataframe(
-                                _cdf_display_enriched,
+                                _prog_round_display_df(_cdf_display_enriched),
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
                             )
                         else:
                             st.dataframe(
-                                _cdf_display,
+                                _prog_round_display_df(_cdf_display),
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(320, max(120, len(_cdf_display) * 32 + 48)),
@@ -8603,14 +8609,14 @@ if st.session_state.active_tab == "📋 Programación real":
                         if not _prog_result["sin_linea_df"].empty:
                             st.markdown(t("prog_sin_linea_header"))
                             st.dataframe(
-                                _prog_result["sin_linea_df"],
+                                _prog_round_display_df(_prog_result["sin_linea_df"]),
                                 use_container_width=True,
                                 hide_index=True,
                             )
                         if not _prog_result["no_calculables_df"].empty:
                             st.markdown(t("prog_no_calc_header"))
                             st.dataframe(
-                                _prog_result["no_calculables_df"],
+                                _prog_round_display_df(_prog_result["no_calculables_df"]),
                                 use_container_width=True,
                                 hide_index=True,
                             )
@@ -8621,7 +8627,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_cap_df.empty:
                         st.warning(t("prog_cap_no_rows"))
                     else:
-                        st.dataframe(_prog_cap_df, use_container_width=True, hide_index=True)
+                        st.dataframe(_prog_round_display_df(_prog_cap_df), use_container_width=True, hide_index=True)
                         st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
                     for _pcw in _prog_cap_warns:
                         st.warning(_pcw)
@@ -8632,7 +8638,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         st.caption("Sin proyectos calculados.")
                     else:
                         st.dataframe(
-                            _prog_result["load_df"],
+                            _prog_round_display_df(_prog_result["load_df"]),
                             use_container_width=True,
                             hide_index=True,
                         )
@@ -8647,7 +8653,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         if _da_desc_aud:
                             st.markdown(f"**{t('prog_alt_tech_expander').format(n=len(_da_desc_aud))}**")
                             st.dataframe(
-                                pd.DataFrame(_da_desc_aud),
+                                _prog_round_display_df(pd.DataFrame(_da_desc_aud)),
                                 use_container_width=True,
                                 hide_index=True,
                             )
@@ -8675,7 +8681,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             [c for c in _prog_col_orden_aud if c in _prog_parsed["proyectos"].columns]
                         ]
                         st.markdown(f"**{t('prog_preview_expander').format(n=_prog_parsed['n_proyectos'])}**")
-                        st.dataframe(_df_prev_aud, use_container_width=True, hide_index=True)
+                        st.dataframe(_prog_round_display_df(_df_prev_aud), use_container_width=True, hide_index=True)
                         st.caption(
                             f"{_prog_parsed['n_proyectos']} "
                             f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
@@ -8697,7 +8703,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     else:
                         st.caption(t("prog_conflicts_reading"))
                         st.dataframe(
-                            _cdf,
+                            _prog_round_display_df(_cdf),
                             use_container_width=True,
                             hide_index=True,
                             height=min(400, max(200, len(_cdf) * 36 + 56)),
