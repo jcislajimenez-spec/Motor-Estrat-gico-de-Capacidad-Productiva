@@ -8491,7 +8491,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                 return "background-color:#21C354;color:white;text-align:center;"
                             return ""
 
-                        _gt_styled = _gt_df.style.map(_gt_style_cell, subset=_gt_scols)
+                        _gt_df_display = _prog_round_display_df(_gt_df)
+                        _gt_styled = _gt_df_display.style.format(precision=1).map(
+                            _gt_style_cell,
+                            subset=_gt_scols,
+                        )
 
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
