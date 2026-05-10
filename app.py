@@ -7814,8 +7814,16 @@ def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
 
 
 if st.session_state.active_tab == "📋 Programación real":
-    st.markdown("#### Motor Estratégico de Capacidad Productiva · Programación real")
-    st.caption("Carga proyectos reales, cruza capacidad y detecta dónde rompe el plan.")
+    st.markdown("### Programación real — ¿Qué proyecto rompe el plan?")
+
+    # ── Flujo de trabajo ──────────────────────────────────────────────────
+    _pf1, _pf2, _pf3, _pf4, _pf5, _pf6 = st.columns(6)
+    _pf1.markdown("**1** Cargar Excel")
+    _pf2.markdown("**2** Validar datos")
+    _pf3.markdown("**3** Repartir carga por semanas")
+    _pf4.markdown("**4** Cruzar con capacidad del escenario")
+    _pf5.markdown("**5** Detectar conflictos")
+    _pf6.markdown("**6** Proponer alternativas")
 
     # ── Resolver escenario activo — mismo patrón que Simulación anual ────────
     _prog_raw_sc_id    = st.session_state.get(f"_session_sc_id_{plant_id}")
@@ -7890,24 +7898,16 @@ if st.session_state.active_tab == "📋 Programación real":
                 hours_eff,
             )
 
-            # ── Cabecera contextual compacta ──────────────────────────────────
+            # ── Franja horizontal: Excel | Estado | Escenario | Calcular ─────
             _prog_cap_total = float(_prog_cap_df["Capacidad h/sem"].sum()) if not _prog_cap_df.empty else 0.0
-            st.caption(
-                f"Planta: {selected_plant_name} · "
-                f"Escenario: {_prog_sc_name} · "
-                f"{len(_prog_planned_line_ids)} líneas · "
-                f"Capacidad: {_fmt_num(_prog_cap_total)} h/sem"
-            )
+            _col_excel, _col_valid, _col_scenario, _col_calc = st.columns([3, 2, 2, 2])
 
-            # ── Descarga de plantilla + uploader ─────────────────────────────
-            _pc_up, _pc_tmpl = st.columns([3, 1])
-            with _pc_up:
+            with _col_excel:
                 _prog_uploaded = st.file_uploader(
-                    "Excel · hoja PROGRAMACION_REAL",
+                    "Excel: PROGRAMACION_REAL",
                     type=["xlsx"],
                     key=f"prog_upload_{plant_id}",
                 )
-            with _pc_tmpl:
                 st.download_button(
                     label=t("prog_template_btn"),
                     data=_build_prog_template_xlsx(),
@@ -7917,34 +7917,57 @@ if st.session_state.active_tab == "📋 Programación real":
 
             # ── Parse + validación ────────────────────────────────────────────
             if _prog_uploaded is not None:
-                _prog_hash   = _hashlib.sha256(_prog_uploaded.getvalue()).hexdigest()
+                _prog_hash        = _hashlib.sha256(_prog_uploaded.getvalue()).hexdigest()
                 _prog_parsed_data = _parse_prog_excel(_prog_uploaded)
-
                 if _prog_parsed_data["errors"]:
                     for _perr in _prog_parsed_data["errors"]:
                         st.error(f"Error: {_perr}")
                     st.session_state.pop(f"_prog_parsed_{plant_id}", None)
                 else:
-                    _np = _prog_parsed_data["n_proyectos"]
-                    st.caption(f"✓ {_np} proyecto{'s' if _np != 1 else ''} cargado{'s' if _np != 1 else ''}.")
                     if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
                         st.session_state.pop(f"_prog_parsed_{plant_id}", None)
                     st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                     st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
-            # ── Botón calcular ────────────────────────────────────────────────
             _prog_parsed = st.session_state.get(f"_prog_parsed_{plant_id}")
-            if _prog_parsed is None:
-                st.info(t("prog_no_excel"))
-            elif _prog_cap_df.empty:
-                st.warning(t("prog_calc_no_cap"))
-            else:
-                if st.button(t("prog_calc_btn"), key=f"prog_calc_btn_{plant_id}"):
-                    _prog_result_computed = _distribuir_prog_carga_proyectos(
-                        _prog_parsed["proyectos"], _prog_cap_df
+
+            with _col_valid:
+                if _prog_uploaded is None:
+                    st.caption("Pendiente de carga")
+                elif _prog_parsed is not None:
+                    _np_v = _prog_parsed["n_proyectos"]
+                    st.caption(f"✓ {_np_v} proyecto{'s' if _np_v != 1 else ''} cargado{'s' if _np_v != 1 else ''}")
+                    if _prog_parsed.get("warnings"):
+                        st.caption(f"⚠ {len(_prog_parsed['warnings'])} aviso{'s' if len(_prog_parsed['warnings']) != 1 else ''}")
+                else:
+                    st.caption("⚠ Error en el archivo")
+
+            with _col_scenario:
+                st.caption(
+                    f"Planta: {selected_plant_name} · Escenario: {_prog_sc_name}  \n"
+                    f"{len(_prog_planned_line_ids)} líneas · Cap: {_fmt_num(_prog_cap_total)} h/sem"
+                )
+
+            with _col_calc:
+                _prog_calc_clicked = False
+                if _prog_parsed is None:
+                    st.caption(t("prog_no_excel"))
+                elif _prog_cap_df.empty:
+                    st.caption(t("prog_calc_no_cap"))
+                else:
+                    _prog_calc_clicked = st.button(
+                        t("prog_calc_btn"),
+                        key=f"prog_calc_btn_{plant_id}",
+                        use_container_width=True,
                     )
-                    st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
-                    st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
+
+            # ── Cuerpo de cálculo ─────────────────────────────────────────────
+            if _prog_calc_clicked:
+                _prog_result_computed = _distribuir_prog_carga_proyectos(
+                    _prog_parsed["proyectos"], _prog_cap_df
+                )
+                st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
+                st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
 
             # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
