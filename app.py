@@ -8513,7 +8513,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_result["conflict_df"].empty:
                         st.success(t("prog_no_conflicts"))
                     else:
-                        st.caption(t("prog_conflicts_reading"))
+                        st.caption("Semanas y líneas con déficit. Proyectos implicados, no culpables únicos.")
                         if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
                             _cdf["Saturación %"] = _cdf.apply(
                                 lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
@@ -8566,17 +8566,19 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 with _qa_right_col:
                     st.markdown("##### 🔍 Detalle técnico / auditoría")
-                    _aud_sections = [
-                        ("excluidos",   "Proyectos excluidos"),
-                        ("capacidad",   "Capacidad por línea"),
-                        ("carga",       "Carga calculada"),
-                        ("descartadas", "Descartadas / avisos"),
-                        ("avisos",      "Avisos"),
-                        ("conflictos",  "Conflictos completos"),
-                    ]
-                    for _aud_k, _aud_lbl in _aud_sections:
-                        if st.button(_aud_lbl, key=f"prog_aud_btn_{_aud_k}_{plant_id}", use_container_width=True):
-                            st.session_state[f"prog_audit_section_{plant_id}"] = _aud_k
+                    _ab1, _ab2 = st.columns(2)
+                    if _ab1.button("Excluidos",   key=f"prog_audit_btn_excl_{plant_id}",   use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
+                    if _ab2.button("Capacidad",   key=f"prog_audit_btn_cap_{plant_id}",    use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "capacidad"
+                    if _ab1.button("Carga",       key=f"prog_audit_btn_carga_{plant_id}",  use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
+                    if _ab2.button("Descartadas", key=f"prog_audit_btn_desc_{plant_id}",   use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "descartadas"
+                    if _ab1.button("Avisos",      key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
+                    if _ab2.button("Conflictos",  key=f"prog_audit_btn_conf_{plant_id}",   use_container_width=True):
+                        st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
 
                 # ── Contenido técnico seleccionado ──────────────────────────────────
                 _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
