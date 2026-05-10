@@ -8489,8 +8489,22 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
-                # ── Franja: Qué se rompe + Gantt (izq) | Auditoría índice (der) ──────
-                _qa_left_col, _qa_right_col = st.columns([3, 2])
+                # ── Gantt: vista temporal por proyecto — ancho completo ──────────────
+                st.divider()
+                st.markdown(f"#### {t('prog_gantt_header')}")
+                if _gt_styled is not None:
+                    st.caption(t("prog_gantt_caption"))
+                    st.dataframe(
+                        _gt_styled,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=min(320, max(180, len(_gt_df) * 32 + 60)),
+                    )
+                else:
+                    st.caption(t("prog_gantt_empty"))
+
+                # ── Franja: Qué se rompe (izq) | Auditoría índice (der) ──────────────
+                _qa_left_col, _qa_right_col = st.columns([4, 1])
 
                 with _qa_left_col:
                     # ── Tabla "Qué se rompe" ──────────────────────────────────────
@@ -8549,20 +8563,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 hide_index=True,
                                 height=min(320, max(120, len(_cdf_display) * 32 + 48)),
                             )
-
-                    # ── Gantt: vista temporal por proyecto ──
-                    st.divider()
-                    st.markdown(f"#### {t('prog_gantt_header')}")
-                    if _gt_styled is not None:
-                        st.caption(t("prog_gantt_caption"))
-                        st.dataframe(
-                            _gt_styled,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(320, max(180, len(_gt_df) * 32 + 60)),
-                        )
-                    else:
-                        st.caption(t("prog_gantt_empty"))
 
                 with _qa_right_col:
                     st.markdown("#### 🔍 Detalle técnico / auditoría")
