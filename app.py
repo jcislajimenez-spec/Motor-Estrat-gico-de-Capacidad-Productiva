@@ -8470,7 +8470,9 @@ if st.session_state.active_tab == "📋 Programación real":
                             if _gp not in _gt_proj_meta:
                                 _gt_proj_meta[_gp] = {
                                     "Línea":           str(_glr.get("Línea", "")),
-                                    "Modelo/familia":  str(_glr.get("Modelo/familia", "")),
+                                    "Modelo/familia":  str(
+                                        _glr.get("Modelo / familia", _glr.get("Modelo/familia", ""))
+                                    ).strip(),
                                     "Equipo / modelo": str(_glr.get("Equipo / modelo", "")),
                                     "Prioridad":       _glr.get("Prioridad", 9999),
                                 }
