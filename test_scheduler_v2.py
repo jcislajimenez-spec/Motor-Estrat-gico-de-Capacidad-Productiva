@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from engine import schedule_proyectos, primer_hueco, asignacion_mejor
+from engine import normalizar_programacion_v2
 
 _failures: list = []
 
@@ -426,11 +427,324 @@ def test_14_horizonte_fin_invalido():
     )
 
 
+# ===========================================================================
+# Tests Fase 2 — normalizar_programacion_v2()
+# ===========================================================================
+
+def _fila_valida(**kw):
+    """Fila base valida; se pueden sobreescribir campos via kw."""
+    base = {
+        "Proyecto": "P001",
+        "Modelo": "SL3200",
+        "Duracion": 4,
+        "Semana inicio": 10,
+        "Semana entrega": 20,
+        "Linea": "L07",
+        "Prioridad": 1,
+        "Firme": "FLEXIBLE",
+        "Horas": 120.0,
+    }
+    base.update(kw)
+    return base
+
+
+def test_a01_caso_valido_completo():
+    print("\nTest A01: Caso valido completo")
+    filas = [_fila_valida()]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    check("1 proyecto valido", len(r["proyectos"]) == 1)
+    check("sin errores", len(r["errores"]) == 0)
+    p = r["proyectos"][0]
+    check("proyecto_id='P001'", p["proyecto_id"] == "P001")
+    check("modelo='SL3200'", p["modelo"] == "SL3200")
+    check("dur=4", p["dur"] == 4)
+    check("ini_min=10", p["ini_min"] == 10)
+    check("ent_target=20", p["ent_target"] == 20)
+    check("linea_pref='L07'", p["linea_pref"] == "L07")
+    check("firme=False", p["firme"] is False)
+    check("horas_total=120.0", p["horas_total"] == 120.0)
+
+
+def test_a02_alias_columnas():
+    print("\nTest A02: Alias de columnas")
+    filas = [{
+        "Codigo": "P002",
+        "Familia": "SL",
+        "Duracion semanas": 3,
+        "Inicio minimo": 5,
+        "Entrega contractual": 15,
+        "Linea preferente": "L01",
+        "Urgencia": 2,
+        "Firme/Flexible": "NO",
+    }]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    check("mapeo proyecto_id", r["mapeo_columnas"]["proyecto_id"] == "Codigo")
+    check("mapeo modelo", r["mapeo_columnas"]["modelo"] == "Familia")
+    check("mapeo linea_pref", r["mapeo_columnas"]["linea_pref"] == "Linea preferente")
+    check("mapeo prioridad", r["mapeo_columnas"]["prioridad"] == "Urgencia")
+
+
+def test_a03_alias_modelo_familia():
+    print("\nTest A03: Alias 'Modelo / familia' -> modelo en mayusculas")
+    filas = [{
+        "Proyecto": "P003",
+        "Modelo / familia": "sl3200 xl",
+        "Duracion": 3,
+        "Semana inicio": 5,
+        "Semana entrega": 15,
+        "Linea": "L01",
+        "Prioridad": 1,
+        "Firme": "NO",
+    }]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    check(
+        "mapeo modelo -> 'Modelo / familia'",
+        r["mapeo_columnas"]["modelo"] == "Modelo / familia",
+    )
+    check("modelo en mayusculas", r["proyectos"][0]["modelo"] == "SL3200 XL")
+
+
+def test_a04_duracion_decimal_no_entera():
+    print("\nTest A04: Duracion=4.5 -> error critico, proyecto no incluido")
+    filas = [_fila_valida(**{"Proyecto": "P004", "Duracion": 4.5})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=False", r["ok"] is False)
+    check("proyecto no incluido", len(r["proyectos"]) == 0)
+    check("error campo dur", any(e["campo"] == "dur" for e in r["errores"]))
+
+
+def test_a05_semana_invalida():
+    print("\nTest A05: Semana inicio='abc' -> error critico")
+    filas = [_fila_valida(**{"Proyecto": "P005", "Semana inicio": "abc"})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=False", r["ok"] is False)
+    check("proyecto no incluido", len(r["proyectos"]) == 0)
+    check("error campo ini_min", any(e["campo"] == "ini_min" for e in r["errores"]))
+
+
+def test_a06_prioridad_mala():
+    print("\nTest A06: Prioridad='Alta' -> proyecto incluido, prioridad=9999, warning")
+    filas = [_fila_valida(**{"Proyecto": "P006", "Prioridad": "Alta"})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True (solo warning)", r["ok"] is True, str(r["errores"]))
+    check("proyecto incluido", len(r["proyectos"]) == 1)
+    check("prioridad=9999", r["proyectos"][0]["prioridad"] == 9999)
+    check(
+        "warning prioridad",
+        any(w.get("campo") == "prioridad" for w in r["warnings"] if isinstance(w, dict)),
+    )
+
+
+def test_a07_prioridad_decimal():
+    print("\nTest A07: Prioridad='1.9' -> proyecto incluido, prioridad=9999, warning decimal")
+    filas = [_fila_valida(**{"Proyecto": "P007", "Prioridad": "1.9"})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True)
+    check("proyecto incluido", len(r["proyectos"]) == 1)
+    check("prioridad=9999", r["proyectos"][0]["prioridad"] == 9999)
+    check(
+        "warning contiene 'decimal'",
+        any("decimal" in w.get("mensaje", "") for w in r["warnings"] if isinstance(w, dict)),
+    )
+
+
+def test_a08_prioridad_cero():
+    print("\nTest A08: Prioridad=0 -> proyecto incluido, prioridad=0, warning suave")
+    filas = [_fila_valida(**{"Proyecto": "P008", "Prioridad": 0})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True)
+    check("proyecto incluido", len(r["proyectos"]) == 1)
+    check("prioridad=0", r["proyectos"][0]["prioridad"] == 0)
+    check("hay warning", len(r["warnings"]) > 0)
+
+
+def test_a09_firme_reconocido():
+    print("\nTest A09: firme=True para FIRME, SI, True, 1")
+    for val in ["FIRME", "SI", True, "1"]:
+        pid = f"P_firme_{val}"
+        filas = [_fila_valida(**{"Proyecto": pid, "Firme": val})]
+        r = normalizar_programacion_v2(filas)
+        check(
+            f"firme=True para valor={val!r}",
+            len(r["proyectos"]) == 1 and r["proyectos"][0]["firme"] is True,
+            str(r["errores"]),
+        )
+
+
+def test_a10_flexible_por_defecto():
+    print("\nTest A10: Firme vacio -> firme=False, sin error")
+    filas = [_fila_valida(**{"Proyecto": "P010", "Firme": ""})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    check("proyecto incluido", len(r["proyectos"]) == 1)
+    check("firme=False", r["proyectos"][0]["firme"] is False)
+
+
+def test_a11_lineas_alt():
+    print("\nTest A11: lineas_alt - separadores mixtos y eliminacion de linea_pref")
+    filas = [{
+        "Proyecto": "P011",
+        "Modelo": "SL",
+        "Duracion": 4,
+        "Semana inicio": 10,
+        "Semana entrega": 20,
+        "Linea": "L07",
+        "Lineas alternativas": "L1, L2; L3 / L4",
+        "Prioridad": 1,
+        "Firme": "NO",
+    }]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    alts = r["proyectos"][0]["lineas_alt"]
+    check("4 alternativas detectadas", len(alts) == 4, str(alts))
+    check("L1 en alternativas", "L1" in alts)
+    check("L4 en alternativas", "L4" in alts)
+
+    # linea_pref en alt -> se elimina
+    filas2 = [_fila_valida(**{
+        "Proyecto": "P011B",
+        "Lineas alternativas": "L07, L08",
+    })]
+    r2 = normalizar_programacion_v2(filas2)
+    check("ok=True (b)", r2["ok"] is True, str(r2["errores"]))
+    alts2 = r2["proyectos"][0]["lineas_alt"]
+    check("L07 eliminada de alt (es linea_pref)", "L07" not in alts2, str(alts2))
+    check("L08 permanece en alt", "L08" in alts2)
+    check(
+        "warning eliminacion linea_pref de alt",
+        any("linea_pref" in w.get("mensaje", "") for w in r2["warnings"] if isinstance(w, dict)),
+    )
+
+
+def test_a12_horas_total_invalida():
+    print("\nTest A12: horas_total='abc' -> proyecto incluido, horas_total=None, warning")
+    filas = [_fila_valida(**{"Proyecto": "P012", "Horas": "abc"})]
+    r = normalizar_programacion_v2(filas)
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    check("proyecto incluido", len(r["proyectos"]) == 1)
+    check("horas_total=None", r["proyectos"][0]["horas_total"] is None)
+    check(
+        "warning horas_total",
+        any(w.get("campo") == "horas_total" for w in r["warnings"] if isinstance(w, dict)),
+    )
+
+
+def test_a13_fila_con_error_critico():
+    print("\nTest A13: Fila con error critico excluida, otras filas validas pasan")
+    filas = [
+        _fila_valida(**{"Proyecto": "OK01"}),
+        _fila_valida(**{"Proyecto": "BAD01", "Duracion": "no_valida"}),
+        _fila_valida(**{"Proyecto": "OK02"}),
+    ]
+    r = normalizar_programacion_v2(filas)
+    check("ok=False (hay errores)", r["ok"] is False)
+    pids = [p["proyecto_id"] for p in r["proyectos"]]
+    check("OK01 incluido", "OK01" in pids)
+    check("OK02 incluido", "OK02" in pids)
+    check("BAD01 no incluido", "BAD01" not in pids)
+    check(
+        "error registrado para BAD01",
+        any(e.get("proyecto_id") == "BAD01" for e in r["errores"]),
+    )
+    check("resumen filas_con_error=1", r["resumen"]["filas_con_error"] == 1)
+    check("resumen proyectos_validos=2", r["resumen"]["proyectos_validos"] == 2)
+
+
+def test_a14_proyecto_id_duplicado():
+    print("\nTest A14: proyecto_id duplicado -> segunda aparicion es error critico")
+    filas = [
+        _fila_valida(**{"Proyecto": "DUP001"}),
+        _fila_valida(**{"Proyecto": "DUP001"}),
+        _fila_valida(**{"Proyecto": "UNICO"}),
+    ]
+    r = normalizar_programacion_v2(filas)
+    check("ok=False (hay error duplicado)", r["ok"] is False)
+    pids = [p["proyecto_id"] for p in r["proyectos"]]
+    check("primera DUP001 incluida", pids.count("DUP001") == 1)
+    check("UNICO incluido", "UNICO" in pids)
+    check(
+        "error contiene 'duplicado'",
+        any("duplicado" in e.get("mensaje", "") for e in r["errores"]),
+    )
+
+
+def test_a15_columnas_ambiguas():
+    print("\nTest A15: Columnas ambiguas -> usa primera alias, genera warning")
+    filas = [{
+        "Proyecto": "P015",
+        "Modelo": "SL",
+        "Modelo / familia": "SL_ALT",
+        "Duracion": 4,
+        "Semana inicio": 10,
+        "Semana entrega": 20,
+        "Linea": "L07",
+        "Prioridad": 1,
+        "Firme": "NO",
+    }]
+    r = normalizar_programacion_v2(filas)
+    elegida = r["mapeo_columnas"]["modelo"]
+    check("usa 'Modelo' (primera en alias list)", elegida == "Modelo")
+    check(
+        "warning de ambiguedad generado",
+        any(
+            "multiples columnas candidatas" in w.get("mensaje", "")
+            for w in r["warnings"]
+            if isinstance(w, dict)
+        ),
+        str(r["warnings"]),
+    )
+
+
+def test_a16_normalizacion_mayusculas():
+    print("\nTest A16: Normalizacion a mayusculas y strip")
+    fila = _fila_valida(**{
+        "Proyecto": "P016",
+        "Modelo": " sl ",
+        "Linea": " l07 ",
+    })
+    fila["Lineas alternativas"] = " l08, l09 "
+    r = normalizar_programacion_v2([fila])
+    check("ok=True", r["ok"] is True, str(r["errores"]))
+    p = r["proyectos"][0]
+    check("modelo='SL'", p["modelo"] == "SL", repr(p["modelo"]))
+    check("linea_pref='L07'", p["linea_pref"] == "L07", repr(p["linea_pref"]))
+    check(
+        "lineas_alt=['L08','L09']",
+        p["lineas_alt"] == ["L08", "L09"],
+        str(p["lineas_alt"]),
+    )
+
+
+def test_a17_integracion_con_schedule():
+    print("\nTest A17: Salida de normalizar compatible con schedule_proyectos")
+    filas = [
+        _fila_valida(**{"Proyecto": "A17F", "Firme": "FIRME", "Modelo": "TIPO_A"}),
+        _fila_valida(**{"Proyecto": "A17X", "Firme": "FLEXIBLE", "Modelo": "TIPO_A"}),
+    ]
+    r_norm = normalizar_programacion_v2(filas)
+    check("normalizacion ok=True", r_norm["ok"] is True, str(r_norm["errores"]))
+    check("2 proyectos normalizados", len(r_norm["proyectos"]) == 2)
+
+    lineas = {
+        "L07": {"capacidad_h_sem": 40.0, "modelos_compatibles": {"TIPO_A"}},
+    }
+    r_sched = schedule_proyectos(
+        r_norm["proyectos"], lineas, semana_actual=1, horizonte_fin=52
+    )
+    check("schedule_proyectos sin excepcion", True)
+    pids_asg = {a["proyecto_id"] for a in r_sched["asignaciones"]}
+    check("A17F planificado", "A17F" in pids_asg)
+    check("A17X planificado", "A17X" in pids_asg)
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    tests = [
+    tests_fase1 = [
         test_01_firme_firme_solape,
         test_02_firme_excede_horizonte,
         test_03_flexible_no_cabe_horizonte,
@@ -447,11 +761,42 @@ if __name__ == "__main__":
         test_14_horizonte_fin_invalido,
     ]
 
-    print("=" * 60)
-    print("  Tests Scheduler V2 — Fase 1 técnica")
-    print("=" * 60)
+    tests_fase2 = [
+        test_a01_caso_valido_completo,
+        test_a02_alias_columnas,
+        test_a03_alias_modelo_familia,
+        test_a04_duracion_decimal_no_entera,
+        test_a05_semana_invalida,
+        test_a06_prioridad_mala,
+        test_a07_prioridad_decimal,
+        test_a08_prioridad_cero,
+        test_a09_firme_reconocido,
+        test_a10_flexible_por_defecto,
+        test_a11_lineas_alt,
+        test_a12_horas_total_invalida,
+        test_a13_fila_con_error_critico,
+        test_a14_proyecto_id_duplicado,
+        test_a15_columnas_ambiguas,
+        test_a16_normalizacion_mayusculas,
+        test_a17_integracion_con_schedule,
+    ]
 
-    for t in tests:
+    print("=" * 60)
+    print("  Tests Scheduler V2 - Fase 1 tecnica")
+    print("=" * 60)
+    for t in tests_fase1:
+        try:
+            t()
+        except Exception as exc:
+            import traceback
+            print(f"  [EXCEPTION] {t.__name__}: {exc}")
+            traceback.print_exc()
+            _failures.append(t.__name__)
+
+    print("\n" + "=" * 60)
+    print("  Tests Scheduler V2 - Fase 2: Adaptador / Validador")
+    print("=" * 60)
+    for t in tests_fase2:
         try:
             t()
         except Exception as exc:

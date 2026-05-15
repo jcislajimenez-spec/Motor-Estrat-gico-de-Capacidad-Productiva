@@ -1,4 +1,6 @@
 from __future__ import annotations
+import re
+import unicodedata
 import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -946,4 +948,674 @@ def schedule_proyectos(
         "warnings": warnings,
         "auditoria_decisiones": auditoria,
         "kpis": kpis,
+    }
+
+
+# ============================================================
+# Scheduler V2 — Fase 2: Adaptador / Validador
+# Convierte filas de Excel/DataFrame al formato interno de
+# schedule_proyectos(). No ejecuta schedule_proyectos().
+# Sin Streamlit · Sin session_state · Sin app.py
+# ============================================================
+
+_ALIASES_V2: dict = {
+    "proyecto_id": [
+        "Proyecto",
+        "Código",
+        "Codigo",
+        "Project",
+        "Nº Proyecto",
+        "Num Proyecto",
+        "Numero Proyecto",
+        "Número Proyecto",
+        "Pedido",
+        "Orden",
+        "Código proyecto/equipo",
+        "Codigo proyecto/equipo",
+    ],
+    "modelo": [
+        "Modelo",
+        "Familia",
+        "Modelo / familia",
+        "Modelo/familia",
+        "Equipo",
+        "Equipo / modelo",
+        "Equipo/modelo",
+        "GAMA",
+        "Tipo Equipo",
+        "Código proyecto/equipo",
+        "Codigo proyecto/equipo",
+    ],
+    "dur": [
+        "Duración ocupación línea semanas",
+        "Duracion ocupacion linea semanas",
+        "Duración semanas",
+        "Duracion semanas",
+        "Duración",
+        "Duracion",
+    ],
+    "ini_min": [
+        "Semana inicio mínima",
+        "Semana inicio minima",
+        "Inicio mínimo",
+        "Inicio minimo",
+        "Semana inicio",
+        "Inicio montaje",
+        "Semana inicio montaje",
+    ],
+    "ent_target": [
+        "Semana entrega objetivo",
+        "Entrega objetivo",
+        "Semana objetivo",
+        "Semana entrega",
+        "Entrega contractual",
+    ],
+    "linea_pref": [
+        "Línea preferente",
+        "Linea preferente",
+        "Línea",
+        "Linea",
+        "Línea asignada",
+        "Linea asignada",
+    ],
+    "lineas_alt": [
+        "Líneas alternativas",
+        "Lineas alternativas",
+        "Alternativas",
+        "Lineas alt",
+        "Líneas alt",
+    ],
+    "prioridad": [
+        "Prioridad",
+        "Priority",
+        "Urgencia",
+    ],
+    "firme": [
+        "Firme/Flexible",
+        "Firme",
+        "Estado planificación",
+        "Estado planificacion",
+        "Tipo planificación",
+        "Tipo planificacion",
+    ],
+    "horas_total": [
+        "Horas totales",
+        "Horas proyecto",
+        "Total horas",
+        "TOTAL",
+        "Carga total",
+        "Horas",
+    ],
+}
+
+_CAMPOS_OBLIGATORIOS_V2: list = [
+    "proyecto_id", "modelo", "dur", "ini_min",
+    "ent_target", "linea_pref", "prioridad", "firme",
+]
+_CAMPOS_OPCIONALES_V2: list = ["lineas_alt", "horas_total"]
+
+
+def _normalizar_nombre_columna(nombre: str) -> str:
+    """
+    Normaliza nombre de columna para comparacion tolerante.
+    strip, minusculas, quita acentos, normaliza Nr/Num, colapsa slash y espacios.
+    """
+    s = str(nombre).strip().lower()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = re.sub(r"n[°º]", "num", s)
+    s = re.sub(r"\bnumero\b", "num", s)
+    s = re.sub(r"\s*/\s*", "/", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _detectar_columna(
+    columnas_disponibles: list,
+    aliases: list,
+) -> Optional[str]:
+    """
+    Devuelve el nombre real de la primera columna que coincide con algun alias.
+    Retorna None si no hay coincidencia.
+    """
+    norm_to_real: dict = {}
+    for c in columnas_disponibles:
+        k = _normalizar_nombre_columna(c)
+        if k not in norm_to_real:
+            norm_to_real[k] = c
+    for alias in aliases:
+        key = _normalizar_nombre_columna(alias)
+        if key in norm_to_real:
+            return norm_to_real[key]
+    return None
+
+
+def _normalizar_bool_firme(valor) -> Tuple[bool, Optional[str]]:
+    """Convierte valor a bool firme. Retorna (firme, warning_o_None)."""
+    _TRUE = {"FIRME", "FIJO", "BLOQUEADO", "LOCKED", "TRUE", "SI", "YES", "1"}
+    _FALSE = {"FLEXIBLE", "MOVIBLE", "NO", "FALSE", "0"}
+
+    if isinstance(valor, bool):
+        return valor, None
+
+    # Numerico entero 1/0 (int/float, pero no bool — ya cubierto arriba)
+    if isinstance(valor, (int, float)):
+        _na = False
+        try:
+            _na = bool(pd.isna(valor))
+        except (TypeError, ValueError):
+            pass
+        if _na:
+            return False, None
+        try:
+            f = float(valor)
+            p = int(f)
+            if f == p:
+                if p == 1:
+                    return True, None
+                if p == 0:
+                    return False, None
+        except (ValueError, TypeError, OverflowError):
+            pass
+
+    if valor is None:
+        return False, None
+
+    _na = False
+    try:
+        _na = bool(pd.isna(valor))
+    except (TypeError, ValueError):
+        pass
+    if _na:
+        return False, None
+
+    s = str(valor).strip().upper()
+    if not s:
+        return False, None
+
+    # Normalizar acentos para SI/SI
+    s_norm = unicodedata.normalize("NFD", s)
+    s_norm = "".join(c for c in s_norm if unicodedata.category(c) != "Mn")
+
+    if s in _TRUE or s_norm in _TRUE:
+        return True, None
+    if s in _FALSE or s_norm in _FALSE:
+        return False, None
+
+    return False, f"valor firme no reconocido ({valor!r}), tratado como FLEXIBLE"
+
+
+def _normalizar_semana(valor, campo: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Convierte valor a int semana. Acepta 20, 20.0. Rechaza 20.5 y texto no numerico.
+    Retorna (int_o_None, error_o_None).
+    """
+    if valor is None:
+        return None, f"{campo} vacia"
+    _na = False
+    try:
+        _na = bool(pd.isna(valor))
+    except (TypeError, ValueError):
+        pass
+    if _na:
+        return None, f"{campo} vacia"
+    s = str(valor).strip().replace(",", ".")
+    if not s:
+        return None, f"{campo} vacia"
+    try:
+        f = float(s)
+    except (ValueError, TypeError):
+        return None, f"{campo} no numerica ({valor!r})"
+    _na2 = False
+    try:
+        _na2 = bool(pd.isna(f))
+    except (TypeError, ValueError):
+        pass
+    if _na2:
+        return None, f"{campo} vacia"
+    p = int(f)
+    if f != p:
+        return None, f"{campo} decimal no entera ({valor!r}), se esperaba entero"
+    return p, None
+
+
+def _normalizar_duracion(valor) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Convierte valor a int duracion. Acepta 4, 4.0. Rechaza 4.5, <=0 y no numerico.
+    Retorna (int_o_None, error_o_None).
+    """
+    if valor is None:
+        return None, "dur vacia"
+    _na = False
+    try:
+        _na = bool(pd.isna(valor))
+    except (TypeError, ValueError):
+        pass
+    if _na:
+        return None, "dur vacia"
+    s = str(valor).strip().replace(",", ".")
+    if not s:
+        return None, "dur vacia"
+    try:
+        f = float(s)
+    except (ValueError, TypeError):
+        return None, f"dur no numerica ({valor!r})"
+    _na2 = False
+    try:
+        _na2 = bool(pd.isna(f))
+    except (TypeError, ValueError):
+        pass
+    if _na2:
+        return None, "dur vacia"
+    p = int(f)
+    if f != p:
+        return None, f"dur decimal no entera ({valor!r}), se esperaba entero"
+    if p <= 0:
+        return None, f"dur debe ser > 0, recibido {valor!r}"
+    return p, None
+
+
+def _normalizar_lineas_alt(
+    valor,
+    linea_pref: str,
+) -> Tuple[list, list]:
+    """
+    Normaliza lineas_alt desde cualquier formato de entrada.
+    Retorna (lista_limpia, lista_warnings).
+    """
+    warns: list = []
+    if valor is None:
+        return [], warns
+    _na = False
+    try:
+        _na = bool(pd.isna(valor))
+    except (TypeError, ValueError):
+        pass
+    if _na:
+        return [], warns
+
+    if isinstance(valor, (list, tuple)):
+        items = [str(v).strip() for v in valor]
+    else:
+        s = str(valor).strip()
+        if not s:
+            return [], warns
+        items = re.split(r"[,;/]", s)
+
+    items = [i.strip().upper() for i in items if i.strip()]
+
+    # Deduplicar conservando orden
+    seen_set: set = set()
+    dedup: list = []
+    has_dups = False
+    for item in items:
+        if item not in seen_set:
+            seen_set.add(item)
+            dedup.append(item)
+        else:
+            has_dups = True
+    if has_dups:
+        warns.append("lineas_alt contenia entradas duplicadas, se han eliminado")
+
+    # Eliminar linea_pref de alternativas
+    lp = str(linea_pref).strip().upper() if linea_pref else ""
+    if lp and lp in seen_set:
+        dedup = [x for x in dedup if x != lp]
+        warns.append(
+            f"linea_pref '{lp}' eliminada de lineas_alt "
+            "(no puede ser alternativa de si misma)"
+        )
+
+    return dedup, warns
+
+
+def normalizar_programacion_v2(
+    rows,
+    *,
+    aliases_columnas: Optional[dict] = None,
+) -> dict:
+    """
+    Convierte filas de Excel/DataFrame al formato interno de schedule_proyectos().
+
+    Acepta list[dict] o pandas.DataFrame.
+    No ejecuta schedule_proyectos(). Solo prepara y valida datos.
+
+    Retorna:
+        ok              bool   -- False si hay uno o mas errores criticos
+        proyectos       list   -- filas validas en formato interno V2
+        errores         list   -- problemas bloqueantes (dicts con campo/fila/mensaje)
+        warnings        list   -- avisos no bloqueantes (dicts con campo/mensaje)
+        mapeo_columnas  dict   -- campo_interno -> nombre_real_columna_usada
+        resumen         dict   -- contadores basicos
+    """
+    # Normalizar entrada a lista de dicts
+    if isinstance(rows, pd.DataFrame):
+        columnas_reales: list = list(rows.columns)
+        filas: list = rows.to_dict(orient="records")
+    else:
+        filas = list(rows) if rows else []
+        columnas_reales = list(filas[0].keys()) if filas else []
+
+    # Merge aliases custom (custom tiene prioridad maxima)
+    aliases_ef: dict = {k: list(v) for k, v in _ALIASES_V2.items()}
+    if aliases_columnas:
+        for campo, lista in aliases_columnas.items():
+            if campo in aliases_ef:
+                aliases_ef[campo] = list(lista) + aliases_ef[campo]
+            else:
+                aliases_ef[campo] = list(lista)
+
+    # Detectar mapeo de columnas
+    mapeo: dict = {}
+    errores_globales: list = []
+    warnings_globales: list = []
+    columnas_asignadas: dict = {}  # real_col -> primer campo que la tomo
+
+    norm_to_real: dict = {}
+    for c in columnas_reales:
+        k = _normalizar_nombre_columna(c)
+        if k not in norm_to_real:
+            norm_to_real[k] = c
+
+    all_campos = _CAMPOS_OBLIGATORIOS_V2 + _CAMPOS_OPCIONALES_V2
+    for campo in all_campos:
+        aliases_campo = aliases_ef.get(campo, [])
+
+        candidatos: list = []
+        for alias in aliases_campo:
+            key = _normalizar_nombre_columna(alias)
+            if key in norm_to_real:
+                real = norm_to_real[key]
+                if real not in candidatos:
+                    candidatos.append(real)
+
+        if not candidatos:
+            if campo in _CAMPOS_OBLIGATORIOS_V2:
+                errores_globales.append({
+                    "campo": campo,
+                    "mensaje": (
+                        f"columna obligatoria '{campo}' no encontrada en el input. "
+                        f"Aliases esperados (primeros 3): {aliases_campo[:3]}"
+                    ),
+                })
+            mapeo[campo] = None
+            continue
+
+        elegida = candidatos[0]
+
+        if len(candidatos) > 1:
+            warnings_globales.append({
+                "campo": campo,
+                "mensaje": (
+                    f"campo '{campo}': multiples columnas candidatas {candidatos}, "
+                    f"usando '{elegida}'"
+                ),
+            })
+
+        if elegida in columnas_asignadas:
+            warnings_globales.append({
+                "campo": campo,
+                "mensaje": (
+                    f"columna '{elegida}' ya asignada a '{columnas_asignadas[elegida]}', "
+                    f"tambien usada para '{campo}'"
+                ),
+            })
+        else:
+            columnas_asignadas[elegida] = campo
+
+        mapeo[campo] = elegida
+
+    # Salida anticipada si faltan columnas obligatorias
+    missing_req = [c for c in _CAMPOS_OBLIGATORIOS_V2 if mapeo.get(c) is None]
+    if missing_req:
+        return {
+            "ok": False,
+            "proyectos": [],
+            "errores": errores_globales,
+            "warnings": warnings_globales,
+            "mapeo_columnas": mapeo,
+            "resumen": {
+                "filas_entrada": len(filas),
+                "proyectos_validos": 0,
+                "filas_con_error": len(filas),
+                "warnings": len(warnings_globales),
+            },
+        }
+
+    # Procesar filas
+    proyectos_validos: list = []
+    errores_filas: list = []
+    warnings_filas: list = []
+    ids_vistos: dict = {}          # proyecto_id_str -> fila_1based
+    filas_con_error_nums: set = set()
+
+    def _get(fila: dict, campo: str):
+        col = mapeo.get(campo)
+        return fila.get(col) if col is not None else None
+
+    def _is_na(v) -> bool:
+        if v is None:
+            return True
+        try:
+            return bool(pd.isna(v))
+        except (TypeError, ValueError):
+            return False
+
+    for idx_0, fila in enumerate(filas):
+        fila_num = idx_0 + 1
+        errores_fila: list = []
+        warnings_fila: list = []
+        campos_norm: dict = {}
+        pid_str: Optional[str] = None
+
+        # proyecto_id
+        raw_pid = _get(fila, "proyecto_id")
+        pid_display = None if _is_na(raw_pid) else str(raw_pid).strip()
+
+        if not pid_display:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": None,
+                "campo": "proyecto_id",
+                "valor": raw_pid,
+                "mensaje": "proyecto_id vacio",
+            })
+        elif pid_display in ids_vistos:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_display,
+                "campo": "proyecto_id",
+                "valor": raw_pid,
+                "mensaje": (
+                    f"proyecto_id duplicado '{pid_display}' "
+                    f"(primera aparicion en fila {ids_vistos[pid_display]})"
+                ),
+            })
+        else:
+            ids_vistos[pid_display] = fila_num
+            pid_str = pid_display
+            campos_norm["proyecto_id"] = pid_str
+
+        # modelo
+        raw_modelo = _get(fila, "modelo")
+        if _is_na(raw_modelo):
+            modelo_str = ""
+        else:
+            modelo_str = str(raw_modelo).strip().upper()
+        if not modelo_str:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "modelo",
+                "valor": raw_modelo,
+                "mensaje": "modelo vacio",
+            })
+        else:
+            campos_norm["modelo"] = modelo_str
+
+        # dur
+        raw_dur = _get(fila, "dur")
+        dur_val, dur_err = _normalizar_duracion(raw_dur)
+        if dur_err:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "dur",
+                "valor": raw_dur,
+                "mensaje": dur_err,
+            })
+        else:
+            campos_norm["dur"] = dur_val
+
+        # ini_min
+        raw_ini = _get(fila, "ini_min")
+        ini_val, ini_err = _normalizar_semana(raw_ini, "ini_min")
+        if ini_err:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "ini_min",
+                "valor": raw_ini,
+                "mensaje": ini_err,
+            })
+        else:
+            campos_norm["ini_min"] = ini_val
+
+        # ent_target
+        raw_et = _get(fila, "ent_target")
+        et_val, et_err = _normalizar_semana(raw_et, "ent_target")
+        if et_err:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "ent_target",
+                "valor": raw_et,
+                "mensaje": et_err,
+            })
+        else:
+            campos_norm["ent_target"] = et_val
+
+        # linea_pref
+        raw_lp = _get(fila, "linea_pref")
+        if _is_na(raw_lp):
+            lp_str = ""
+        else:
+            lp_str = str(raw_lp).strip().upper()
+        if not lp_str:
+            errores_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "linea_pref",
+                "valor": raw_lp,
+                "mensaje": "linea_pref vacia",
+            })
+        else:
+            campos_norm["linea_pref"] = lp_str
+
+        # prioridad — reutiliza _normalizar_prioridad de Fase 1
+        raw_prio = _get(fila, "prioridad")
+        prio_val, prio_aviso = _normalizar_prioridad(raw_prio)
+        if prio_aviso:
+            warnings_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "prioridad",
+                "valor": raw_prio,
+                "mensaje": prio_aviso,
+            })
+        campos_norm["prioridad"] = prio_val
+
+        # firme
+        raw_firme = _get(fila, "firme")
+        firme_val, firme_warn = _normalizar_bool_firme(raw_firme)
+        if firme_warn:
+            warnings_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "firme",
+                "valor": raw_firme,
+                "mensaje": firme_warn,
+            })
+        campos_norm["firme"] = firme_val
+
+        # lineas_alt (opcional)
+        raw_alt = _get(fila, "lineas_alt")
+        alt_list, alt_warns = _normalizar_lineas_alt(
+            raw_alt, campos_norm.get("linea_pref", "")
+        )
+        for w in alt_warns:
+            warnings_fila.append({
+                "fila": fila_num,
+                "proyecto_id": pid_str,
+                "campo": "lineas_alt",
+                "valor": raw_alt,
+                "mensaje": w,
+            })
+        campos_norm["lineas_alt"] = alt_list
+
+        # horas_total (opcional)
+        raw_h = _get(fila, "horas_total")
+        h_val = None
+        if not _is_na(raw_h):
+            s_h = str(raw_h).strip().replace(",", ".")
+            if s_h:
+                try:
+                    h_f = float(s_h)
+                    if h_f < 0:
+                        warnings_fila.append({
+                            "fila": fila_num,
+                            "proyecto_id": pid_str,
+                            "campo": "horas_total",
+                            "valor": raw_h,
+                            "mensaje": f"horas_total negativa ({raw_h!r}), tratada como None",
+                        })
+                    else:
+                        h_val = h_f
+                except (ValueError, TypeError):
+                    warnings_fila.append({
+                        "fila": fila_num,
+                        "proyecto_id": pid_str,
+                        "campo": "horas_total",
+                        "valor": raw_h,
+                        "mensaje": f"horas_total no numerica ({raw_h!r}), tratada como None",
+                    })
+        campos_norm["horas_total"] = h_val
+
+        # Incluir fila?
+        errores_filas.extend(errores_fila)
+        warnings_filas.extend(warnings_fila)
+
+        if errores_fila:
+            filas_con_error_nums.add(fila_num)
+            continue
+
+        proyectos_validos.append({
+            "proyecto_id": campos_norm["proyecto_id"],
+            "modelo": campos_norm["modelo"],
+            "dur": campos_norm["dur"],
+            "ini_min": campos_norm["ini_min"],
+            "ent_target": campos_norm["ent_target"],
+            "linea_pref": campos_norm["linea_pref"],
+            "lineas_alt": campos_norm["lineas_alt"],
+            "prioridad": campos_norm["prioridad"],
+            "firme": campos_norm["firme"],
+            "horas_total": campos_norm["horas_total"],
+        })
+
+    # Resultado final
+    todos_errores = errores_globales + errores_filas
+    todos_warnings = warnings_globales + warnings_filas
+
+    return {
+        "ok": len(todos_errores) == 0,
+        "proyectos": proyectos_validos,
+        "errores": todos_errores,
+        "warnings": todos_warnings,
+        "mapeo_columnas": mapeo,
+        "resumen": {
+            "filas_entrada": len(filas),
+            "proyectos_validos": len(proyectos_validos),
+            "filas_con_error": len(filas_con_error_nums),
+            "warnings": len(todos_warnings),
+        },
     }
