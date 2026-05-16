@@ -7363,6 +7363,9 @@ def _build_lineas_v2_catalogo_ampliado(
     # Universo físico de líneas (para resolver alias potenciales)
     _universo = {str(lid).strip().upper(): True for lid in line_ids_nave_param}
 
+    def _modelo_encaja_familia(mdl_especifico: str, familia: str) -> bool:
+        return mdl_especifico == familia or mdl_especifico.startswith(familia + "-")
+
     def _expand_prefijos(mdl: str) -> set:
         result = {mdl}
         parts = mdl.split("-")
@@ -7376,6 +7379,18 @@ def _build_lineas_v2_catalogo_ampliado(
         _, _, cap_u = compute_line_detail(lid, mdl, times_df_param, stations_df_param, hours_eff_param)
         ct = float(_ctm.get(mdl, 0.0) or 0.0)
         return round(float(cap_u) * ct, 1) if cap_u and ct > 0 else 0.0
+
+    # Canonizar modelos_por_linea_raw: resolver alias de línea a IDs canónicos
+    _modelos_por_linea_canon: dict = {}
+    for _rl, _fams in modelos_por_linea_raw.items():
+        _rc = str(_rl).strip().upper()
+        if _rc in _universo:
+            _lc = _rc
+        else:
+            _rm = [k for k in _universo if k.rsplit("-", 1)[-1] == _rc]
+            _lc = _rm[0] if len(_rm) == 1 else None
+        if _lc:
+            _modelos_por_linea_canon.setdefault(_lc, set()).update(_fams)
 
     # ── 1. Líneas activas del escenario ────────────────────────────────
     for _, row in cap_df.iterrows():
@@ -7407,18 +7422,86 @@ def _build_lineas_v2_catalogo_ampliado(
         else:
             modelos_compat = _expand_prefijos(mdl)
 
-        lineas_activas[lid] = {
-            "modelos_compatibles": modelos_compat,
-            "capacidad_h_sem": cap,
-            "tipo_linea": "ACTIVA",
-            "modelo_capacidad_usado": mdl,
-            "capacidad_origen": "escenario_activo",
-        }
+        # Clasificar: ACTIVA_ESCENARIO si el modelo del escenario encaja con lo solicitado,
+        # ACTIVA_RECALCULADA si alguna familia solicitada no encaja y se puede recalcular.
+        _familias_sol_act = _modelos_por_linea_canon.get(lid, set())
+        _non_match_act = {f for f in _familias_sol_act if not _modelo_encaja_familia(mdl, f)}
+
+        if not _non_match_act:
+            # Modelo del escenario cubre todas las familias solicitadas → ACTIVA_ESCENARIO
+            lineas_activas[lid] = {
+                "modelos_compatibles": modelos_compat,
+                "capacidad_h_sem": cap,
+                "tipo_linea": "ACTIVA_ESCENARIO",
+                "modelo_capacidad_usado": mdl,
+                "capacidad_origen": "escenario_activo",
+            }
+        else:
+            # Algunas familias no encajan con el modelo del escenario → intentar recalcular
+            _mdls_recalc = []
+            if lid in allowed_by_line_param:
+                _mdls_recalc = [
+                    str(_m).strip().upper() for _m in allowed_by_line_param[lid]
+                    if any(_modelo_encaja_familia(str(_m).strip().upper(), f)
+                           for f in _non_match_act)
+                ]
+            _caps_recalc: list = []
+            for _mr in _mdls_recalc:
+                _cr = _calc_cap_potencial(lid, _mr)
+                if _cr > 0:
+                    _caps_recalc.append((_mr, _cr))
+
+            # Familias sin ningún modelo calculable → advertir y excluir de modelos_compatibles
+            _fams_no_recalc = {
+                f for f in _non_match_act
+                if not any(_modelo_encaja_familia(_mr, f) for _mr, _ in _caps_recalc)
+            }
+            if _fams_no_recalc:
+                warns.append(
+                    f"[ACTIVA] Línea '{lid}': modelo/familia "
+                    f"{sorted(_fams_no_recalc)} solicitado, pero no se pudo recalcular "
+                    f"capacidad válida. No se usará capacidad del escenario '{mdl}'."
+                )
+
+            if _caps_recalc:
+                # Capacidad conservadora = mínimo entre recalculados Y capacidad del escenario
+                # (el modelo escenario sigue siendo compatible, su cap debe entrar en el mínimo)
+                _caps_all = list(_caps_recalc)
+                if cap is not None and cap > 0:
+                    _caps_all.append((mdl, cap))
+                _mr_min, _cr_min = min(_caps_all, key=lambda x: x[1])
+                _fams_ok = _non_match_act - _fams_no_recalc
+                _desglose_all = ", ".join(f"{m}: {c} h/sem" for m, c in sorted(_caps_all))
+                warns.append(
+                    f"Línea '{lid}' activa con '{mdl}'; capacidad conservadora entre "
+                    f"escenario y recalculados para familia(s) {sorted(_fams_ok)}: "
+                    f"{_desglose_all}. "
+                    f"Capacidad conservadora adoptada: {_cr_min} h/sem (modelo {_mr_min})."
+                )
+                # modelos_compatibles RESTRINGIDOS: solo modelo escenario + modelos recalculados
+                # (no se incluyen familias no recalculables para evitar uso de cap incorrecta)
+                _modelos_compat_recalc: set = _expand_prefijos(mdl)
+                for _mr, _ in _caps_recalc:
+                    _modelos_compat_recalc.update(_expand_prefijos(_mr))
+                lineas_activas[lid] = {
+                    "modelos_compatibles": _modelos_compat_recalc,
+                    "capacidad_h_sem": _cr_min,
+                    "tipo_linea": "ACTIVA_RECALCULADA",
+                    "modelo_capacidad_usado": _mr_min,
+                    "capacidad_origen": "activa_recalculada_compatibilidad",
+                }
+            else:
+                # Ningún modelo calculable para familias no encajadas.
+                # Warning ya emitido por _fams_no_recalc. Solo mantener modelo del escenario.
+                lineas_activas[lid] = {
+                    "modelos_compatibles": _expand_prefijos(mdl),
+                    "capacidad_h_sem": cap,
+                    "tipo_linea": "ACTIVA_ESCENARIO",
+                    "modelo_capacidad_usado": mdl,
+                    "capacidad_origen": "escenario_activo",
+                }
 
     lineas_activas_ids = set(lineas_activas.keys())
-
-    def _modelo_encaja_familia(mdl_especifico: str, familia: str) -> bool:
-        return mdl_especifico == familia or mdl_especifico.startswith(familia + "-")
 
     # ── 2. Resolver líneas solicitadas contra universo físico ──────────
     candidatas_potencial: dict = {}   # {lid_canon: set_de_raws_originales}
