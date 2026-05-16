@@ -7320,8 +7320,15 @@ def _build_lineas_v2_from_cap_df(cap_df: pd.DataFrame):
             cap = None
             warns.append(f"Línea {lid}: capacidad no numérica ({raw_cap!r}), ignorada en alertas.")
 
+        modelos_compatibles = {mdl}
+        _parts = mdl.split("-")
+        for _i in range(1, len(_parts)):
+            _familia = "-".join(_parts[:_i]).strip()
+            if _familia:
+                modelos_compatibles.add(_familia)
+
         lineas[lid] = {
-            "modelos_compatibles": {mdl},
+            "modelos_compatibles": modelos_compatibles,
             "capacidad_h_sem": cap,
         }
     return lineas, warns
