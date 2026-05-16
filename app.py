@@ -7327,6 +7327,61 @@ def _build_lineas_v2_from_cap_df(cap_df: pd.DataFrame):
     return lineas, warns
 
 
+def _resolver_linea_v2(linea_raw: str, lineas_catalogo: dict):
+    """Resuelve un ID de línea del Excel contra las claves canónicas del catálogo V2.
+
+    Retorna (linea_canonica_o_None, warning_o_None).
+    Reglas: exacto → strip/upper → sufijo único → ambigua/no encontrada.
+    """
+    if not linea_raw:
+        return None, None
+    cand = str(linea_raw).strip().upper()
+    # 1. Exacto
+    if cand in lineas_catalogo:
+        return cand, None
+    # 2. Strip+upper ya aplicado; si el catálogo tiene la clave tal cual, ya se resolvió arriba.
+    #    Buscamos por sufijo único.
+    sufijo_matches = [k for k in lineas_catalogo if k.upper().rsplit("-", 1)[-1] == cand]
+    if len(sufijo_matches) == 1:
+        return sufijo_matches[0], None
+    if len(sufijo_matches) > 1:
+        return None, (
+            f"V2: línea '{linea_raw}' ambigua, coincide con: "
+            f"{', '.join(sorted(sufijo_matches))}. Se ignora."
+        )
+    return None, f"V2: línea '{linea_raw}' no encontrada en catálogo V2. Se ignora."
+
+
+def _canonizar_lineas_proyectos_v2(proyectos: list, lineas_catalogo: dict):
+    """Canoniza linea_pref y lineas_alt de cada proyecto contra el catálogo V2.
+
+    Retorna (proyectos_canonizados, warnings_list).
+    No modifica proyectos inplace; devuelve copias de los dicts afectados.
+    """
+    resultado: list = []
+    warns: list = []
+    for p in proyectos:
+        lp_raw = p.get("linea_pref", "")
+        lp_can, lp_warn = _resolver_linea_v2(lp_raw, lineas_catalogo)
+        if lp_warn:
+            warns.append(f"[{p.get('proyecto_id', '?')}] {lp_warn}")
+
+        alt_raw = list(p.get("lineas_alt") or [])
+        alt_can: list = []
+        for a in alt_raw:
+            a_can, a_warn = _resolver_linea_v2(a, lineas_catalogo)
+            if a_warn:
+                warns.append(f"[{p.get('proyecto_id', '?')}] {a_warn}")
+            if a_can:
+                alt_can.append(a_can)
+
+        nueva_p = dict(p)
+        nueva_p["linea_pref"] = lp_can if lp_can else lp_raw
+        nueva_p["lineas_alt"] = alt_can
+        resultado.append(nueva_p)
+    return resultado, warns
+
+
 def _resolver_prog_linea_preferente(
     linea_raw,
     line_ids_disponibles: list,
@@ -8065,8 +8120,11 @@ if st.session_state.active_tab == "📋 Programación real":
                 st.session_state[f"_prog_v2_norm_{plant_id}"] = _v2_norm_res
                 if _v2_norm_res["ok"]:
                     _v2_lineas, _v2_cap_warns = _build_lineas_v2_from_cap_df(_prog_cap_df)
+                    _v2_proy_can, _v2_can_warns = _canonizar_lineas_proyectos_v2(
+                        _v2_norm_res["proyectos"], _v2_lineas
+                    )
                     _v2_sched = schedule_proyectos(
-                        _v2_norm_res["proyectos"],
+                        _v2_proy_can,
                         _v2_lineas,
                         semana_actual=1,
                         horizonte_fin=52,
@@ -8075,6 +8133,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     st.session_state[f"_prog_v2_warnings_{plant_id}"] = (
                         _v2_norm_res.get("warnings", [])
                         + _v2_cap_warns
+                        + _v2_can_warns
                         + _v2_sched.get("warnings", [])
                     )
                 else:
