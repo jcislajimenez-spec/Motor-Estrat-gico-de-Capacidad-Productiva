@@ -7334,6 +7334,204 @@ def _build_lineas_v2_from_cap_df(cap_df: pd.DataFrame):
     return lineas, warns
 
 
+def _build_lineas_v2_catalogo_ampliado(
+    cap_df: pd.DataFrame,
+    lineas_solicitadas_raw: set,
+    modelos_por_linea_raw: dict,
+    allowed_by_line_param: dict,
+    line_ids_nave_param: list,
+    times_df_param: pd.DataFrame,
+    stations_df_param: pd.DataFrame,
+    hours_eff_param: float,
+) -> tuple[dict, list]:
+    """Catálogo V2 ampliado: líneas activas del escenario + líneas potenciales
+    compatibles que aparecen en el Excel pero no están activas.
+
+    Regla: solo se añaden potenciales que fueron solicitadas (linea_pref o
+    lineas_alt del Excel). Nunca se abre toda la planta indiscriminadamente.
+    Retorna (lineas_dict, warnings_list).
+    """
+    warns: list = []
+    lineas_activas: dict = {}
+    lineas_potencial: dict = {}
+
+    # CTM dict: cycle_time total por modelo
+    _tc = times_df_param.copy()
+    _tc["cycle_time"] = pd.to_numeric(_tc["cycle_time"], errors="coerce").fillna(0.0)
+    _ctm = _tc.groupby("model")["cycle_time"].sum().to_dict()
+
+    # Universo físico de líneas (para resolver alias potenciales)
+    _universo = {str(lid).strip().upper(): True for lid in line_ids_nave_param}
+
+    def _expand_prefijos(mdl: str) -> set:
+        result = {mdl}
+        parts = mdl.split("-")
+        for i in range(1, len(parts)):
+            fam = "-".join(parts[:i]).strip()
+            if fam:
+                result.add(fam)
+        return result
+
+    def _calc_cap_potencial(lid: str, mdl: str) -> float:
+        _, _, cap_u = compute_line_detail(lid, mdl, times_df_param, stations_df_param, hours_eff_param)
+        ct = float(_ctm.get(mdl, 0.0) or 0.0)
+        return round(float(cap_u) * ct, 1) if cap_u and ct > 0 else 0.0
+
+    # ── 1. Líneas activas del escenario ────────────────────────────────
+    for _, row in cap_df.iterrows():
+        raw_lid = row.get("Línea", "")
+        raw_mdl = row.get("Modelo asignado", "")
+        raw_cap = row.get("Capacidad h/sem")
+
+        lid = str(raw_lid).strip().upper() if raw_lid else ""
+        mdl = str(raw_mdl).strip().upper() if raw_mdl else ""
+
+        if not lid:
+            warns.append("Fila de capacidad sin Línea válida, ignorada.")
+            continue
+        if not mdl:
+            warns.append(f"Línea {lid}: sin modelo asignado, ignorada.")
+            continue
+
+        try:
+            cap = float(raw_cap) if raw_cap is not None else None
+        except (ValueError, TypeError):
+            cap = None
+            warns.append(f"Línea {lid}: capacidad no numérica ({raw_cap!r}), ignorada en alertas.")
+
+        if lid in allowed_by_line_param:
+            modelos_compat: set = set()
+            for _m in allowed_by_line_param[lid]:
+                modelos_compat.update(_expand_prefijos(str(_m).strip().upper()))
+            modelos_compat.update(_expand_prefijos(mdl))
+        else:
+            modelos_compat = _expand_prefijos(mdl)
+
+        lineas_activas[lid] = {
+            "modelos_compatibles": modelos_compat,
+            "capacidad_h_sem": cap,
+            "tipo_linea": "ACTIVA",
+            "modelo_capacidad_usado": mdl,
+            "capacidad_origen": "escenario_activo",
+        }
+
+    lineas_activas_ids = set(lineas_activas.keys())
+
+    def _modelo_encaja_familia(mdl_especifico: str, familia: str) -> bool:
+        return mdl_especifico == familia or mdl_especifico.startswith(familia + "-")
+
+    # ── 2. Resolver líneas solicitadas contra universo físico ──────────
+    candidatas_potencial: dict = {}   # {lid_canon: set_de_raws_originales}
+    familias_por_lid_can: dict = {}   # {lid_canon: set_de_modelos/familias_solicitados}
+
+    for raw in lineas_solicitadas_raw:
+        if not raw:
+            continue
+        cand = str(raw).strip().upper()
+        if cand in _universo:
+            lid_can = cand
+        else:
+            _matches = [k for k in _universo if k.rsplit("-", 1)[-1] == cand]
+            if len(_matches) == 1:
+                lid_can = _matches[0]
+            elif len(_matches) > 1:
+                warns.append(
+                    f"[POTENCIAL] Línea '{raw}' ambigua en universo de planta "
+                    f"({', '.join(sorted(_matches))}). Excluida del catálogo potencial."
+                )
+                continue
+            else:
+                continue  # no existe en universo; habrá warning de canonización
+
+        if lid_can in lineas_activas_ids:
+            continue
+        candidatas_potencial.setdefault(lid_can, set()).add(raw)
+        familias_por_lid_can.setdefault(lid_can, set()).update(
+            modelos_por_linea_raw.get(cand, set())
+        )
+
+    # ── 3. Construir entradas potenciales ──────────────────────────────
+    for lid_can in sorted(candidatas_potencial.keys()):
+        if lid_can not in allowed_by_line_param:
+            warns.append(
+                f"[POTENCIAL] Línea '{lid_can}' existe físicamente pero no tiene "
+                "modelos compatibles activos en compat_df. Excluida."
+            )
+            continue
+
+        modelos_compat_all = [str(m).strip().upper() for m in allowed_by_line_param[lid_can]]
+        familias_sol = familias_por_lid_can.get(lid_can, set())
+
+        # Filtrar: solo modelos que encajan con las familias/modelos solicitados en el Excel
+        if familias_sol:
+            modelos_cands = [
+                m for m in modelos_compat_all
+                if any(_modelo_encaja_familia(m, f) for f in familias_sol)
+            ]
+            if not modelos_cands:
+                warns.append(
+                    f"[POTENCIAL] Línea '{lid_can}': ningún modelo compatible encaja con "
+                    f"familia(s) solicitada(s) ({', '.join(sorted(familias_sol))}). "
+                    f"Modelos compatibles disponibles: {', '.join(modelos_compat_all)}. Excluida."
+                )
+                continue
+        else:
+            modelos_cands = modelos_compat_all
+
+        caps_validas: list = []  # [(model, cap_h_sem)]
+        for mdl_c in modelos_cands:
+            cap_c = _calc_cap_potencial(lid_can, mdl_c)
+            if cap_c > 0:
+                caps_validas.append((mdl_c, cap_c))
+
+        if not caps_validas:
+            warns.append(
+                f"[POTENCIAL] Línea '{lid_can}': sin datos de estaciones/tiempos o "
+                f"cycle_time válido para modelo(s) solicitado(s) "
+                f"({', '.join(modelos_cands)}). Excluida."
+            )
+            continue
+
+        _multi_familia = len(familias_sol) > 1
+        if len(caps_validas) > 1:
+            mdl_min, cap_min = min(caps_validas, key=lambda x: x[1])
+            _desglose = ", ".join(f"{m}: {c} h/sem" for m, c in sorted(caps_validas))
+            _sufijo = (
+                f"multi-familia {sorted(familias_sol)} — " if _multi_familia else ""
+            )
+            warns.append(
+                f"[POTENCIAL] Línea '{lid_can}': estimación conservadora {_sufijo}"
+                f"{len(caps_validas)} modelos calculables ({_desglose}). "
+                f"Capacidad conservadora adoptada: {cap_min} h/sem (modelo {mdl_min})."
+            )
+        else:
+            mdl_min, cap_min = caps_validas[0]
+
+        modelos_compat_pot: set = set()
+        for mdl_c, _ in caps_validas:
+            modelos_compat_pot.update(_expand_prefijos(mdl_c))
+
+        lineas_potencial[lid_can] = {
+            "modelos_compatibles": modelos_compat_pot,
+            "capacidad_h_sem": cap_min,
+            "tipo_linea": "POTENCIAL_ESTIMADA",
+            "modelo_capacidad_usado": mdl_min,
+            "capacidad_origen": "potencial_compatibilidad",
+        }
+
+    # ── 4. Fusión: activas tienen prioridad ────────────────────────────
+    lineas_v2 = {**lineas_potencial, **lineas_activas}
+
+    n_pot = len(lineas_potencial)
+    if n_pot:
+        warns.append(
+            f"{n_pot} línea(s) POTENCIAL_ESTIMADA añadida(s) al catálogo V2 "
+            "(capacidad estimada con parámetros de planta por defecto, sin overrides)."
+        )
+
+    return lineas_v2, warns
+
+
 def _resolver_linea_v2(linea_raw: str, lineas_catalogo: dict):
     """Resuelve un ID de línea del Excel contra las claves canónicas del catálogo V2.
 
@@ -8069,6 +8267,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.session_state.pop(f"_prog_v2_norm_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
+                            st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
                         st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                         st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
@@ -8126,7 +8325,36 @@ if st.session_state.active_tab == "📋 Programación real":
                 _v2_norm_res = normalizar_programacion_v2(_prog_parsed["proyectos"])
                 st.session_state[f"_prog_v2_norm_{plant_id}"] = _v2_norm_res
                 if _v2_norm_res["ok"]:
-                    _v2_lineas, _v2_cap_warns = _build_lineas_v2_from_cap_df(_prog_cap_df)
+                    # Extraer líneas solicitadas ANTES de canonizar (incluye no activas)
+                    # Construir también: raw_lid → set_de_modelos_solicitados
+                    _v2_lineas_raw: set = set()
+                    _v2_modelos_por_linea: dict = {}
+                    for _vp in _v2_norm_res["proyectos"]:
+                        _vmdl = str(_vp.get("modelo", "") or "").strip().upper()
+                        _vlp = _vp.get("linea_pref")
+                        if _vlp:
+                            _vlp_u = str(_vlp).strip().upper()
+                            _v2_lineas_raw.add(_vlp_u)
+                            if _vmdl:
+                                _v2_modelos_por_linea.setdefault(_vlp_u, set()).add(_vmdl)
+                        for _vla in (_vp.get("lineas_alt") or []):
+                            if _vla:
+                                _vla_u = str(_vla).strip().upper()
+                                _v2_lineas_raw.add(_vla_u)
+                                if _vmdl:
+                                    _v2_modelos_por_linea.setdefault(_vla_u, set()).add(_vmdl)
+
+                    _v2_lineas, _v2_cap_warns = _build_lineas_v2_catalogo_ampliado(
+                        _prog_cap_df,
+                        _v2_lineas_raw,
+                        _v2_modelos_por_linea,
+                        allowed_by_line,
+                        line_ids_nave,
+                        times_df,
+                        stations_df,
+                        hours_eff,
+                    )
+                    st.session_state[f"_prog_v2_lineas_{plant_id}"] = _v2_lineas
                     _v2_proy_can, _v2_can_warns = _canonizar_lineas_proyectos_v2(
                         _v2_norm_res["proyectos"], _v2_lineas
                     )
@@ -8146,6 +8374,7 @@ if st.session_state.active_tab == "📋 Programación real":
                 else:
                     st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
                     st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
+                    st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
 
             # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
@@ -8988,10 +9217,32 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_v2_result_ss.get("asignaciones"):
                         st.markdown("##### Asignaciones")
                         _v2_asg_df = pd.DataFrame(_prog_v2_result_ss["asignaciones"])
+                        _v2_lineas_ss = st.session_state.get(f"_prog_v2_lineas_{plant_id}", {})
+                        if _v2_lineas_ss:
+                            _v2_asg_df["tipo_linea"] = _v2_asg_df["linea_asignada"].map(
+                                lambda _lid: _v2_lineas_ss.get(_lid, {}).get("tipo_linea", "")
+                            )
+                            _v2_asg_df["modelo_capacidad_usado"] = _v2_asg_df["linea_asignada"].map(
+                                lambda _lid: _v2_lineas_ss.get(_lid, {}).get("modelo_capacidad_usado", "")
+                            )
+                            _v2_asg_df["capacidad_origen"] = _v2_asg_df["linea_asignada"].map(
+                                lambda _lid: _v2_lineas_ss.get(_lid, {}).get("capacidad_origen", "")
+                            )
                         _v2_cols = [c for c in [
-                            "proyecto_id", "linea_asignada", "sem_inicio", "sem_fin",
+                            "proyecto_id", "linea_asignada", "tipo_linea",
+                            "modelo_capacidad_usado", "capacidad_origen",
+                            "sem_inicio", "sem_fin",
                             "estado", "delta_semanas", "uso_alternativa",
                         ] if c in _v2_asg_df.columns]
+                        if _v2_lineas_ss and any(
+                            v.get("tipo_linea") == "POTENCIAL_ESTIMADA"
+                            for v in _v2_lineas_ss.values()
+                        ):
+                            st.caption(
+                                "⚠ Las líneas **POTENCIAL_ESTIMADA** son compatibles "
+                                "técnicamente, pero no forman parte del escenario activo. "
+                                "Su capacidad es estimada con parámetros de planta por defecto."
+                            )
                         st.dataframe(
                             _v2_asg_df[_v2_cols].sort_values(
                                 ["linea_asignada", "sem_inicio"], na_position="last"
