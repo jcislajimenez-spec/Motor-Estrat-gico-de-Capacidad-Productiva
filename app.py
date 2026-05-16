@@ -12,6 +12,7 @@ import psycopg2
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+from engine import normalizar_programacion_v2, schedule_proyectos
 
 def _fmt_num(v) -> str:
     """Formatea un número con máximo 2 decimales y sin ceros finales.
@@ -7291,6 +7292,41 @@ def _compute_prog_cap_por_linea(
     return pd.DataFrame(_rows), _warnings
 
 
+def _build_lineas_v2_from_cap_df(cap_df: pd.DataFrame):
+    """Convierte _prog_cap_df al dict lineas que espera schedule_proyectos().
+
+    Retorna (lineas_dict, warnings_list).
+    """
+    lineas: dict = {}
+    warns: list = []
+    for _, row in cap_df.iterrows():
+        raw_lid = row.get("Línea", "")
+        raw_mdl = row.get("Modelo asignado", "")
+        raw_cap = row.get("Capacidad h/sem")
+
+        lid = str(raw_lid).strip().upper() if raw_lid else ""
+        mdl = str(raw_mdl).strip().upper() if raw_mdl else ""
+
+        if not lid:
+            warns.append("Fila de capacidad sin Línea válida, ignorada.")
+            continue
+        if not mdl:
+            warns.append(f"Línea {lid}: sin modelo asignado, ignorada.")
+            continue
+
+        try:
+            cap = float(raw_cap) if raw_cap is not None else None
+        except (ValueError, TypeError):
+            cap = None
+            warns.append(f"Línea {lid}: capacidad no numérica ({raw_cap!r}), ignorada en alertas.")
+
+        lineas[lid] = {
+            "modelos_compatibles": {mdl},
+            "capacidad_h_sem": cap,
+        }
+    return lineas, warns
+
+
 def _resolver_prog_linea_preferente(
     linea_raw,
     line_ids_disponibles: list,
@@ -7968,6 +8004,9 @@ if st.session_state.active_tab == "📋 Programación real":
                     else:
                         if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
                             st.session_state.pop(f"_prog_parsed_{plant_id}", None)
+                            st.session_state.pop(f"_prog_v2_norm_{plant_id}", None)
+                            st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
+                            st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
                         st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                         st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
@@ -8004,6 +8043,14 @@ if st.session_state.active_tab == "📋 Programación real":
                     elif _prog_cap_df.empty:
                         st.caption(t("prog_calc_no_cap"))
 
+                    # ── Botón V2 ──────────────────────────────────────────────
+                    _prog_v2_calc_clicked = False
+                    if _prog_parsed is not None and not _prog_cap_df.empty:
+                        _prog_v2_calc_clicked = st.button(
+                            "Calcular planificación V2",
+                            key=f"prog_v2_calc_btn_{plant_id}",
+                        )
+
             # ── Cuerpo de cálculo (sin tocar) ────────────────────────────────
             if _prog_calc_clicked:
                 _prog_result_computed = _distribuir_prog_carga_proyectos(
@@ -8011,6 +8058,28 @@ if st.session_state.active_tab == "📋 Programación real":
                 )
                 st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
                 st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
+
+            # ── V2: cálculo macro semanal ─────────────────────────────────────
+            if _prog_v2_calc_clicked:
+                _v2_norm_res = normalizar_programacion_v2(_prog_parsed["proyectos"])
+                st.session_state[f"_prog_v2_norm_{plant_id}"] = _v2_norm_res
+                if _v2_norm_res["ok"]:
+                    _v2_lineas, _v2_cap_warns = _build_lineas_v2_from_cap_df(_prog_cap_df)
+                    _v2_sched = schedule_proyectos(
+                        _v2_norm_res["proyectos"],
+                        _v2_lineas,
+                        semana_actual=1,
+                        horizonte_fin=52,
+                    )
+                    st.session_state[f"_prog_v2_result_{plant_id}"]   = _v2_sched
+                    st.session_state[f"_prog_v2_warnings_{plant_id}"] = (
+                        _v2_norm_res.get("warnings", [])
+                        + _v2_cap_warns
+                        + _v2_sched.get("warnings", [])
+                    )
+                else:
+                    st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
+                    st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
 
             # ── Resultados ────────────────────────────────────────────────────
             _prog_result = st.session_state.get(f"_prog_result_{plant_id}")
@@ -8826,3 +8895,70 @@ if st.session_state.active_tab == "📋 Programación real":
                             hide_index=True,
                             height=min(400, max(200, len(_cdf) * 36 + 56)),
                         )
+
+            # ── V2 beta: resultados ───────────────────────────────────────────
+            _prog_v2_norm_ss   = st.session_state.get(f"_prog_v2_norm_{plant_id}")
+            _prog_v2_result_ss = st.session_state.get(f"_prog_v2_result_{plant_id}")
+            _prog_v2_warns_ss  = st.session_state.get(f"_prog_v2_warnings_{plant_id}", [])
+
+            if _prog_v2_norm_ss is not None or _prog_v2_result_ss is not None:
+                st.markdown("---")
+                st.caption("Planificación V2 experimental — ocupación exclusiva de líneas")
+
+                if _prog_v2_norm_ss is not None and not _prog_v2_norm_ss["ok"]:
+                    for _v2e in _prog_v2_norm_ss.get("errores", []):
+                        _v2e_msg = _v2e.get("mensaje", str(_v2e)) if isinstance(_v2e, dict) else str(_v2e)
+                        st.error(f"V2 normalización: {_v2e_msg}")
+
+                if _prog_v2_result_ss is not None:
+                    _v2k = _prog_v2_result_ss["kpis"]
+
+                    _v2m1, _v2m2, _v2m3, _v2m4 = st.columns(4)
+                    _v2m1.metric("Planificados",       _v2k.get("planificados", 0))
+                    _v2m2.metric("Excluidos",          _v2k.get("excluidos", 0))
+                    _v2m3.metric("Conflictos críticos", _v2k.get("conflictos_criticos", 0))
+                    _v2m4.metric("Warnings",           _v2k.get("warnings", 0))
+
+                    if _prog_v2_result_ss.get("asignaciones"):
+                        st.markdown("##### Asignaciones")
+                        _v2_asg_df = pd.DataFrame(_prog_v2_result_ss["asignaciones"])
+                        _v2_cols = [c for c in [
+                            "proyecto_id", "linea_asignada", "sem_inicio", "sem_fin",
+                            "estado", "delta_semanas", "uso_alternativa",
+                        ] if c in _v2_asg_df.columns]
+                        st.dataframe(
+                            _v2_asg_df[_v2_cols].sort_values(
+                                ["linea_asignada", "sem_inicio"], na_position="last"
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(420, max(110, len(_v2_asg_df) * 36 + 56)),
+                        )
+
+                    if _prog_v2_result_ss.get("excluidos"):
+                        with st.expander(
+                            f"Excluidos V2 ({len(_prog_v2_result_ss['excluidos'])})",
+                            expanded=False,
+                        ):
+                            _v2_excl_df = pd.DataFrame(_prog_v2_result_ss["excluidos"])
+                            _v2_excl_cols = [c for c in [
+                                "proyecto_id", "estado", "motivo",
+                            ] if c in _v2_excl_df.columns]
+                            st.dataframe(_v2_excl_df[_v2_excl_cols],
+                                         use_container_width=True, hide_index=True)
+
+                    _v2_all_warns = (
+                        _prog_v2_warns_ss
+                        + _prog_v2_result_ss.get("conflictos_criticos", [])
+                    )
+                    if _v2_all_warns:
+                        _v2_n_cc = len(_prog_v2_result_ss.get("conflictos_criticos", []))
+                        with st.expander(
+                            f"Warnings / Auditoría V2 ({len(_v2_all_warns)} entradas)",
+                            expanded=_v2_n_cc > 0,
+                        ):
+                            for _v2cc in _prog_v2_result_ss.get("conflictos_criticos", []):
+                                _cc_d = _v2cc.get("detalle", str(_v2cc)) if isinstance(_v2cc, dict) else str(_v2cc)
+                                st.error(f"[{_v2cc.get('tipo','CONFLICTO')}] {_cc_d}")
+                            for _v2w in _prog_v2_warns_ss:
+                                st.warning(_v2w if isinstance(_v2w, str) else str(_v2w))
