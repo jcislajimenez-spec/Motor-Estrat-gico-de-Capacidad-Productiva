@@ -740,6 +740,34 @@ def test_a17_integracion_con_schedule():
     check("A17X planificado", "A17X" in pids_asg)
 
 
+def test_a18_sin_columna_firme_flexible():
+    """Sin columna Firme/Flexible: ok=True, firme=False, warning global."""
+    print("\nTest A18: Sin columna Firme/Flexible")
+    fila = {
+        "Proyecto":                "P_NOFF",
+        "Modelo / familia":        "SL",
+        "Duracion semanas":        4,
+        "Semana inicio minima":    1,
+        "Semana entrega objetivo": 10,
+        "Linea preferente":        "L01",
+        "Prioridad":               1,
+        "Horas totales":           80.0,
+        # sin "Firme/Flexible"
+    }
+    res = normalizar_programacion_v2([fila])
+    check("A18 ok=True", res["ok"] is True)
+    check("A18 proyecto incluido", len(res["proyectos"]) == 1)
+    check("A18 firme=False", res["proyectos"][0]["firme"] is False)
+    warn_msgs = [
+        w.get("mensaje", "") if isinstance(w, dict) else str(w)
+        for w in res.get("warnings", [])
+    ]
+    check(
+        "A18 warning global Firme/Flexible ausente",
+        any("Firme/Flexible" in m for m in warn_msgs),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -779,6 +807,7 @@ if __name__ == "__main__":
         test_a15_columnas_ambiguas,
         test_a16_normalizacion_mayusculas,
         test_a17_integracion_con_schedule,
+        test_a18_sin_columna_firme_flexible,
     ]
 
     print("=" * 60)

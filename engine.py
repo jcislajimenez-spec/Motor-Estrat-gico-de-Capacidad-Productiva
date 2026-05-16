@@ -1050,9 +1050,9 @@ _ALIASES_V2: dict = {
 
 _CAMPOS_OBLIGATORIOS_V2: list = [
     "proyecto_id", "modelo", "dur", "ini_min",
-    "ent_target", "linea_pref", "prioridad", "firme",
+    "ent_target", "linea_pref", "prioridad",
 ]
-_CAMPOS_OPCIONALES_V2: list = ["lineas_alt", "horas_total"]
+_CAMPOS_OPCIONALES_V2: list = ["firme", "lineas_alt", "horas_total"]
 
 
 def _normalizar_nombre_columna(nombre: str) -> str:
@@ -1381,6 +1381,13 @@ def normalizar_programacion_v2(
                 "warnings": len(warnings_globales),
             },
         }
+
+    # Warning suave si falta columna Firme/Flexible (campo opcional)
+    if mapeo.get("firme") is None:
+        warnings_globales.append({
+            "campo": "firme",
+            "mensaje": "Columna Firme/Flexible no encontrada; se asume Flexible",
+        })
 
     # Procesar filas
     proyectos_validos: list = []

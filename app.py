@@ -6980,6 +6980,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado proyecto":           "En curso",
             "Estado materiales":         "OK",
             "Prioridad":                 1,
+            "Firme/Flexible":            "Firme",
             "Comentarios":               "Ejemplo con todos los campos",
         },
         {
@@ -6998,6 +6999,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado proyecto":           "Pendiente",
             "Estado materiales":         "Pendiente",
             "Prioridad":                 2,
+            "Firme/Flexible":            "Flexible",
             "Comentarios":               "Materiales pendientes",
         },
         {
@@ -7016,6 +7018,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado proyecto":           "En curso",
             "Estado materiales":         "OK",
             "Prioridad":                 3,
+            "Firme/Flexible":            "Flexible",
             "Comentarios":               "Sin línea preferente — se usarán alternativas",
         },
     ])
