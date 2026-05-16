@@ -210,6 +210,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_no_alts_found": "No se encontraron alternativas que mejoren el déficit global con las líneas alternativas declaradas.",
         "prog_alt_tech_expander": "Alternativas descartadas / avisos ({n})",
         "prog_alt_warn_model":    "Modelo del proyecto distinto del modelo asignado de la línea candidata. Capacidad puede no ser representativa.",
+        "prog_alt_warn_v2_cap":   "Alternativa V2 — línea no activa en el escenario actual; capacidad estimada. Usar solo como referencia.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -487,6 +488,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_no_alts_found": "No alternatives found that improve the global deficit with the declared alternative lines.",
         "prog_alt_tech_expander": "Discarded alternatives / warnings ({n})",
         "prog_alt_warn_model":    "Project model differs from the model assigned to the candidate line. Capacity may not be representative.",
+        "prog_alt_warn_v2_cap":   "V2 alternative — line not active in current scenario; estimated capacity. For reference only.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -764,6 +766,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_no_alts_found": "Ez da adierazitako lerro alternatiboekin defizit globala hobetzen duen alternatiba aurkitu.",
         "prog_alt_tech_expander": "Baztertutako alternatibak / abisuak ({n})",
         "prog_alt_warn_model":    "Proiektuaren eredua lerro hautagaiaren eredu esleituaren desberdina da. Ahalmena ez da ordezkagarria.",
+        "prog_alt_warn_v2_cap":   "V2 alternatiba — lerroa ez dago aktibo uneko eszenatokian; estimatutako ahalmena. Erreferentzia gisa bakarrik erabili.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -8660,13 +8663,44 @@ if st.session_state.active_tab == "📋 Programación real":
                             }
                         else:
                             _da_df_proy     = _da_parsed_now["proyectos"]
+
+                            # ── Catálogo aumentado con líneas V2 para análisis de alternativas ──
+                            # Solo añade líneas que no estén ya en _prog_cap_df; no modifica V1.
+                            _da_v2_lineas_ss: dict = st.session_state.get(f"_prog_v2_lineas_{plant_id}", {})
+                            _da_lineas_en_prog_cap: set = (
+                                {str(x).strip().upper() for x in _prog_cap_df["Línea"].astype(str)}
+                                if not _prog_cap_df.empty else set()
+                            )
+                            _da_v2_extra_rows: list = []
+                            _da_v2_lineas_ids: set = set()
+                            for _da_vl_id, _da_vl_info in _da_v2_lineas_ss.items():
+                                _da_vl_id_norm = str(_da_vl_id).strip().upper()
+                                if _da_vl_id_norm not in _da_lineas_en_prog_cap:
+                                    _da_v2_extra_rows.append({
+                                        "Línea":                  _da_vl_id_norm,
+                                        "Capacidad h/sem":        float(_da_vl_info.get("capacidad_h_sem") or 0.0),
+                                        "Modelo asignado":        str(_da_vl_info.get("modelo_capacidad_usado", "") or ""),
+                                        "tipo_linea":             str(_da_vl_info.get("tipo_linea", "") or ""),
+                                        "capacidad_origen":       str(_da_vl_info.get("capacidad_origen", "") or ""),
+                                        "modelo_capacidad_usado": str(_da_vl_info.get("modelo_capacidad_usado", "") or ""),
+                                    })
+                                    _da_v2_lineas_ids.add(_da_vl_id_norm)
+                            if _da_v2_extra_rows:
+                                _da_cap_df_alts = pd.concat(
+                                    [_prog_cap_df, pd.DataFrame(_da_v2_extra_rows)],
+                                    ignore_index=True,
+                                )
+                            else:
+                                _da_cap_df_alts = _prog_cap_df
+                            # ── fin catálogo aumentado ──────────────────────────────────────────
+
                             _da_implicados  = _get_prog_projects_in_conflict(_da_load_base, _da_conflict_base)
-                            _da_base_result = _recompute_prog_deficit_global(_da_load_base, _prog_cap_df)
+                            _da_base_result = _recompute_prog_deficit_global(_da_load_base, _da_cap_df_alts)
                             _da_def_antes   = _da_base_result["deficit_total_h"]
 
                             _da_cap_model_map: dict = {}
-                            if "Modelo asignado" in _prog_cap_df.columns:
-                                for _, _dacr in _prog_cap_df.iterrows():
+                            if "Modelo asignado" in _da_cap_df_alts.columns:
+                                for _, _dacr in _da_cap_df_alts.iterrows():
                                     _da_cap_model_map[str(_dacr["Línea"])] = str(_dacr.get("Modelo asignado", ""))
 
                             _da_conflict_pairs_base: set = set()
@@ -8723,7 +8757,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 )
 
                                 for _da_alt_raw_l in _da_alt_list:
-                                    _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _prog_cap_df)
+                                    _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts)
                                     if _da_res["linea"] is None:
                                         _da_descartadas.append({
                                             "Proyecto": _da_proj, "Línea alternativa": _da_alt_raw_l,
@@ -8742,7 +8776,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         })
                                         continue
 
-                                    _da_cap_row = _prog_cap_df[_prog_cap_df["Línea"].astype(str) == _da_ldest]
+                                    _da_cap_row = _da_cap_df_alts[_da_cap_df_alts["Línea"].astype(str) == _da_ldest]
                                     if _da_cap_row.empty or float(_da_cap_row["Capacidad h/sem"].iloc[0]) <= 0:
                                         _da_descartadas.append({
                                             "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
@@ -8752,7 +8786,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         continue
 
                                     _da_sim      = _simulate_prog_move_line(_da_load_base, _da_proj, _da_linea_act, _da_ldest)
-                                    _da_after    = _recompute_prog_deficit_global(_da_sim, _prog_cap_df)
+                                    _da_after    = _recompute_prog_deficit_global(_da_sim, _da_cap_df_alts)
                                     _da_def_desp = _da_after["deficit_total_h"]
                                     _da_mejora   = round(_da_def_antes - _da_def_desp, 1)
 
@@ -8799,6 +8833,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         and _da_modelo_p.upper() != _da_cap_model_map[_da_ldest].upper()
                                     ):
                                         _da_avisos.append(t("prog_alt_warn_model"))
+
+                                    if _da_ldest in _da_v2_lineas_ids:
+                                        _da_avisos.append(t("prog_alt_warn_v2_cap"))
 
                                     _da_candidatas.append({
                                         "Proyecto":           _da_proj,
