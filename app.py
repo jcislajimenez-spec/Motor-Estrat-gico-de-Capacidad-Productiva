@@ -8979,61 +8979,77 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── Mostrar resultado alternativas (tras cálculo, un solo clic) ─────────
                 if _da_has_conflicts and _da_has_load:
                     _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                    with _da_main_col:
-                        if _da_alt_result is not None:
-                            _da_error = _da_alt_result.get("error")
-                            if _da_error:
-                                st.warning(_da_error)
-                            else:
-                                _da_cands = _da_alt_result.get("candidatas", [])
-                                if _da_cands:
-                                    _da_df_c = pd.DataFrame(_da_cands)
-                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
-                                    _da_df_c = (
-                                        _da_df_c
-                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
-                                                     ascending=[True, False, True])
-                                        .drop(columns=["_sort"])
-                                        .reset_index(drop=True)
-                                    )
-                                    _da_slim_cols = [c for c in [
-                                        "Proyecto", "Línea actual", "Línea candidata",
-                                        "tipo_linea", "modelo_capacidad_usado", "capacidad_origen",
-                                        "Resultado", "Mejora h", "Aviso",
-                                    ] if c in _da_df_c.columns]
-                                    _da_alt_col_cfg = {}
-                                    if "Aviso" in _da_df_c.columns:
-                                        _da_alt_col_cfg["Aviso"] = st.column_config.TextColumn(
-                                            label="Aviso", width=300,
-                                        )
-                                    if "tipo_linea" in _da_df_c.columns:
-                                        _da_alt_col_cfg["tipo_linea"] = st.column_config.TextColumn(
-                                            label="Tipo línea", width=160,
-                                        )
-                                    if "modelo_capacidad_usado" in _da_df_c.columns:
-                                        _da_alt_col_cfg["modelo_capacidad_usado"] = st.column_config.TextColumn(
-                                            label="Modelo cap.", width=110,
-                                        )
-                                    if "capacidad_origen" in _da_df_c.columns:
-                                        _da_alt_col_cfg["capacidad_origen"] = st.column_config.TextColumn(
-                                            label="Origen cap.", width=200,
-                                        )
-                                    st.dataframe(
-                                        _prog_round_display_df(_da_df_c[_da_slim_cols]),
-                                        use_container_width=True,
-                                        hide_index=True,
-                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
-                                        column_config=_da_alt_col_cfg or None,
-                                    )
+                    if _da_alt_result is not None:
+                        _da_error = _da_alt_result.get("error")
+                        if _da_error:
+                            st.warning(_da_error)
+                        else:
+                            _da_cands = _da_alt_result.get("candidatas", [])
+                            if _da_cands:
+                                _da_df_c = pd.DataFrame(_da_cands)
+                                _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                _da_df_c = (
+                                    _da_df_c
+                                    .sort_values(["_sort", "Mejora h", "Proyecto"],
+                                                 ascending=[True, False, True])
+                                    .drop(columns=["_sort"])
+                                    .reset_index(drop=True)
+                                )
 
-                                    # ── Selector + Aplicar ────────────────────────────
-                                    _da_aid_list: list = []
-                                    _da_aid_map:  dict = {}
-                                    for _da_sel_row in _da_df_c.to_dict("records"):
-                                        _da_aid = _da_sel_row["alt_id"]
-                                        _da_aid_list.append(_da_aid)
-                                        _da_aid_map[_da_aid] = _da_sel_row
+                                # ── Columna visual "Aplicada" ─────────────────────
+                                _da_applied_id = (
+                                    st.session_state.get(f"_prog_alt_applied_{plant_id}") or {}
+                                ).get("alt_id", "")
+                                _da_df_c["Aplicada"] = _da_df_c["alt_id"].apply(
+                                    lambda _x: "✓" if _x == _da_applied_id else ""
+                                )
 
+                                # Vista principal (columnas operativas)
+                                _da_slim_cols = [c for c in [
+                                    "Proyecto", "Línea actual", "Línea candidata",
+                                    "Aplicada", "Resultado", "Mejora h", "Aviso",
+                                ] if c in _da_df_c.columns]
+                                _da_alt_col_cfg = {
+                                    "Aplicada": st.column_config.TextColumn(
+                                        label="Aplicada", width=80,
+                                    ),
+                                }
+                                if "Aviso" in _da_df_c.columns:
+                                    _da_alt_col_cfg["Aviso"] = st.column_config.TextColumn(
+                                        label="Aviso", width=300,
+                                    )
+                                st.dataframe(
+                                    _prog_round_display_df(_da_df_c[_da_slim_cols]),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    height=min(200, max(110, len(_da_df_c) * 32 + 42)),
+                                    column_config=_da_alt_col_cfg or None,
+                                )
+
+                                # Detalle técnico (colapsado por defecto)
+                                _da_tech_cols = [c for c in [
+                                    "Proyecto", "Línea candidata",
+                                    "tipo_linea", "modelo_capacidad_usado",
+                                    "capacidad_origen", "capacidad_destino_h",
+                                ] if c in _da_df_c.columns]
+                                if len(_da_tech_cols) > 2:
+                                    with st.expander("Detalle técnico de alternativas"):
+                                        st.dataframe(
+                                            _da_df_c[_da_tech_cols],
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+
+                                # ── Selector + Aplicar ────────────────────────────
+                                _da_aid_list: list = []
+                                _da_aid_map:  dict = {}
+                                for _da_sel_row in _da_df_c.to_dict("records"):
+                                    _da_aid = _da_sel_row["alt_id"]
+                                    _da_aid_list.append(_da_aid)
+                                    _da_aid_map[_da_aid] = _da_sel_row
+
+                                _col_sel, _col_btn = st.columns([4, 1])
+                                with _col_sel:
                                     _da_sel_aid = st.selectbox(
                                         "Alternativa a aplicar",
                                         options=_da_aid_list,
@@ -9047,93 +9063,95 @@ if st.session_state.active_tab == "📋 Programación real":
                                         key=f"prog_alt_selectbox_{plant_id}",
                                         label_visibility="collapsed",
                                     )
+                                with _col_btn:
                                     _da_apply_clicked = st.button(
                                         t("prog_alt_apply_btn"),
                                         key=f"prog_alt_apply_btn_{plant_id}",
+                                        use_container_width=True,
                                     )
-                                    if _da_apply_clicked and _da_sel_aid:
-                                        _da_chosen    = _da_aid_map[_da_sel_aid]
-                                        _da_load_src  = _prog_result.get("load_df")
-                                        _da_proj_ap   = _da_chosen["Proyecto"]
-                                        _da_lac_ap    = _da_chosen["Línea actual"]
-                                        _da_ldst_ap   = _da_chosen["Línea candidata"]
-                                        _da_cap_dh    = _da_chosen.get("capacidad_destino_h")
-                                        _da_cap_df_ap = _da_alt_result.get("cap_df_alts", _prog_cap_df)
-                                        if _da_load_src is not None:
-                                            _da_load_sim = _simulate_prog_move_line(
-                                                _da_load_src, _da_proj_ap, _da_lac_ap, _da_ldst_ap
+                                if _da_apply_clicked and _da_sel_aid:
+                                    _da_chosen    = _da_aid_map[_da_sel_aid]
+                                    _da_load_src  = _prog_result.get("load_df")
+                                    _da_proj_ap   = _da_chosen["Proyecto"]
+                                    _da_lac_ap    = _da_chosen["Línea actual"]
+                                    _da_ldst_ap   = _da_chosen["Línea candidata"]
+                                    _da_cap_dh    = _da_chosen.get("capacidad_destino_h")
+                                    _da_cap_df_ap = _da_alt_result.get("cap_df_alts", _prog_cap_df)
+                                    if _da_load_src is not None:
+                                        _da_load_sim = _simulate_prog_move_line(
+                                            _da_load_src, _da_proj_ap, _da_lac_ap, _da_ldst_ap
+                                        )
+                                        _da_cap_for_sim = _da_cap_df_ap.copy()
+                                        if _da_cap_dh is not None:
+                                            _da_cap_for_sim.loc[
+                                                _da_cap_for_sim["Línea"].astype(str) == str(_da_ldst_ap),
+                                                "Capacidad h/sem",
+                                            ] = float(_da_cap_dh)
+                                        _da_after_sim = _recompute_prog_deficit_global(
+                                            _da_load_sim, _da_cap_for_sim
+                                        )
+                                        _da_aviso_ap = _da_chosen.get("Aviso", "")
+                                        _da_def_cand = _da_chosen.get("Déficit simulado h")
+                                        if _da_def_cand is not None:
+                                            _da_diff = abs(
+                                                _da_after_sim["deficit_total_h"] - float(_da_def_cand)
                                             )
-                                            _da_cap_for_sim = _da_cap_df_ap.copy()
-                                            if _da_cap_dh is not None:
-                                                _da_cap_for_sim.loc[
-                                                    _da_cap_for_sim["Línea"].astype(str) == str(_da_ldst_ap),
-                                                    "Capacidad h/sem",
-                                                ] = float(_da_cap_dh)
-                                            _da_after_sim = _recompute_prog_deficit_global(
-                                                _da_load_sim, _da_cap_for_sim
-                                            )
-                                            _da_aviso_ap = _da_chosen.get("Aviso", "")
-                                            _da_def_cand = _da_chosen.get("Déficit simulado h")
-                                            if _da_def_cand is not None:
-                                                _da_diff = abs(
-                                                    _da_after_sim["deficit_total_h"] - float(_da_def_cand)
+                                            if _da_diff > 0.5:
+                                                _da_aviso_ap = (
+                                                    (_da_aviso_ap + " · " if _da_aviso_ap else "")
+                                                    + "El déficit aplicado difiere del estimado inicial por recálculo de contexto."
                                                 )
-                                                if _da_diff > 0.5:
-                                                    _da_aviso_ap = (
-                                                        (_da_aviso_ap + " · " if _da_aviso_ap else "")
-                                                        + "El déficit aplicado difiere del estimado inicial por recálculo de contexto."
-                                                    )
-                                            st.session_state[f"_prog_alt_applied_{plant_id}"] = {
-                                                "alt_id":               _da_chosen["alt_id"],
-                                                "proyecto":             _da_proj_ap,
-                                                "linea_actual":         _da_lac_ap,
-                                                "linea_destino":        _da_ldst_ap,
-                                                "tipo_linea":           _da_chosen.get("tipo_linea", ""),
-                                                "modelo_capacidad_usado": _da_chosen.get("modelo_capacidad_usado", ""),
-                                                "capacidad_origen":     _da_chosen.get("capacidad_origen", ""),
-                                                "capacidad_destino_h":  _da_cap_dh,
-                                                "load_df_sim":          _da_load_sim,
-                                                "conflict_df_sim":      _da_after_sim["conflict_df"],
-                                                "deficit_antes":        _da_chosen["Déficit actual h"],
-                                                "deficit_despues":      _da_after_sim["deficit_total_h"],
-                                                "mejora_h":             _da_chosen["Mejora h"],
-                                                "aviso":                _da_aviso_ap,
-                                            }
-                                            st.rerun()
-                                else:
-                                    st.caption(t("prog_alt_no_alts_found"))
-                        else:
-                            st.caption("Pulsa el botón para ver alternativas candidatas.")
+                                        st.session_state[f"_prog_alt_applied_{plant_id}"] = {
+                                            "alt_id":               _da_chosen["alt_id"],
+                                            "proyecto":             _da_proj_ap,
+                                            "linea_actual":         _da_lac_ap,
+                                            "linea_destino":        _da_ldst_ap,
+                                            "tipo_linea":           _da_chosen.get("tipo_linea", ""),
+                                            "modelo_capacidad_usado": _da_chosen.get("modelo_capacidad_usado", ""),
+                                            "capacidad_origen":     _da_chosen.get("capacidad_origen", ""),
+                                            "capacidad_destino_h":  _da_cap_dh,
+                                            "load_df_sim":          _da_load_sim,
+                                            "conflict_df_sim":      _da_after_sim["conflict_df"],
+                                            "deficit_antes":        _da_chosen["Déficit actual h"],
+                                            "deficit_despues":      _da_after_sim["deficit_total_h"],
+                                            "mejora_h":             _da_chosen["Mejora h"],
+                                            "aviso":                _da_aviso_ap,
+                                        }
+                                        st.rerun()
+                            else:
+                                st.caption(t("prog_alt_no_alts_found"))
+                    else:
+                        st.caption("Pulsa el botón para ver alternativas candidatas.")
 
-                        # ── Simulación aplicada ──────────────────────────────────────
-                        _da_applied = st.session_state.get(f"_prog_alt_applied_{plant_id}")
-                        if _da_applied:
-                            st.markdown("---")
+                    # ── Simulación aplicada ──────────────────────────────────────────
+                    _da_applied = st.session_state.get(f"_prog_alt_applied_{plant_id}")
+                    if _da_applied:
+                        with st.container(border=True):
                             st.markdown(f"#### {t('prog_alt_applied_title')}")
                             st.info(t("prog_alt_applied_warn"))
-                            _da_ap_c1, _da_ap_c2, _da_ap_c3 = st.columns(3)
+                            _da_ap_c1, _da_ap_c2, _da_ap_c3, _da_ap_c4, _da_ap_c5 = st.columns(5)
                             with _da_ap_c1:
                                 st.metric("Proyecto", _da_applied["proyecto"])
                             with _da_ap_c2:
                                 st.metric(
-                                    "Línea actual → destino",
+                                    "Movimiento",
                                     f"{_da_applied['linea_actual']} → {_da_applied['linea_destino']}",
                                 )
                             with _da_ap_c3:
-                                st.metric("Mejora", f"+{round(_da_applied['mejora_h'], 1)} h")
-                            _da_kpi1, _da_kpi2 = st.columns(2)
-                            with _da_kpi1:
                                 st.metric(
                                     "Déficit antes",
                                     f"{round(_da_applied['deficit_antes'], 1)} h",
                                 )
-                            with _da_kpi2:
+                            with _da_ap_c4:
                                 st.metric(
                                     "Déficit simulado",
                                     f"{round(_da_applied['deficit_despues'], 1)} h",
                                 )
+                            with _da_ap_c5:
+                                st.metric("Mejora", f"+{round(_da_applied['mejora_h'], 1)} h")
                             if _da_applied.get("aviso"):
                                 st.caption(f"⚠ {_da_applied['aviso']}")
+                            st.markdown("##### Conflictos restantes tras la simulación")
                             _da_cfl_sim = _da_applied.get("conflict_df_sim")
                             if _da_cfl_sim is not None and not _da_cfl_sim.empty:
                                 st.dataframe(
