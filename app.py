@@ -212,6 +212,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_model":    "Modelo del proyecto distinto del modelo asignado de la línea candidata. Capacidad puede no ser representativa.",
         "prog_alt_warn_v2_cap":   "Alternativa V2 — línea no activa en el escenario actual; capacidad estimada. Usar solo como referencia.",
         "prog_alt_incompat_model": "Modelo/familia no compatible con la línea según tabla de compatibilidad.",
+        "prog_alt_recalc_cap":     "Cap. recalculada para {mdl}: {cap} h/sem (escenario usa modelo distinto).",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -491,6 +492,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_model":    "Project model differs from the model assigned to the candidate line. Capacity may not be representative.",
         "prog_alt_warn_v2_cap":   "V2 alternative — line not active in current scenario; estimated capacity. For reference only.",
         "prog_alt_incompat_model": "Model/family not compatible with this line according to the compatibility table.",
+        "prog_alt_recalc_cap":     "Recalculated cap. for {mdl}: {cap} h/sem (scenario uses a different model).",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -770,6 +772,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_model":    "Proiektuaren eredua lerro hautagaiaren eredu esleituaren desberdina da. Ahalmena ez da ordezkagarria.",
         "prog_alt_warn_v2_cap":   "V2 alternatiba — lerroa ez dago aktibo uneko eszenatokian; estimatutako ahalmena. Erreferentzia gisa bakarrik erabili.",
         "prog_alt_incompat_model": "Proiektuaren eredua/familia ez da bateragarria lerro honekin bateragarritasun-taularen arabera.",
+        "prog_alt_recalc_cap":     "Berrikalkulatutako kap. {mdl} eredurako: {cap} h/aste (eszenatokiak eredu ezberdina erabiltzen du).",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -8823,8 +8826,41 @@ if st.session_state.active_tab == "📋 Programación real":
                                         })
                                         continue
 
+                                    # ── Capacidad contextual para ACTIVA_RECALCULADA ───────────
+                                    # Si V2 calculó capacidad para el modelo del proyecto en esta
+                                    # línea, usar esa capacidad solo para _da_after (déficit después).
+                                    # _da_def_antes sigue siendo el déficit real actual del plan.
+                                    _da_cap_df_sim  = _da_cap_df_alts   # default: sin modificación
+                                    _da_tipo_linea  = ""
+                                    _da_mdl_cap_us  = _da_cap_model_map.get(_da_ldest, "")
+                                    _da_cap_orig    = "escenario_activo"
+                                    _da_cap_v2_used: float | None = None
+                                    if _da_mdl_norm and _da_v2_lineas_ss:
+                                        _da_vl_v2 = _da_v2_lineas_ss.get(str(_da_ldest).strip().upper())
+                                        if _da_vl_v2 is not None:
+                                            _da_tipo_linea = str(_da_vl_v2.get("tipo_linea", "") or "")
+                                            if _da_tipo_linea == "ACTIVA_RECALCULADA":
+                                                _da_cap_v2   = float(_da_vl_v2.get("capacidad_h_sem") or 0.0)
+                                                _da_mc_v2    = _da_vl_v2.get("modelos_compatibles", set())
+                                                _da_enc_v2   = any(
+                                                    _da_mdl_norm == str(_cm).strip().upper()
+                                                    or str(_cm).strip().upper().startswith(_da_mdl_norm + "-")
+                                                    or _da_mdl_norm.startswith(str(_cm).strip().upper() + "-")
+                                                    for _cm in _da_mc_v2
+                                                )
+                                                if _da_enc_v2 and _da_cap_v2 > 0:
+                                                    _da_cap_df_sim = _da_cap_df_alts.copy()
+                                                    _da_cap_df_sim.loc[
+                                                        _da_cap_df_sim["Línea"].astype(str) == _da_ldest,
+                                                        "Capacidad h/sem",
+                                                    ] = _da_cap_v2
+                                                    _da_mdl_cap_us  = str(_da_vl_v2.get("modelo_capacidad_usado", "") or "")
+                                                    _da_cap_orig    = str(_da_vl_v2.get("capacidad_origen", "") or "activa_recalculada_compatibilidad")
+                                                    _da_cap_v2_used = _da_cap_v2
+                                    # ── fin capacidad contextual ────────────────────────────────
+
                                     _da_sim      = _simulate_prog_move_line(_da_load_base, _da_proj, _da_linea_act, _da_ldest)
-                                    _da_after    = _recompute_prog_deficit_global(_da_sim, _da_cap_df_alts)
+                                    _da_after    = _recompute_prog_deficit_global(_da_sim, _da_cap_df_sim)
                                     _da_def_desp = _da_after["deficit_total_h"]
                                     _da_mejora   = round(_da_def_antes - _da_def_desp, 1)
 
@@ -8875,15 +8911,26 @@ if st.session_state.active_tab == "📋 Programación real":
                                     if _da_ldest in _da_v2_lineas_ids:
                                         _da_avisos.append(t("prog_alt_warn_v2_cap"))
 
+                                    if _da_cap_v2_used is not None:
+                                        _da_avisos.append(
+                                            t("prog_alt_recalc_cap").format(
+                                                mdl=_da_mdl_cap_us,
+                                                cap=round(_da_cap_v2_used, 1),
+                                            )
+                                        )
+
                                     _da_candidatas.append({
-                                        "Proyecto":           _da_proj,
-                                        "Línea actual":       _da_linea_act,
-                                        "Línea candidata":    _da_ldest,
-                                        "Resultado":          _da_resultado,
-                                        "Mejora h":           _da_mejora,
-                                        "Déficit actual h":   _da_def_antes,
-                                        "Déficit simulado h": _da_def_desp,
-                                        "Aviso":              " · ".join(_da_avisos),
+                                        "Proyecto":               _da_proj,
+                                        "Línea actual":           _da_linea_act,
+                                        "Línea candidata":        _da_ldest,
+                                        "tipo_linea":             _da_tipo_linea,
+                                        "modelo_capacidad_usado": _da_mdl_cap_us,
+                                        "capacidad_origen":       _da_cap_orig,
+                                        "Resultado":              _da_resultado,
+                                        "Mejora h":               _da_mejora,
+                                        "Déficit actual h":       _da_def_antes,
+                                        "Déficit simulado h":     _da_def_desp,
+                                        "Aviso":                  " · ".join(_da_avisos),
                                     })
 
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
@@ -8913,12 +8960,25 @@ if st.session_state.active_tab == "📋 Programación real":
                                     )
                                     _da_slim_cols = [c for c in [
                                         "Proyecto", "Línea actual", "Línea candidata",
+                                        "tipo_linea", "modelo_capacidad_usado", "capacidad_origen",
                                         "Resultado", "Mejora h", "Aviso",
                                     ] if c in _da_df_c.columns]
                                     _da_alt_col_cfg = {}
                                     if "Aviso" in _da_df_c.columns:
                                         _da_alt_col_cfg["Aviso"] = st.column_config.TextColumn(
-                                            label="Aviso", width=260,
+                                            label="Aviso", width=300,
+                                        )
+                                    if "tipo_linea" in _da_df_c.columns:
+                                        _da_alt_col_cfg["tipo_linea"] = st.column_config.TextColumn(
+                                            label="Tipo línea", width=160,
+                                        )
+                                    if "modelo_capacidad_usado" in _da_df_c.columns:
+                                        _da_alt_col_cfg["modelo_capacidad_usado"] = st.column_config.TextColumn(
+                                            label="Modelo cap.", width=110,
+                                        )
+                                    if "capacidad_origen" in _da_df_c.columns:
+                                        _da_alt_col_cfg["capacidad_origen"] = st.column_config.TextColumn(
+                                            label="Origen cap.", width=200,
                                         )
                                     st.dataframe(
                                         _prog_round_display_df(_da_df_c[_da_slim_cols]),
