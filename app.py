@@ -8829,9 +8829,12 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts)
                                     if _da_res["linea"] is None:
                                         _da_descartadas.append({
-                                            "Proyecto": _da_proj, "Línea alternativa": _da_alt_raw_l,
-                                            "Motivo": _da_res["motivo"],
-                                            "Tipo": "Ambigua" if "ambigua" in _da_res["motivo"].lower() else "No encontrada",
+                                            "Proyecto":          _da_proj,
+                                            "Línea alternativa": _da_alt_raw_l,
+                                            "Línea resuelta":    None,
+                                            "Modelo proyecto":   _da_modelo_p,
+                                            "Motivo":            _da_res["motivo"],
+                                            "Tipo":              "Ambigua" if "ambigua" in _da_res["motivo"].lower() else "No encontrada",
                                         })
                                         continue
 
@@ -8839,9 +8842,12 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                     if _da_ldest == _da_linea_act:
                                         _da_descartadas.append({
-                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
-                                            "Motivo": "La línea alternativa es la misma que la línea actual.",
-                                            "Tipo": "Misma línea",
+                                            "Proyecto":          _da_proj,
+                                            "Línea alternativa": _da_alt_raw_l,
+                                            "Línea resuelta":    _da_ldest,
+                                            "Modelo proyecto":   _da_modelo_p,
+                                            "Motivo":            "La línea alternativa es la misma que la línea actual.",
+                                            "Tipo":              "Misma línea",
                                         })
                                         continue
 
@@ -8853,9 +8859,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_allowed_mdls = _da_allowed_by_line_norm.get(str(_da_ldest).strip().upper(), [])
                                         if not _da_allowed_mdls:
                                             _da_descartadas.append({
-                                                "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
-                                                "Motivo": t("prog_alt_incompat_model"),
-                                                "Tipo": "Incompatible",
+                                                "Proyecto":                   _da_proj,
+                                                "Línea alternativa":          _da_alt_raw_l,
+                                                "Línea resuelta":             _da_ldest,
+                                                "Modelo proyecto":            _da_modelo_p,
+                                                "Modelos permitidos en línea": "(ninguno en tabla)",
+                                                "Motivo":                     t("prog_alt_incompat_model"),
+                                                "Tipo":                       "Incompatible",
                                             })
                                             continue
                                         _da_es_compat = any(
@@ -8866,9 +8876,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                         )
                                         if not _da_es_compat:
                                             _da_descartadas.append({
-                                                "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
-                                                "Motivo": t("prog_alt_incompat_model"),
-                                                "Tipo": "Incompatible",
+                                                "Proyecto":                   _da_proj,
+                                                "Línea alternativa":          _da_alt_raw_l,
+                                                "Línea resuelta":             _da_ldest,
+                                                "Modelo proyecto":            _da_modelo_p,
+                                                "Modelos permitidos en línea": ", ".join(str(_m) for _m in _da_allowed_mdls),
+                                                "Motivo":                     t("prog_alt_incompat_model"),
+                                                "Tipo":                       "Incompatible",
                                             })
                                             continue
                                     # ── fin filtro de compatibilidad ───────────────────────────
@@ -8876,9 +8890,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _da_cap_row = _da_cap_df_alts[_da_cap_df_alts["Línea"].astype(str) == _da_ldest]
                                     if _da_cap_row.empty or float(_da_cap_row["Capacidad h/sem"].iloc[0]) <= 0:
                                         _da_descartadas.append({
-                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
-                                            "Motivo": "Capacidad = 0 o línea no disponible en escenario.",
-                                            "Tipo": "Sin capacidad",
+                                            "Proyecto":          _da_proj,
+                                            "Línea alternativa": _da_alt_raw_l,
+                                            "Línea resuelta":    _da_ldest,
+                                            "Modelo proyecto":   _da_modelo_p,
+                                            "capacidad_destino_h": (
+                                                round(float(_da_cap_row["Capacidad h/sem"].iloc[0]), 1)
+                                                if not _da_cap_row.empty else 0.0
+                                            ),
+                                            "Motivo":            "Capacidad = 0 o línea no disponible en escenario.",
+                                            "Tipo":              "Sin capacidad",
                                         })
                                         continue
 
@@ -8922,9 +8943,23 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                     if _da_mejora <= 0:
                                         _da_descartadas.append({
-                                            "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
-                                            "Motivo": f"Δ déficit = {_da_mejora} h ({'No mejora' if _da_mejora == 0 else 'Empeora'}).",
-                                            "Tipo": "No mejora" if _da_mejora == 0 else "Empeora",
+                                            "Proyecto":          _da_proj,
+                                            "Línea alternativa": _da_alt_raw_l,
+                                            "Línea resuelta":    _da_ldest,
+                                            "Modelo proyecto":   _da_modelo_p,
+                                            "tipo_linea":        _da_tipo_linea,
+                                            "modelo_capacidad_usado": _da_mdl_cap_us,
+                                            "capacidad_origen":  _da_cap_orig,
+                                            "capacidad_destino_h": (
+                                                round(float(_da_cap_row["Capacidad h/sem"].iloc[0]), 1)
+                                                if not _da_cap_row.empty else None
+                                            ),
+                                            "Capacidad V2 usada": _da_cap_v2_used,
+                                            "Déficit actual h":  round(_da_def_antes, 1),
+                                            "Déficit simulado h": round(_da_def_desp, 1),
+                                            "Mejora h":          _da_mejora,
+                                            "Motivo":            f"Δ déficit = {_da_mejora} h ({'No mejora' if _da_mejora == 0 else 'Empeora'}).",
+                                            "Tipo":              "No mejora" if _da_mejora == 0 else "Empeora",
                                         })
                                         continue
 
@@ -9572,9 +9607,25 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.markdown(f"**{t('prog_alt_tech_expander').format(n=len(_da_desc_aud))}**")
                             _da_desc_df = _prog_round_display_df(pd.DataFrame(_da_desc_aud))
                             _da_desc_col_cfg = {}
-                            for _ddc, _ddw in [("Motivo", 220), ("Aviso", 260), ("Detalle", 260), ("Nota", 220)]:
+                            for _ddc, _ddw in [
+                                ("Motivo", 220), ("Aviso", 260), ("Detalle", 260), ("Nota", 220),
+                                ("Modelo proyecto", 120), ("Línea resuelta", 120),
+                                ("tipo_linea", 130), ("modelo_capacidad_usado", 140),
+                                ("capacidad_origen", 140), ("Modelos permitidos en línea", 180),
+                            ]:
                                 if _ddc in _da_desc_df.columns:
                                     _da_desc_col_cfg[_ddc] = st.column_config.TextColumn(label=_ddc, width=_ddw)
+                            for _ddc_n, _ddc_fmt in [
+                                ("capacidad_destino_h", "%.1f"),
+                                ("Capacidad V2 usada", "%.1f"),
+                                ("Déficit actual h", "%.1f"),
+                                ("Déficit simulado h", "%.1f"),
+                                ("Mejora h", "%.1f"),
+                            ]:
+                                if _ddc_n in _da_desc_df.columns:
+                                    _da_desc_col_cfg[_ddc_n] = st.column_config.NumberColumn(
+                                        label=_ddc_n, format=_ddc_fmt
+                                    )
                             st.dataframe(
                                 _da_desc_df,
                                 use_container_width=True,
