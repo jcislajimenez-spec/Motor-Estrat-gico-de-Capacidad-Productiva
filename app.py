@@ -218,6 +218,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_applied_title":  "Simulación aplicada — no modifica el plan real",
         "prog_alt_applied_warn":   "Esta simulación NO modifica el plan real. Pulsa 'Descartar' para volver al estado base.",
         "prog_alt_discard_btn":    "Descartar simulación",
+        "prog_alt_apply_multi_btn":        "Aplicar alternativas seleccionadas",
+        "prog_alt_sim_title":              "Simulación acumulada — no modifica el plan real",
+        "prog_alt_sim_warn":               "Esta simulación NO modifica el plan real.",
+        "prog_alt_sim_discard_btn":        "Reiniciar simulación",
+        "prog_alt_sim_moved_header":       "Movimientos aplicados",
+        "prog_alt_sim_conflicts_header":   "Conflictos restantes tras la simulación",
+        "prog_alt_sim_multi_proj_warn":    "Hay más de una alternativa seleccionada para el mismo proyecto. Deja solo una por proyecto.",
+        "prog_alt_sim_no_selection":       "No hay ninguna alternativa marcada.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -503,6 +511,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_applied_title":  "Applied simulation — does not modify the real plan",
         "prog_alt_applied_warn":   "This simulation does NOT modify the real plan. Press 'Discard' to return to the base state.",
         "prog_alt_discard_btn":    "Discard simulation",
+        "prog_alt_apply_multi_btn":        "Apply selected alternatives",
+        "prog_alt_sim_title":              "Cumulative simulation — does not modify the real plan",
+        "prog_alt_sim_warn":               "This simulation does NOT modify the real plan.",
+        "prog_alt_sim_discard_btn":        "Reset simulation",
+        "prog_alt_sim_moved_header":       "Applied movements",
+        "prog_alt_sim_conflicts_header":   "Remaining conflicts after simulation",
+        "prog_alt_sim_multi_proj_warn":    "More than one alternative is selected for the same project. Leave only one per project.",
+        "prog_alt_sim_no_selection":       "No alternative is marked.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -788,6 +804,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_applied_title":  "Aplikatutako simulazioa — ez du benetako plana aldatzen",
         "prog_alt_applied_warn":   "Simulazio honek EZ du benetako plana aldatzen. Sakatu 'Baztertu' oinarrizko egoerara itzultzeko.",
         "prog_alt_discard_btn":    "Simulazioa baztertu",
+        "prog_alt_apply_multi_btn":        "Hautatutako alternatiboak aplikatu",
+        "prog_alt_sim_title":              "Simulazio metatua — ez du benetako plana aldatzen",
+        "prog_alt_sim_warn":               "Simulazio honek EZ du benetako plana aldatzen.",
+        "prog_alt_sim_discard_btn":        "Simulazioa berrabiarazi",
+        "prog_alt_sim_moved_header":       "Aplikatutako mugimenduak",
+        "prog_alt_sim_conflicts_header":   "Simulazioaren ondoko gainerako gatazkak",
+        "prog_alt_sim_multi_proj_warn":    "Proiektu bereko alternativa bat baino gehiago hautatuta dago. Utzi bakarra proiektu bakoitzeko.",
+        "prog_alt_sim_no_selection":       "Ez dago alternatiba markatuta.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -8376,7 +8400,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_stale_{plant_id}", None)
-                            st.session_state.pop(f"_prog_alt_applied_{plant_id}", None)
+                            st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
                         st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                         st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
@@ -8429,7 +8453,7 @@ if st.session_state.active_tab == "📋 Programación real":
                 st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
                 st.session_state[f"_prog_v2_stale_{plant_id}"] = True
                 st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
-                st.session_state.pop(f"_prog_alt_applied_{plant_id}", None)
+                st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
 
             # ── V2: cálculo macro semanal ─────────────────────────────────────
             if _prog_v2_calc_clicked:
@@ -8687,7 +8711,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         _da_conflict_base = _prog_result["conflict_df"]
                         _da_parsed_now    = st.session_state.get(f"_prog_parsed_{plant_id}")
 
-                        st.session_state.pop(f"_prog_alt_applied_{plant_id}", None)
+                        st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
 
                         if _da_parsed_now is None or _da_parsed_now.get("proyectos") is None:
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
@@ -8975,6 +8999,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "descartadas": _da_descartadas,
                                 "cap_df_alts": _da_cap_df_alts,
                             }
+                            st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
+                                st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
+                            )
 
                 # ── Mostrar resultado alternativas (tras cálculo, un solo clic) ─────────
                 if _da_has_conflicts and _da_has_load:
@@ -8997,160 +9024,180 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .reset_index(drop=True)
                                     )
 
-                                    # ── Columna visual "Aplicada" ─────────────────────
-                                    _da_applied_id = (
-                                        st.session_state.get(f"_prog_alt_applied_{plant_id}") or {}
-                                    ).get("alt_id", "")
-                                    _da_df_c["Aplicada"] = _da_df_c["alt_id"].apply(
-                                        lambda _x: "✓" if _x == _da_applied_id else ""
-                                    )
-
-                                    # Vista compacta (tabla en columna derecha estrecha)
-                                    _da_slim_cols = [c for c in [
-                                        "Aplicada", "Proyecto", "Línea candidata",
-                                        "Resultado", "Mejora h", "Aviso",
-                                    ] if c in _da_df_c.columns]
-                                    _da_alt_col_cfg = {
-                                        "Aplicada": st.column_config.TextColumn(
-                                            label="✓", width=40,
-                                        ),
-                                    }
-                                    if "Aviso" in _da_df_c.columns:
-                                        _da_alt_col_cfg["Aviso"] = st.column_config.TextColumn(
-                                            label="Aviso", width=200,
-                                        )
-                                    st.dataframe(
-                                        _prog_round_display_df(_da_df_c[_da_slim_cols]),
-                                        use_container_width=True,
-                                        hide_index=True,
-                                        height=min(200, max(110, len(_da_df_c) * 32 + 42)),
-                                        column_config=_da_alt_col_cfg or None,
-                                    )
-
-                                    # Detalle técnico (colapsado por defecto)
-                                    _da_tech_cols = [c for c in [
+                                    # ── Tabla única con checkbox de selección ────────
+                                    _da_df_c["Aplicar"] = False
+                                    _da_edit_cols = [c for c in [
+                                        "Aplicar",
                                         "Proyecto", "Línea actual", "Línea candidata",
+                                        "Resultado", "Mejora h",
                                         "tipo_linea", "modelo_capacidad_usado",
                                         "capacidad_origen", "capacidad_destino_h",
+                                        "Aviso",
                                     ] if c in _da_df_c.columns]
-                                    if len(_da_tech_cols) > 2:
-                                        with st.expander("Detalle técnico de alternativas"):
-                                            st.dataframe(
-                                                _da_df_c[_da_tech_cols],
-                                                use_container_width=True,
-                                                hide_index=True,
-                                            )
-
-                                    # ── Selector + Aplicar ────────────────────────────
-                                    _da_aid_list: list = []
-                                    _da_aid_map:  dict = {}
-                                    for _da_sel_row in _da_df_c.to_dict("records"):
-                                        _da_aid = _da_sel_row["alt_id"]
-                                        _da_aid_list.append(_da_aid)
-                                        _da_aid_map[_da_aid] = _da_sel_row
-
-                                    _da_sel_aid = st.selectbox(
-                                        "Alternativa a aplicar",
-                                        options=_da_aid_list,
-                                        format_func=lambda _x, _m=_da_aid_map: (
-                                            f"{_m.get(_x, {}).get('Proyecto', '')} · "
-                                            f"{_m.get(_x, {}).get('Línea actual', '')} → "
-                                            f"{_m.get(_x, {}).get('Línea candidata', '')} · "
-                                            f"{_m.get(_x, {}).get('Resultado', '')} · "
-                                            f"+{_m.get(_x, {}).get('Mejora h', '')} h"
+                                    _da_edit_cfg = {
+                                        "Aplicar": st.column_config.CheckboxColumn(
+                                            label="Aplicar", default=False, width=70,
                                         ),
-                                        key=f"prog_alt_selectbox_{plant_id}",
-                                        label_visibility="collapsed",
+                                        "Mejora h": st.column_config.NumberColumn(
+                                            label="Mejora h", format="%.1f",
+                                        ),
+                                        "tipo_linea": st.column_config.TextColumn(
+                                            label="Tipo línea",
+                                        ),
+                                        "modelo_capacidad_usado": st.column_config.TextColumn(
+                                            label="Modelo cap.",
+                                        ),
+                                        "capacidad_origen": st.column_config.TextColumn(
+                                            label="Origen cap.",
+                                        ),
+                                        "capacidad_destino_h": st.column_config.NumberColumn(
+                                            label="Cap. destino h", format="%.1f",
+                                        ),
+                                    }
+                                    _da_df_edited = st.data_editor(
+                                        _da_df_c[_da_edit_cols],
+                                        column_config=_da_edit_cfg,
+                                        disabled=[c for c in _da_edit_cols if c != "Aplicar"],
+                                        hide_index=True,
+                                        use_container_width=True,
+                                        height=min(300, max(110, len(_da_df_c) * 35 + 42)),
+                                        key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                     )
-                                    _da_apply_clicked = st.button(
-                                        t("prog_alt_apply_btn"),
-                                        key=f"prog_alt_apply_btn_{plant_id}",
+
+                                    # ── Botón plural ─────────────────────────────────
+                                    _da_apply_multi_clicked = st.button(
+                                        t("prog_alt_apply_multi_btn"),
+                                        key=f"prog_alt_apply_multi_btn_{plant_id}",
                                         use_container_width=True,
                                     )
-                                    if _da_apply_clicked and _da_sel_aid:
-                                        _da_chosen    = _da_aid_map[_da_sel_aid]
-                                        _da_load_src  = _prog_result.get("load_df")
-                                        _da_proj_ap   = _da_chosen["Proyecto"]
-                                        _da_lac_ap    = _da_chosen["Línea actual"]
-                                        _da_ldst_ap   = _da_chosen["Línea candidata"]
-                                        _da_cap_dh    = _da_chosen.get("capacidad_destino_h")
-                                        _da_cap_df_ap = _da_alt_result.get("cap_df_alts", _prog_cap_df)
-                                        if _da_load_src is not None:
-                                            _da_load_sim = _simulate_prog_move_line(
-                                                _da_load_src, _da_proj_ap, _da_lac_ap, _da_ldst_ap
-                                            )
-                                            _da_cap_for_sim = _da_cap_df_ap.copy()
-                                            if _da_cap_dh is not None:
-                                                _da_cap_for_sim.loc[
-                                                    _da_cap_for_sim["Línea"].astype(str) == str(_da_ldst_ap),
-                                                    "Capacidad h/sem",
-                                                ] = float(_da_cap_dh)
-                                            _da_after_sim = _recompute_prog_deficit_global(
-                                                _da_load_sim, _da_cap_for_sim
-                                            )
-                                            _da_aviso_ap = _da_chosen.get("Aviso", "")
-                                            _da_def_cand = _da_chosen.get("Déficit simulado h")
-                                            if _da_def_cand is not None:
-                                                _da_diff = abs(
-                                                    _da_after_sim["deficit_total_h"] - float(_da_def_cand)
-                                                )
-                                                if _da_diff > 0.5:
-                                                    _da_aviso_ap = (
-                                                        (_da_aviso_ap + " · " if _da_aviso_ap else "")
-                                                        + "El déficit aplicado difiere del estimado inicial por recálculo de contexto."
+                                    if _da_apply_multi_clicked:
+                                        _da_sel_idx = _da_df_edited[
+                                            _da_df_edited["Aplicar"] == True
+                                        ].index
+                                        _da_sel_full = _da_df_c.loc[_da_sel_idx]
+                                        if _da_sel_full.empty:
+                                            st.caption(t("prog_alt_sim_no_selection"))
+                                        else:
+                                            _da_dup = _da_sel_full["Proyecto"].value_counts()
+                                            if (_da_dup > 1).any():
+                                                st.warning(t("prog_alt_sim_multi_proj_warn"))
+                                            else:
+                                                _da_load_src = _prog_result.get("load_df")
+                                                if _da_load_src is not None:
+                                                    _da_cap_base = _da_alt_result.get(
+                                                        "cap_df_alts", _prog_cap_df
                                                     )
-                                            st.session_state[f"_prog_alt_applied_{plant_id}"] = {
-                                                "alt_id":               _da_chosen["alt_id"],
-                                                "proyecto":             _da_proj_ap,
-                                                "linea_actual":         _da_lac_ap,
-                                                "linea_destino":        _da_ldst_ap,
-                                                "tipo_linea":           _da_chosen.get("tipo_linea", ""),
-                                                "modelo_capacidad_usado": _da_chosen.get("modelo_capacidad_usado", ""),
-                                                "capacidad_origen":     _da_chosen.get("capacidad_origen", ""),
-                                                "capacidad_destino_h":  _da_cap_dh,
-                                                "load_df_sim":          _da_load_sim,
-                                                "conflict_df_sim":      _da_after_sim["conflict_df"],
-                                                "deficit_antes":        _da_chosen["Déficit actual h"],
-                                                "deficit_despues":      _da_after_sim["deficit_total_h"],
-                                                "mejora_h":             _da_chosen["Mejora h"],
-                                                "aviso":                _da_aviso_ap,
-                                            }
-                                            st.rerun()
+                                                    _da_load_acc  = _da_load_src.copy()
+                                                    _da_cap_acc   = _da_cap_base.copy()
+                                                    _da_def_base  = _recompute_prog_deficit_global(
+                                                        _da_load_src, _da_cap_base
+                                                    )["deficit_total_h"]
+                                                    _da_movs: list  = []
+                                                    _da_avisos_acc: list = []
+                                                    for _, _da_sr in _da_sel_full.iterrows():
+                                                        _da_m_proj = str(_da_sr["Proyecto"])
+                                                        _da_m_lac  = str(_da_sr["Línea actual"])
+                                                        _da_m_ldst = str(_da_sr["Línea candidata"])
+                                                        _da_m_dh   = _da_sr.get("capacidad_destino_h")
+                                                        _da_load_acc = _simulate_prog_move_line(
+                                                            _da_load_acc, _da_m_proj,
+                                                            _da_m_lac, _da_m_ldst,
+                                                        )
+                                                        try:
+                                                            _da_m_dh_f = float(_da_m_dh)
+                                                            if not pd.isna(_da_m_dh_f):
+                                                                _da_cap_acc.loc[
+                                                                    _da_cap_acc["Línea"].astype(str) == _da_m_ldst,
+                                                                    "Capacidad h/sem",
+                                                                ] = _da_m_dh_f
+                                                        except (TypeError, ValueError):
+                                                            pass
+                                                        _da_av = str(_da_sr.get("Aviso") or "")
+                                                        _da_movs.append({
+                                                            "proyecto":      _da_m_proj,
+                                                            "linea_actual":  _da_m_lac,
+                                                            "linea_destino": _da_m_ldst,
+                                                            "mejora_h_est":  float(_da_sr.get("Mejora h") or 0.0),
+                                                            "tipo_linea":    str(_da_sr.get("tipo_linea") or ""),
+                                                            "aviso":         _da_av,
+                                                        })
+                                                        if _da_av:
+                                                            _da_avisos_acc.append(
+                                                                f"{_da_m_proj}: {_da_av}"
+                                                            )
+                                                    _da_final = _recompute_prog_deficit_global(
+                                                        _da_load_acc, _da_cap_acc
+                                                    )
+                                                    st.session_state[f"_prog_alt_sim_{plant_id}"] = {
+                                                        "movimientos":     _da_movs,
+                                                        "load_df_sim":     _da_load_acc,
+                                                        "cap_df_sim":      _da_cap_acc,
+                                                        "conflict_df_sim": _da_final["conflict_df"],
+                                                        "deficit_antes":   _da_def_base,
+                                                        "deficit_despues": _da_final["deficit_total_h"],
+                                                        "mejora_total_h":  round(
+                                                            _da_def_base - _da_final["deficit_total_h"], 1
+                                                        ),
+                                                        "avisos":          _da_avisos_acc,
+                                                    }
+                                                    st.rerun()
                                 else:
                                     st.caption(t("prog_alt_no_alts_found"))
                         else:
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
 
-                    # ── Simulación aplicada ──────────────────────────────────────────
-                    _da_applied = st.session_state.get(f"_prog_alt_applied_{plant_id}")
-                    if _da_applied:
+                    # ── Simulación acumulada ─────────────────────────────────────────
+                    _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                    if _da_sim:
                         with st.container(border=True):
-                            st.markdown(f"#### {t('prog_alt_applied_title')}")
-                            st.info(t("prog_alt_applied_warn"))
-                            _da_ap_c1, _da_ap_c2, _da_ap_c3, _da_ap_c4, _da_ap_c5 = st.columns(5)
-                            with _da_ap_c1:
-                                st.metric("Proyecto", _da_applied["proyecto"])
-                            with _da_ap_c2:
+                            st.markdown(f"#### {t('prog_alt_sim_title')}")
+                            st.info(t("prog_alt_sim_warn"))
+                            _da_s1, _da_s2, _da_s3, _da_s4, _da_s5 = st.columns(5)
+                            with _da_s1:
                                 st.metric(
-                                    "Movimiento",
-                                    f"{_da_applied['linea_actual']} → {_da_applied['linea_destino']}",
+                                    "Déficit inicial",
+                                    f"{round(_da_sim['deficit_antes'], 1)} h",
                                 )
-                            with _da_ap_c3:
-                                st.metric(
-                                    "Déficit antes",
-                                    f"{round(_da_applied['deficit_antes'], 1)} h",
-                                )
-                            with _da_ap_c4:
+                            with _da_s2:
                                 st.metric(
                                     "Déficit simulado",
-                                    f"{round(_da_applied['deficit_despues'], 1)} h",
+                                    f"{round(_da_sim['deficit_despues'], 1)} h",
                                 )
-                            with _da_ap_c5:
-                                st.metric("Mejora", f"+{round(_da_applied['mejora_h'], 1)} h")
-                            if _da_applied.get("aviso"):
-                                st.caption(f"⚠ {_da_applied['aviso']}")
-                            st.markdown("##### Conflictos restantes tras la simulación")
-                            _da_cfl_sim = _da_applied.get("conflict_df_sim")
+                            with _da_s3:
+                                st.metric(
+                                    "Mejora real acumulada",
+                                    f"+{round(_da_sim['mejora_total_h'], 1)} h",
+                                )
+                            with _da_s4:
+                                st.metric(
+                                    "Alternativas aplicadas",
+                                    str(len(_da_sim["movimientos"])),
+                                )
+                            with _da_s5:
+                                _da_n_cfl = (
+                                    len(_da_sim["conflict_df_sim"])
+                                    if _da_sim.get("conflict_df_sim") is not None
+                                    else 0
+                                )
+                                st.metric("Conflictos restantes", str(_da_n_cfl))
+                            for _da_av in _da_sim.get("avisos", []):
+                                st.caption(f"⚠ {_da_av}")
+                            st.markdown(f"##### {t('prog_alt_sim_moved_header')}")
+                            _da_mov_df = pd.DataFrame([{
+                                "Proyecto":      m["proyecto"],
+                                "Línea actual":  m["linea_actual"],
+                                "Línea destino": m["linea_destino"],
+                                "Mejora est. h": m["mejora_h_est"],
+                                "Tipo":          m["tipo_linea"],
+                                "Aviso":         m["aviso"],
+                            } for m in _da_sim["movimientos"]])
+                            st.dataframe(
+                                _prog_round_display_df(_da_mov_df),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                            st.markdown(f"##### {t('prog_alt_sim_conflicts_header')}")
+                            _da_cfl_sim = _da_sim.get("conflict_df_sim")
                             if _da_cfl_sim is not None and not _da_cfl_sim.empty:
                                 st.dataframe(
                                     _prog_round_display_df(_da_cfl_sim),
@@ -9161,10 +9208,10 @@ if st.session_state.active_tab == "📋 Programación real":
                             else:
                                 st.success("Sin conflictos en la simulación.")
                             if st.button(
-                                t("prog_alt_discard_btn"),
-                                key=f"prog_alt_discard_btn_{plant_id}",
+                                t("prog_alt_sim_discard_btn"),
+                                key=f"prog_alt_sim_discard_btn_{plant_id}",
                             ):
-                                st.session_state.pop(f"_prog_alt_applied_{plant_id}", None)
+                                st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
                                 st.rerun()
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
