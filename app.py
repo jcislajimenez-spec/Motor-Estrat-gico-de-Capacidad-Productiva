@@ -213,6 +213,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_v2_cap":   "Alternativa V2 — línea no activa en el escenario actual; capacidad estimada. Usar solo como referencia.",
         "prog_alt_incompat_model": "Modelo/familia no compatible con la línea según tabla de compatibilidad.",
         "prog_alt_recalc_cap":     "Cap. recalculada para {mdl}: {cap} h/sem (escenario usa modelo distinto).",
+        "prog_alt_v2_stale_warn":  "V2 puede no estar actualizado respecto al plan actual. Recalcula V2 para usar capacidades recalculadas en alternativas.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -493,6 +494,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_v2_cap":   "V2 alternative — line not active in current scenario; estimated capacity. For reference only.",
         "prog_alt_incompat_model": "Model/family not compatible with this line according to the compatibility table.",
         "prog_alt_recalc_cap":     "Recalculated cap. for {mdl}: {cap} h/sem (scenario uses a different model).",
+        "prog_alt_v2_stale_warn":  "V2 may not be up to date with the current plan. Recalculate V2 to use recalculated capacities in alternatives.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -773,6 +775,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_warn_v2_cap":   "V2 alternatiba — lerroa ez dago aktibo uneko eszenatokian; estimatutako ahalmena. Erreferentzia gisa bakarrik erabili.",
         "prog_alt_incompat_model": "Proiektuaren eredua/familia ez da bateragarria lerro honekin bateragarritasun-taularen arabera.",
         "prog_alt_recalc_cap":     "Berrikalkulatutako kap. {mdl} eredurako: {cap} h/aste (eszenatokiak eredu ezberdina erabiltzen du).",
+        "prog_alt_v2_stale_warn":  "Baliteke V2 uneko planarekin eguneratuta ez egotea. Birkalkulatu V2 alternatibetan berrikalkulatutako ahalmenak erabiltzeko.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -8360,6 +8363,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
                             st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
+                            st.session_state.pop(f"_prog_v2_stale_{plant_id}", None)
                         st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
                         st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
@@ -8410,6 +8414,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     _prog_parsed["proyectos"], _prog_cap_df
                 )
                 st.session_state[f"_prog_result_{plant_id}"] = _prog_result_computed
+                st.session_state[f"_prog_v2_stale_{plant_id}"] = True
                 st.session_state.pop(f"_prog_alt_result_{plant_id}", None)
 
             # ── V2: cálculo macro semanal ─────────────────────────────────────
@@ -8447,6 +8452,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         hours_eff,
                     )
                     st.session_state[f"_prog_v2_lineas_{plant_id}"] = _v2_lineas
+                    st.session_state[f"_prog_v2_stale_{plant_id}"] = False
                     _v2_proy_can, _v2_can_warns = _canonizar_lineas_proyectos_v2(
                         _v2_norm_res["proyectos"], _v2_lineas
                     )
@@ -8652,6 +8658,11 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _da_has_conflicts and _da_has_load:
                         st.markdown(f"#### {t('prog_alt_header')}")
                         _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
+                        if (
+                            st.session_state.get(f"_prog_v2_stale_{plant_id}", False)
+                            and st.session_state.get(f"_prog_v2_lineas_{plant_id}")
+                        ):
+                            st.caption(f"⚠ {t('prog_alt_v2_stale_warn')}")
                     else:
                         st.caption(t("prog_alt_no_conflicts"))
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
@@ -8673,6 +8684,9 @@ if st.session_state.active_tab == "📋 Programación real":
                             # ── Catálogo aumentado con líneas V2 para análisis de alternativas ──
                             # Solo añade líneas que no estén ya en _prog_cap_df; no modifica V1.
                             _da_v2_lineas_ss: dict = st.session_state.get(f"_prog_v2_lineas_{plant_id}", {})
+                            # Si V2 está obsoleto (V1 recalculado después de V2), no usar capacidades V2.
+                            if st.session_state.get(f"_prog_v2_stale_{plant_id}", False):
+                                _da_v2_lineas_ss = {}
                             _da_lineas_en_prog_cap: set = (
                                 {str(x).strip().upper() for x in _prog_cap_df["Línea"].astype(str)}
                                 if not _prog_cap_df.empty else set()
