@@ -211,6 +211,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_tech_expander": "Alternativas descartadas / avisos ({n})",
         "prog_alt_warn_model":    "Modelo del proyecto distinto del modelo asignado de la línea candidata. Capacidad puede no ser representativa.",
         "prog_alt_warn_v2_cap":   "Alternativa V2 — línea no activa en el escenario actual; capacidad estimada. Usar solo como referencia.",
+        "prog_alt_incompat_model": "Modelo/familia no compatible con la línea según tabla de compatibilidad.",
         # Mix
         "mix_info":               "La planta produce **horas configurables**.\nLa capacidad no es un valor fijo, sino un **rango estructural** determinado por el mix posible de modelos en cada línea.\nAquí se muestran los valores **Máximo / Promedio / Mínimo** por planta y por línea, en unidades y en horas (semana y año).",
         "mix_level1":             "### Nivel 1 — Global planta (rango estructural)",
@@ -489,6 +490,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_tech_expander": "Discarded alternatives / warnings ({n})",
         "prog_alt_warn_model":    "Project model differs from the model assigned to the candidate line. Capacity may not be representative.",
         "prog_alt_warn_v2_cap":   "V2 alternative — line not active in current scenario; estimated capacity. For reference only.",
+        "prog_alt_incompat_model": "Model/family not compatible with this line according to the compatibility table.",
         # Mix
         "mix_info":               "The plant produces **configurable hours**.\nCapacity is not a fixed value, but a **structural range** determined by the possible model mix on each line.\nThis shows **Maximum / Average / Minimum** values per plant and line, in units and hours (week and year).",
         "mix_level1":             "### Level 1 — Plant global (structural range)",
@@ -767,6 +769,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_alt_tech_expander": "Baztertutako alternatibak / abisuak ({n})",
         "prog_alt_warn_model":    "Proiektuaren eredua lerro hautagaiaren eredu esleituaren desberdina da. Ahalmena ez da ordezkagarria.",
         "prog_alt_warn_v2_cap":   "V2 alternatiba — lerroa ez dago aktibo uneko eszenatokian; estimatutako ahalmena. Erreferentzia gisa bakarrik erabili.",
+        "prog_alt_incompat_model": "Proiektuaren eredua/familia ez da bateragarria lerro honekin bateragarritasun-taularen arabera.",
         # Mix
         "mix_info":               "Plantak **konfiguragarriak diren orduak** ekoizten ditu.\nAhalmena ez da balio finko bat, baizik eta lerro bakoitzean posible diren ereduen mixak zehaztutako **tarte estrukturala**.\nHemen **Maximoa / Batez bestekoa / Minimoa** balioak erakusten dira planta eta lerroaren arabera, unitateetan eta orduetan (aste eta urte).",
         "mix_level1":             "### 1. maila — Planta globala (tarte estrukturala)",
@@ -8694,6 +8697,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_cap_df_alts = _prog_cap_df
                             # ── fin catálogo aumentado ──────────────────────────────────────────
 
+                            # Mapa normalizado de allowed_by_line para lookup robusto ante
+                            # diferencias de espacios o mayúsculas en los IDs de línea.
+                            _da_allowed_by_line_norm: dict = {
+                                str(k).strip().upper(): v
+                                for k, v in allowed_by_line.items()
+                            }
+
                             _da_implicados  = _get_prog_projects_in_conflict(_da_load_base, _da_conflict_base)
                             _da_base_result = _recompute_prog_deficit_global(_da_load_base, _da_cap_df_alts)
                             _da_def_antes   = _da_base_result["deficit_total_h"]
@@ -8775,6 +8785,34 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Tipo": "Misma línea",
                                         })
                                         continue
+
+                                    # ── Filtro de compatibilidad real ──────────────────────────
+                                    # Solo bloquea si el proyecto tiene modelo/familia informado.
+                                    # Consulta allowed_by_line con el ID canónico ya resuelto (_da_ldest).
+                                    _da_mdl_norm = _da_modelo_p.strip().upper() if _da_modelo_p not in ("", "nan", "None") else ""
+                                    if _da_mdl_norm:
+                                        _da_allowed_mdls = _da_allowed_by_line_norm.get(str(_da_ldest).strip().upper(), [])
+                                        if not _da_allowed_mdls:
+                                            _da_descartadas.append({
+                                                "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
+                                                "Motivo": t("prog_alt_incompat_model"),
+                                                "Tipo": "Incompatible",
+                                            })
+                                            continue
+                                        _da_es_compat = any(
+                                            _da_mdl_norm == str(_cm).strip().upper()
+                                            or str(_cm).strip().upper().startswith(_da_mdl_norm + "-")
+                                            or _da_mdl_norm.startswith(str(_cm).strip().upper() + "-")
+                                            for _cm in _da_allowed_mdls
+                                        )
+                                        if not _da_es_compat:
+                                            _da_descartadas.append({
+                                                "Proyecto": _da_proj, "Línea alternativa": _da_ldest,
+                                                "Motivo": t("prog_alt_incompat_model"),
+                                                "Tipo": "Incompatible",
+                                            })
+                                            continue
+                                    # ── fin filtro de compatibilidad ───────────────────────────
 
                                     _da_cap_row = _da_cap_df_alts[_da_cap_df_alts["Línea"].astype(str) == _da_ldest]
                                     if _da_cap_row.empty or float(_da_cap_row["Capacidad h/sem"].iloc[0]) <= 0:
