@@ -8824,7 +8824,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                 )
 
                                 for _da_alt_raw_l in _da_alt_list:
-                                    _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts)
+                                    _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _prog_cap_df)
+                                    if _da_res.get("linea") is None:
+                                        _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts)
                                     if _da_res["linea"] is None:
                                         _da_descartadas.append({
                                             "Proyecto": _da_proj, "Línea alternativa": _da_alt_raw_l,
