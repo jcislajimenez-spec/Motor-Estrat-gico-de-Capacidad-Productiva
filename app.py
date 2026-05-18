@@ -9217,21 +9217,23 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .drop(columns=["_sort_e", "_sort_m"])
                                         .reset_index(drop=True)
                                     )
+                                    # ── Pre-compute lookups ────────────────────────
+                                    _da_load_df_src = _prog_result.get("load_df", pd.DataFrame()) if _prog_result else pd.DataFrame()
+                                    _da_load_pl = {}  # {(proyecto, linea): (h_sem_prom, n_semanas)}
+                                    if not _da_load_df_src.empty:
+                                        for (_pl_proj, _pl_lin), _pl_grp in _da_load_df_src.groupby(["Proyecto", "Línea"]):
+                                            _pl_nsem = int(_pl_grp["Semana"].nunique())
+                                            _pl_toth = float(_pl_grp["Horas proyecto semana"].sum())
+                                            _da_load_pl[(str(_pl_proj), str(_pl_lin))] = (
+                                                round(_pl_toth / _pl_nsem, 1) if _pl_nsem > 0 else 0.0, _pl_nsem
+                                            )
+                                    _da_srcap = {}  # {linea: cap_h_sem}
+                                    if _prog_cap_df is not None and not _prog_cap_df.empty:
+                                        for _, _sc_row in _prog_cap_df.iterrows():
+                                            _da_srcap[str(_sc_row["Línea"])] = float(_sc_row["Capacidad h/sem"])
+
                                     _da_df_c["Aplicar"] = False
-                                    # ── Columnas de display operativo ─────────────
-                                    def _da_get_movimiento(r):
-                                        lac = str(r.get("Línea actual", "") or "")
-                                        lcd = str(r.get("Línea candidata", "") or "")
-                                        return f"{lac} → {lcd}" if lac and lcd else (lac or lcd)
-                                    def _da_get_supuesto(r):
-                                        e = str(r.get("Estado", ""))
-                                        if e == "No aplicable": return "No aplicable"
-                                        if e == "Revisar":      return "Revisar"
-                                        tl = str(r.get("tipo_linea", "") or "")
-                                        if tl == "ACTIVA_ESCENARIO":   return "Escenario"
-                                        if tl == "ACTIVA_RECALCULADA": return "Recalculada"
-                                        if tl == "POTENCIAL_ESTIMADA": return "Potencial"
-                                        return ""
+                                    # ── Columnas de display narrativo ─────────────
                                     def _da_clean_text(v):
                                         if v is None: return ""
                                         try:
@@ -9240,7 +9242,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                             pass
                                         s = str(v).strip()
                                         return "" if s.lower() in ("nan", "none", "null") else s
-                                    def _da_get_comentario(r):
+                                    def _da_get_movimiento(r):
+                                        lac = str(r.get("Línea actual", "") or "")
+                                        lcd = str(r.get("Línea candidata", "") or "")
+                                        return f"{lac} → {lcd}" if lac and lcd else (lac or lcd)
+                                    def _da_get_comentario_v2(r):
                                         av = _da_clean_text(r.get("Aviso"))
                                         mo = _da_clean_text(r.get("Motivo"))
                                         if av: return av
@@ -9248,32 +9254,49 @@ if st.session_state.active_tab == "📋 Programación real":
                                         e   = str(r.get("Estado", ""))
                                         res = str(r.get("Resultado", ""))
                                         if e == "Recomendable" and res == "Libera":
-                                            return "Libera el déficit si se aplica sola."
+                                            return "El destino puede absorber la carga evaluada."
                                         if e == "Recomendable" and res == "Reduce":
-                                            return "Reduce el déficit, pero puede dejar conflictos."
-                                        if e == "No recomendada": return "Se puede simular, pero no mejora."
+                                            return "Reduce, pero no elimina todo el déficit evaluado."
+                                        if e == "No recomendada": return "No reduce el déficit."
                                         if e == "No aplicable":   return "No se puede simular."
                                         if e == "Revisar":        return "Revisar datos antes de simular."
                                         return ""
-                                    _da_df_c["Movimiento"]     = _da_df_c.apply(_da_get_movimiento, axis=1)
-                                    _da_df_c["Supuesto"]       = _da_df_c.apply(_da_get_supuesto, axis=1)
-                                    _da_df_c["Comentario"]     = _da_df_c.apply(_da_get_comentario, axis=1)
-                                    _da_df_c["Horas destino h"] = (
+                                    _da_df_c["Movimiento"] = _da_df_c.apply(_da_get_movimiento, axis=1)
+                                    _da_df_c["Comentario"] = _da_df_c.apply(_da_get_comentario_v2, axis=1)
+
+                                    def _da_row_carga(r):
+                                        return _da_load_pl.get((str(r.get("Proyecto", "")), str(r.get("Línea actual", ""))), (None, None))[0]
+                                    def _da_row_semanas(r):
+                                        return _da_load_pl.get((str(r.get("Proyecto", "")), str(r.get("Línea actual", ""))), (None, None))[1]
+                                    def _da_row_caporig(r):
+                                        return _da_srcap.get(str(r.get("Línea actual", "")), None)
+
+                                    _da_df_c["Carga origen prom. h/sem"] = _da_df_c.apply(_da_row_carga, axis=1)
+                                    _da_df_c["Cap. origen h/sem"]        = _da_df_c.apply(_da_row_caporig, axis=1)
+                                    _da_df_c["Semanas"]                  = _da_df_c.apply(_da_row_semanas, axis=1)
+                                    _da_df_c["Cap. destino h/sem"]       = (
                                         _da_df_c["capacidad_destino_h"].copy()
-                                        if "capacidad_destino_h" in _da_df_c.columns
-                                        else None
+                                        if "capacidad_destino_h" in _da_df_c.columns else None
                                     )
-                                    # ── Leyenda de Estado ─────────────────────────
-                                    st.caption(
-                                        "**Recomendable** → mejora el déficit, puedes aplicarla. "
-                                        "**No recomendada** → no mejora o empeora en simulación individual. "
-                                        "**No aplicable** → incompatible técnicamente. "
-                                        "**Revisar** → datos insuficientes para evaluar."
-                                    )
+                                    def _da_row_margen(r):
+                                        cd = r.get("Cap. destino h/sem")
+                                        co = r.get("Carga origen prom. h/sem")
+                                        try:
+                                            cd_f = float(cd); co_f = float(co)
+                                            if not pd.isna(cd_f) and not pd.isna(co_f):
+                                                return round(cd_f - co_f, 1)
+                                        except (TypeError, ValueError):
+                                            pass
+                                        return None
+                                    _da_df_c["Margen si 100% h/sem"]       = _da_df_c.apply(_da_row_margen, axis=1)
+                                    _da_df_c["Déficit que eliminaría (h)"] = _da_df_c["Mejora h"] if "Mejora h" in _da_df_c.columns else None
+
                                     _da_edit_cols = [c for c in [
                                         "Aplicar", "Estado", "Proyecto",
-                                        "Movimiento", "Resultado", "Mejora h",
-                                        "Supuesto", "Horas destino h", "Comentario",
+                                        "Movimiento", "Resultado",
+                                        "Carga origen prom. h/sem", "Cap. origen h/sem",
+                                        "Cap. destino h/sem", "Margen si 100% h/sem",
+                                        "Semanas", "Déficit que eliminaría (h)", "Comentario",
                                     ] if c in _da_df_c.columns]
                                     _da_edit_cfg = {
                                         "Aplicar": st.column_config.CheckboxColumn(
@@ -9285,14 +9308,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "Movimiento": st.column_config.TextColumn(
                                             label="Movimiento", width=160,
                                         ),
-                                        "Mejora h": st.column_config.NumberColumn(
-                                            label="Mejora sola h", format="%.1f",
+                                        "Carga origen prom. h/sem": st.column_config.NumberColumn(
+                                            label="Carga origen prom. h/sem", format="%.1f",
                                         ),
-                                        "Supuesto": st.column_config.TextColumn(
-                                            label="Supuesto", width=110,
+                                        "Cap. origen h/sem": st.column_config.NumberColumn(
+                                            label="Cap. origen h/sem", format="%.1f",
                                         ),
-                                        "Horas destino h": st.column_config.NumberColumn(
-                                            label="Horas destino h", format="%.1f",
+                                        "Cap. destino h/sem": st.column_config.NumberColumn(
+                                            label="Cap. destino h/sem", format="%.1f",
+                                        ),
+                                        "Margen si 100% h/sem": st.column_config.NumberColumn(
+                                            label="Margen si 100% h/sem", format="%.1f",
+                                        ),
+                                        "Déficit que eliminaría (h)": st.column_config.NumberColumn(
+                                            label="Déficit que eliminaría (h)", format="%.1f",
                                         ),
                                         "Comentario": st.column_config.TextColumn(
                                             label="Comentario", width=260,
@@ -9304,7 +9333,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         disabled=[c for c in _da_edit_cols if c != "Aplicar"],
                                         hide_index=True,
                                         use_container_width=True,
-                                        height=max(140, min(len(_da_df_c), 6) * 35 + 45),
+                                        height=max(140, min(len(_da_df_c), 5) * 35 + 45),
                                         key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                     )
                                     _da_apply_multi_clicked = st.button(
@@ -9374,6 +9403,12 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                                     for (_da_gproj, _da_glac), _da_glist in _da_grupos.items():
                                                         _da_gdests = [str(r["Línea candidata"]) for r in _da_glist]
+                                                        _da_orig_total_h = round(float(
+                                                            _da_load_acc[
+                                                                (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
+                                                                (_da_load_acc["Línea"].astype(str)    == _da_glac)
+                                                            ]["Horas proyecto semana"].sum()
+                                                        ), 1)
                                                         _da_split  = _simulate_prog_split_line(
                                                             _da_load_acc, _da_gproj, _da_glac, _da_gdests,
                                                         )
@@ -9414,17 +9449,18 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             _da_sem_cnt   = int(_da_dest_rows_h["Semana"].nunique())
                                                             _da_h_sem_p   = round(_da_h_movidas / _da_sem_cnt, 1) if _da_sem_cnt > 0 else 0.0
                                                             _da_movs.append({
-                                                                "proyecto":      _da_gproj,
-                                                                "linea_actual":  _da_glac,
-                                                                "linea_destino": _da_m_ldst,
-                                                                "fraccion":      round(_da_frac, 4),
-                                                                "fraccion_pct":  f"{round(_da_frac * 100, 1)} %",
-                                                                "horas_movidas": _da_h_movidas,
-                                                                "sem_count":     _da_sem_cnt,
-                                                                "h_sem_prom":    _da_h_sem_p,
-                                                                "mejora_h_est":  float(_da_sr.get("Mejora h") or 0.0),
-                                                                "tipo_linea":    str(_da_sr.get("tipo_linea") or ""),
-                                                                "aviso":         _da_av,
+                                                                "proyecto":           _da_gproj,
+                                                                "linea_actual":       _da_glac,
+                                                                "linea_destino":      _da_m_ldst,
+                                                                "fraccion":           round(_da_frac, 4),
+                                                                "fraccion_pct":       f"{round(_da_frac * 100, 1)} %",
+                                                                "horas_movidas":      _da_h_movidas,
+                                                                "sem_count":          _da_sem_cnt,
+                                                                "h_sem_prom":         _da_h_sem_p,
+                                                                "mejora_h_est":       float(_da_sr.get("Mejora h") or 0.0),
+                                                                "tipo_linea":         str(_da_sr.get("tipo_linea") or ""),
+                                                                "aviso":              _da_av,
+                                                                "carga_total_origen": _da_orig_total_h,
                                                             })
                                                             if _da_av:
                                                                 _da_avisos_acc.append(
@@ -9455,7 +9491,6 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _da_sim:
                         with st.container(border=True):
                             st.markdown(f"#### {t('prog_alt_sim_title')}")
-                            st.caption("Reparto simulado igualitario entre líneas seleccionadas. La mejora real acumulada puede diferir de la suma de mejoras estimadas.")
                             _da_n_cfl = (
                                 len(_da_sim["conflict_df_sim"])
                                 if _da_sim.get("conflict_df_sim") is not None
@@ -9464,62 +9499,86 @@ if st.session_state.active_tab == "📋 Programación real":
                             _da_s1, _da_s2, _da_s3 = st.columns(3)
                             with _da_s1:
                                 st.metric(
-                                    "Déficit inicial",
-                                    f"{round(_da_sim['deficit_antes'], 1)} h",
+                                    "Déficit antes (h)",
+                                    f"{round(_da_sim['deficit_antes'], 1)}",
                                 )
                             with _da_s2:
                                 st.metric(
-                                    "Déficit simulado",
-                                    f"{round(_da_sim['deficit_despues'], 1)} h",
+                                    "Déficit después (h)",
+                                    f"{round(_da_sim['deficit_despues'], 1)}",
                                 )
                             with _da_s3:
                                 st.metric(
-                                    "Mejora real acumulada",
-                                    f"+{round(_da_sim['mejora_total_h'], 1)} h",
+                                    "Déficit eliminado (h)",
+                                    f"+{round(_da_sim['mejora_total_h'], 1)}",
                                 )
-                            st.caption(
-                                f"Alternativas aplicadas: {len(_da_sim['movimientos'])} · "
-                                f"Conflictos restantes: {_da_n_cfl}"
-                            )
-                            st.markdown(f"##### {t('prog_alt_sim_moved_header')}")
-                            _da_mov_df = pd.DataFrame([{
-                                "Proyecto":      m["proyecto"],
-                                "Movimiento":    f"{m['linea_actual']} → {m['linea_destino']}",
-                                "Modo":          (
-                                    "Carga completa"
-                                    if m.get("fraccion_pct", "100 %") == "100 %"
-                                    else "Reparto igualitario"
-                                ),
-                                "Fracción":      m.get("fraccion_pct", "100 %"),
-                                "Horas movidas": m.get("horas_movidas", ""),
-                                "h/sem prom.":   m.get("h_sem_prom", ""),
-                                "Mejora sola h": m["mejora_h_est"],
-                                "Comentario":    (
-                                    (lambda v: "" if (not v or str(v).strip().lower() in ("nan", "none", "null")) else str(v).strip())(m.get("aviso"))
-                                    or (
-                                        "Se mueve el 100 % de la carga seleccionada."
-                                        if m.get("fraccion_pct", "100 %") == "100 %"
-                                        else "Reparto igualitario de la carga seleccionada."
-                                    )
-                                ),
-                            } for m in _da_sim["movimientos"]])
-                            st.dataframe(
-                                _prog_round_display_df(_da_mov_df),
-                                use_container_width=True,
-                                hide_index=True,
-                                height=max(140, min(len(_da_mov_df), 6) * 35 + 45),
-                            )
-                            st.markdown(f"##### {t('prog_alt_sim_conflicts_header')}")
+                            st.markdown("##### Resultado de simulación")
+                            _da_cap_sim_lkp = {}
+                            _da_cap_sim_df = _da_sim.get("cap_df_sim")
+                            if _da_cap_sim_df is not None and not _da_cap_sim_df.empty:
+                                for _, _cs_row in _da_cap_sim_df.iterrows():
+                                    _da_cap_sim_lkp[str(_cs_row["Línea"])] = float(_cs_row["Capacidad h/sem"])
+                            _da_clean_v = lambda v: "" if (not v or str(v).strip().lower() in ("nan", "none", "null")) else str(v).strip()
+                            _da_res_rows = []
+                            for m in _da_sim["movimientos"]:
+                                _r_cdest  = _da_cap_sim_lkp.get(str(m["linea_destino"]))
+                                _r_hsem   = m.get("h_sem_prom")
+                                _r_margen = round(float(_r_cdest) - float(_r_hsem), 1) if (_r_cdest is not None and _r_hsem) else None
+                                _r_av     = _da_clean_v(m.get("aviso"))
+                                if _r_margen is not None and _r_margen < 0:
+                                    _r_com = f"Queda déficit en destino.{(' ' + _r_av) if _r_av else ''}"
+                                elif _r_av:
+                                    _r_com = _r_av
+                                else:
+                                    _r_com = "El destino absorbe su parte."
+                                _da_res_rows.append({
+                                    "Tipo":                   "Movimiento aplicado",
+                                    "Proyecto":               m["proyecto"],
+                                    "Movimiento":             f"{m['linea_actual']} → {m['linea_destino']}",
+                                    "Modo":                   "Carga completa" if m.get("fraccion_pct", "100 %") == "100 %" else "Reparto igualitario",
+                                    "Carga total origen (h)": m.get("carga_total_origen", ""),
+                                    "% enviado":              m.get("fraccion_pct", "100 %"),
+                                    "Semanas":                m.get("sem_count", ""),
+                                    "Horas enviadas (h)":     m.get("horas_movidas", ""),
+                                    "Horas env/sem":          m.get("h_sem_prom", ""),
+                                    "Cap. destino h/sem":     round(float(_r_cdest), 1) if _r_cdest is not None else "",
+                                    "Margen/déficit h/sem":   _r_margen if _r_margen is not None else "",
+                                    "Déficit pendiente (h)":  "",
+                                    "Comentario":             _r_com,
+                                })
                             _da_cfl_sim = _da_sim.get("conflict_df_sim")
                             if _da_cfl_sim is not None and not _da_cfl_sim.empty:
+                                _da_cfl_agg = (
+                                    _da_cfl_sim.groupby("Línea")
+                                    .agg(def_total=("Déficit h", "sum"), n_sem=("Semana", "nunique"), cap_mean=("Capacidad h", "mean"))
+                                    .reset_index()
+                                )
+                                for _, _cfr in _da_cfl_agg.iterrows():
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Déficit pendiente",
+                                        "Proyecto":               "",
+                                        "Movimiento":             str(_cfr["Línea"]),
+                                        "Modo":                   "Consolidado",
+                                        "Carga total origen (h)": "",
+                                        "% enviado":              "",
+                                        "Semanas":                int(_cfr["n_sem"]),
+                                        "Horas enviadas (h)":     "",
+                                        "Horas env/sem":          "",
+                                        "Cap. destino h/sem":     round(float(_cfr["cap_mean"]), 1),
+                                        "Margen/déficit h/sem":   "",
+                                        "Déficit pendiente (h)":  round(float(_cfr["def_total"]), 1),
+                                        "Comentario":             "Déficit pendiente no resuelto por esta simulación.",
+                                    })
+                            _da_res_df = pd.DataFrame(_da_res_rows)
+                            if not _da_res_df.empty:
                                 st.dataframe(
-                                    _prog_round_display_df(_da_cfl_sim),
+                                    _prog_round_display_df(_da_res_df),
                                     use_container_width=True,
                                     hide_index=True,
-                                    height=max(140, min(len(_da_cfl_sim), 6) * 35 + 45),
+                                    height=max(140, min(len(_da_res_df), 5) * 35 + 45),
                                 )
                             else:
-                                st.success("Sin conflictos en la simulación.")
+                                st.success("Sin conflictos y sin movimientos en la simulación.")
                             if st.button(
                                 t("prog_alt_sim_discard_btn"),
                                 key=f"prog_alt_sim_discard_btn_{plant_id}",
