@@ -9482,6 +9482,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         ),
                                                         "avisos":          _da_avisos_acc,
                                                     }
+                                                    st.session_state[f"prog_gantt_vista_{plant_id}"] = "Simulación"
                                                     st.rerun()
                         else:
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
@@ -9584,13 +9585,42 @@ if st.session_state.active_tab == "📋 Programación real":
                                 key=f"prog_alt_sim_discard_btn_{plant_id}",
                             ):
                                 st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
+                                st.session_state.pop(f"prog_gantt_vista_{plant_id}", None)
                                 st.rerun()
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
-                _gt_styled = None
-                _gt_df = None
-                _gt_load_df = _prog_result.get("load_df")
-                _gt_conflict_df = _prog_result.get("conflict_df")
+                _gt_styled   = None
+                _gt_df       = None
+                _gt_sim_mode = False
+
+                # ── selector de vista (solo si hay simulación activa) ─────────────
+                _gt_sim_data = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                if _gt_sim_data is not None:
+                    _gt_default_v = st.session_state.get(f"prog_gantt_vista_{plant_id}", "Simulación")
+                    _gt_vista = st.radio(
+                        "Vista",
+                        ["Plan real", "Simulación"],
+                        index=(0 if _gt_default_v == "Plan real" else 1),
+                        horizontal=True,
+                        key=f"prog_gantt_radio_{plant_id}",
+                    )
+                    st.session_state[f"prog_gantt_vista_{plant_id}"] = _gt_vista
+                else:
+                    _gt_vista = "Plan real"
+
+                # ── fuentes de datos según vista ──────────────────────────────────
+                _gt_sim_mode = (_gt_vista == "Simulación" and _gt_sim_data is not None)
+                if _gt_sim_mode:
+                    _gt_load_df     = _gt_sim_data.get("load_df_sim")
+                    _gt_conflict_df = _gt_sim_data.get("conflict_df_sim")
+                    _gt_cap_src     = _gt_sim_data.get("cap_df_sim")
+                    if _gt_cap_src is None or (hasattr(_gt_cap_src, "empty") and _gt_cap_src.empty):
+                        _gt_cap_src = _prog_cap_df
+                else:
+                    _gt_load_df     = _prog_result.get("load_df")
+                    _gt_conflict_df = _prog_result.get("conflict_df")
+                    _gt_cap_src     = _prog_cap_df
+
                 if _gt_load_df is not None and not _gt_load_df.empty:
                     _GT_ATN_THR = 90.0
 
@@ -9603,16 +9633,16 @@ if st.session_state.active_tab == "📋 Programación real":
                             except (ValueError, TypeError):
                                 pass
 
-                    # line_cap_map: linea_str → capacidad h/sem (de _prog_cap_df, ya en scope)
+                    # line_cap_map: linea_str → capacidad h/sem (usa cap_df_sim en modo simulación)
                     _gt_line_cap_map: dict = {}
-                    if not _prog_cap_df.empty:
-                        for _, _gcapr in _prog_cap_df.iterrows():
+                    if _gt_cap_src is not None and not _gt_cap_src.empty:
+                        for _, _gcapr in _gt_cap_src.iterrows():
                             try:
                                 _gt_line_cap_map[str(_gcapr["Línea"])] = float(_gcapr["Capacidad h/sem"])
                             except (ValueError, TypeError):
                                 pass
 
-                    # sat_map: (semana_int, linea_str) → saturación % de la línea/semana
+                    # sat_map: (semana_int, linea_str) → saturación %
                     _gt_sat_map: dict = {}
                     _gt_load_agg = (
                         _gt_load_df.copy()
@@ -9642,96 +9672,185 @@ if st.session_state.active_tab == "📋 Programación real":
                         )
 
                     if _gt_weeks_sorted:
-                        # metadatos por proyecto (primera fila de load_df para cada uno)
-                        _gt_proj_meta: dict = {}
-                        for _, _glr in _gt_load_df.iterrows():
-                            _gp = str(_glr["Proyecto"])
-                            if _gp not in _gt_proj_meta:
-                                _gt_proj_meta[_gp] = {
-                                    "Línea":           str(_glr.get("Línea", "")),
-                                    "Modelo/familia":  str(
-                                        _glr.get("Modelo / familia", _glr.get("Modelo/familia", ""))
-                                    ).strip(),
-                                    "Equipo / modelo": str(_glr.get("Equipo / modelo", "")),
-                                    "Prioridad":       _glr.get("Prioridad", 9999),
-                                }
+                        if not _gt_sim_mode:
+                            # ── Plan real: una fila por Proyecto (comportamiento original) ──
+                            _gt_proj_meta: dict = {}
+                            for _, _glr in _gt_load_df.iterrows():
+                                _gp = str(_glr["Proyecto"])
+                                if _gp not in _gt_proj_meta:
+                                    _gt_proj_meta[_gp] = {
+                                        "Línea":           str(_glr.get("Línea", "")),
+                                        "Modelo/familia":  str(
+                                            _glr.get("Modelo / familia", _glr.get("Modelo/familia", ""))
+                                        ).strip(),
+                                        "Equipo / modelo": str(_glr.get("Equipo / modelo", "")),
+                                        "Prioridad":       _glr.get("Prioridad", 9999),
+                                    }
 
-                        # estado y display por (proyecto, semana_int)
-                        # acumula entradas activas por proyecto para calcular resumen
-                        _gt_estados: dict = {}
-                        _gt_active_by_proj: dict = {}
-                        for _, _glr in _gt_load_df.iterrows():
-                            _gp = str(_glr["Proyecto"])
-                            try:
-                                _gs = int(_glr["Semana"])
-                            except (ValueError, TypeError):
-                                continue
-                            _gl = str(_glr.get("Línea", ""))
-                            _gkey = (_gs, _gl)
-                            if _gkey in _gt_deficit_map:
-                                _gstate = "DEF"
-                                _gdisp  = f"+{round(_gt_deficit_map[_gkey])}h"
-                            else:
-                                _gsat = _gt_sat_map.get(_gkey, 0.0)
-                                if _gsat >= _GT_ATN_THR:
-                                    _gstate = "ATN"
-                                    _gdisp  = f"{round(_gsat)}%"
-                                else:
-                                    _gstate = "OK"
-                                    _gdisp  = "·"
-                            _gt_estados[(_gp, _gs)] = (_gstate, _gdisp)
-                            _gt_active_by_proj.setdefault(_gp, []).append((_gs, _gl, _gstate))
-
-                        # orden por Prioridad asc, luego nombre
-                        def _gt_sort_key(_proj: str) -> tuple:
-                            try:
-                                return (float(_gt_proj_meta[_proj]["Prioridad"]), _proj)
-                            except (ValueError, TypeError):
-                                return (9999.0, _proj)
-
-                        _gt_projs_sorted = sorted(_gt_proj_meta.keys(), key=_gt_sort_key)
-
-                        # construir filas del pivot con columnas de resumen
-                        _gt_rows = []
-                        for _gp in _gt_projs_sorted:
-                            _gm         = _gt_proj_meta[_gp]
-                            _gp_entries = _gt_active_by_proj.get(_gp, [])
-                            _gp_total   = len(_gp_entries)
-                            _gp_def     = sum(1 for _, _, _st in _gp_entries if _st == "DEF")
-                            _gp_atn     = sum(1 for _, _, _st in _gp_entries if _st == "ATN")
-                            _gp_sat_max = round(
-                                max((_gt_sat_map.get((_gs2, _gl2), 0.0) for _gs2, _gl2, _ in _gp_entries), default=0.0), 1
-                            )
-                            _gp_def_h   = round(
-                                sum(_gt_deficit_map.get((_gs2, _gl2), 0.0) for _gs2, _gl2, _st in _gp_entries if _st == "DEF"), 1
-                            )
-                            if _gp_def == _gp_total and _gp_total > 0:
-                                _gp_nota = "Activo solo en semanas con conflicto"
-                            elif _gp_def > 0:
-                                _gp_nota = "Conflicto parcial"
-                            elif _gp_atn > 0:
-                                _gp_nota = "Alta saturación sin déficit"
-                            else:
-                                _gp_nota = "Sin conflicto"
-
-                            _row: dict = {"Proyecto": _gp, "Línea": _gm["Línea"]}
-                            _mf = _gm["Modelo/familia"]
-                            _row["Modelo/familia"] = _mf if _mf and _mf not in ("", "nan", "None") else "—"
-                            _eq = _gm.get("Equipo / modelo", "")
-                            if _eq and _eq not in ("", "nan", "None"):
-                                _row["Equipo / modelo"] = _eq
-                            _row["DEF sem."]       = _gp_def
-                            _row["Sat. máx %"]     = _gp_sat_max
-                            _row["Déficit tot. h"] = _gp_def_h
-                            _row["Nota"]           = _gp_nota
-                            for _gw in _gt_weeks_sorted:
+                            _gt_estados: dict = {}
+                            _gt_active_by_proj: dict = {}
+                            for _, _glr in _gt_load_df.iterrows():
+                                _gp = str(_glr["Proyecto"])
                                 try:
-                                    _gi = int(_gw)
+                                    _gs = int(_glr["Semana"])
                                 except (ValueError, TypeError):
-                                    _gi = _gw
-                                _gentry = _gt_estados.get((_gp, _gi))
-                                _row[f"S{_gw}"] = _gentry[1] if _gentry else ""
-                            _gt_rows.append(_row)
+                                    continue
+                                _gl = str(_glr.get("Línea", ""))
+                                _gkey = (_gs, _gl)
+                                if _gkey in _gt_deficit_map:
+                                    _gstate = "DEF"
+                                    _gdisp  = f"+{round(_gt_deficit_map[_gkey])}h"
+                                else:
+                                    _gsat = _gt_sat_map.get(_gkey, 0.0)
+                                    if _gsat >= _GT_ATN_THR:
+                                        _gstate = "ATN"
+                                        _gdisp  = f"{round(_gsat)}%"
+                                    else:
+                                        _gstate = "OK"
+                                        _gdisp  = "·"
+                                _gt_estados[(_gp, _gs)] = (_gstate, _gdisp)
+                                _gt_active_by_proj.setdefault(_gp, []).append((_gs, _gl, _gstate))
+
+                            def _gt_sort_key(_proj: str) -> tuple:
+                                try:
+                                    return (float(_gt_proj_meta[_proj]["Prioridad"]), _proj)
+                                except (ValueError, TypeError):
+                                    return (9999.0, _proj)
+
+                            _gt_projs_sorted = sorted(_gt_proj_meta.keys(), key=_gt_sort_key)
+
+                            _gt_rows = []
+                            for _gp in _gt_projs_sorted:
+                                _gm         = _gt_proj_meta[_gp]
+                                _gp_entries = _gt_active_by_proj.get(_gp, [])
+                                _gp_total   = len(_gp_entries)
+                                _gp_def     = sum(1 for _, _, _st in _gp_entries if _st == "DEF")
+                                _gp_atn     = sum(1 for _, _, _st in _gp_entries if _st == "ATN")
+                                _gp_sat_max = round(
+                                    max((_gt_sat_map.get((_gs2, _gl2), 0.0) for _gs2, _gl2, _ in _gp_entries), default=0.0), 1
+                                )
+                                _gp_def_h   = round(
+                                    sum(_gt_deficit_map.get((_gs2, _gl2), 0.0) for _gs2, _gl2, _st in _gp_entries if _st == "DEF"), 1
+                                )
+                                if _gp_def == _gp_total and _gp_total > 0:
+                                    _gp_nota = "Activo solo en semanas con conflicto"
+                                elif _gp_def > 0:
+                                    _gp_nota = "Conflicto parcial"
+                                elif _gp_atn > 0:
+                                    _gp_nota = "Alta saturación sin déficit"
+                                else:
+                                    _gp_nota = "Sin conflicto"
+
+                                _row: dict = {"Proyecto": _gp, "Línea": _gm["Línea"]}
+                                _mf = _gm["Modelo/familia"]
+                                _row["Modelo/familia"] = _mf if _mf and _mf not in ("", "nan", "None") else "—"
+                                _eq = _gm.get("Equipo / modelo", "")
+                                if _eq and _eq not in ("", "nan", "None"):
+                                    _row["Equipo / modelo"] = _eq
+                                _row["DEF sem."]       = _gp_def
+                                _row["Sat. máx %"]     = _gp_sat_max
+                                _row["Déficit tot. h"] = _gp_def_h
+                                _row["Nota"]           = _gp_nota
+                                for _gw in _gt_weeks_sorted:
+                                    try:
+                                        _gi = int(_gw)
+                                    except (ValueError, TypeError):
+                                        _gi = _gw
+                                    _gentry = _gt_estados.get((_gp, _gi))
+                                    _row[f"S{_gw}"] = _gentry[1] if _gentry else ""
+                                _gt_rows.append(_row)
+
+                        else:
+                            # ── Simulación: una fila por (Proyecto, Línea) — sin sobreescritura ──
+                            _gt_pl_meta: dict = {}
+                            for _, _glr in _gt_load_df.iterrows():
+                                _gp = str(_glr["Proyecto"])
+                                _gl = str(_glr.get("Línea", ""))
+                                _gplkey = (_gp, _gl)
+                                if _gplkey not in _gt_pl_meta:
+                                    _gt_pl_meta[_gplkey] = {
+                                        "Modelo/familia":  str(
+                                            _glr.get("Modelo / familia", _glr.get("Modelo/familia", ""))
+                                        ).strip(),
+                                        "Equipo / modelo": str(_glr.get("Equipo / modelo", "")),
+                                        "Prioridad":       _glr.get("Prioridad", 9999),
+                                    }
+
+                            # estados por (proyecto, linea, semana) — clave única, sin sobreescritura
+                            _gt_estados_pl: dict = {}
+                            _gt_active_pl: dict = {}
+                            for _, _glr in _gt_load_df.iterrows():
+                                _gp = str(_glr["Proyecto"])
+                                try:
+                                    _gs = int(_glr["Semana"])
+                                except (ValueError, TypeError):
+                                    continue
+                                _gl = str(_glr.get("Línea", ""))
+                                _glinekey = (_gs, _gl)
+                                if _glinekey in _gt_deficit_map:
+                                    _gstate = "DEF"
+                                    _gdisp  = f"+{round(_gt_deficit_map[_glinekey])}h"
+                                else:
+                                    _gsat = _gt_sat_map.get(_glinekey, 0.0)
+                                    if _gsat >= _GT_ATN_THR:
+                                        _gstate = "ATN"
+                                        _gdisp  = f"{round(_gsat)}%"
+                                    else:
+                                        _gstate = "OK"
+                                        _gdisp  = "·"
+                                _gt_estados_pl[(_gp, _gl, _gs)] = (_gstate, _gdisp)
+                                _gt_active_pl.setdefault((_gp, _gl), []).append((_gs, _gstate))
+
+                            def _gt_sort_key_pl(_plkey: tuple) -> tuple:
+                                _gp2, _gl2 = _plkey
+                                _meta2 = _gt_pl_meta.get(_plkey, {})
+                                try:
+                                    return (float(_meta2.get("Prioridad", 9999)), _gp2, _gl2)
+                                except (ValueError, TypeError):
+                                    return (9999.0, _gp2, _gl2)
+
+                            _gt_pl_sorted = sorted(_gt_pl_meta.keys(), key=_gt_sort_key_pl)
+
+                            _gt_rows = []
+                            for (_gp, _gl) in _gt_pl_sorted:
+                                _gm         = _gt_pl_meta[(_gp, _gl)]
+                                _gp_entries = _gt_active_pl.get((_gp, _gl), [])
+                                _gp_total   = len(_gp_entries)
+                                _gp_def     = sum(1 for _, _st in _gp_entries if _st == "DEF")
+                                _gp_atn     = sum(1 for _, _st in _gp_entries if _st == "ATN")
+                                _gp_sat_max = round(
+                                    max((_gt_sat_map.get((_gs2, _gl), 0.0) for _gs2, _ in _gp_entries), default=0.0), 1
+                                )
+                                _gp_def_h   = round(
+                                    sum(_gt_deficit_map.get((_gs2, _gl), 0.0) for _gs2, _st in _gp_entries if _st == "DEF"), 1
+                                )
+                                if _gp_def == _gp_total and _gp_total > 0:
+                                    _gp_nota = "Activo solo en semanas con conflicto"
+                                elif _gp_def > 0:
+                                    _gp_nota = "Conflicto parcial"
+                                elif _gp_atn > 0:
+                                    _gp_nota = "Alta saturación sin déficit"
+                                else:
+                                    _gp_nota = "Sin conflicto"
+
+                                _row: dict = {"Proyecto": _gp, "Línea": _gl}
+                                _mf = _gm["Modelo/familia"]
+                                _row["Modelo/familia"] = _mf if _mf and _mf not in ("", "nan", "None") else "—"
+                                _eq = _gm.get("Equipo / modelo", "")
+                                if _eq and _eq not in ("", "nan", "None"):
+                                    _row["Equipo / modelo"] = _eq
+                                _row["DEF sem."]       = _gp_def
+                                _row["Sat. máx %"]     = _gp_sat_max
+                                _row["Déficit tot. h"] = _gp_def_h
+                                _row["Nota"]           = _gp_nota
+                                for _gw in _gt_weeks_sorted:
+                                    try:
+                                        _gi = int(_gw)
+                                    except (ValueError, TypeError):
+                                        _gi = _gw
+                                    _gentry = _gt_estados_pl.get((_gp, _gl, _gi))
+                                    _row[f"S{_gw}"] = _gentry[1] if _gentry else ""
+                                _gt_rows.append(_row)
 
                         import pandas as _pd_gt
                         _gt_df = _pd_gt.DataFrame(_gt_rows)
@@ -9756,12 +9875,8 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
                 # ── Gantt: vista temporal por proyecto — ancho completo ──────────────
-                if st.session_state.get(f"_prog_alt_sim_{plant_id}"):
-                    st.info(
-                        "El Gantt muestra el **plan real**. "
-                        "La simulación activa ha redistribuido carga; el Gantt no refleja esos cambios."
-                    )
-                st.markdown(f"#### {t('prog_gantt_header')}")
+                _gt_header_label = "Gantt — Simulación" if _gt_sim_mode else "Gantt — Plan real"
+                st.markdown(f"#### {_gt_header_label}")
                 if _gt_styled is not None:
                     st.caption("🔴 Déficit de línea · 🟠 Alta saturación · 🟢 Sin conflicto")
                     _gt_col_cfg = {}
