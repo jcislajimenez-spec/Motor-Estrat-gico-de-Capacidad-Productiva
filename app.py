@@ -9166,28 +9166,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_cands = _da_alt_result.get("candidatas", [])
                                 _da_descs = _da_alt_result.get("descartadas", [])
 
-                                # ── Orientación post-conflicto ────────────────────
-                                _da_libera = [r for r in _da_cands if r.get("Resultado") == "Libera"]
-                                if _da_libera:
-                                    _da_best = max(_da_libera, key=lambda r: float(r.get("Mejora h") or 0))
-                                    st.info(
-                                        f"Hay {len(_da_cands)} alternativa(s) evaluada(s). "
-                                        f"La de mayor impacto mueve **{_da_best.get('Proyecto')}** "
-                                        f"a **{_da_best.get('Línea candidata')}** y libera "
-                                        f"{round(float(_da_best.get('Mejora h') or 0), 1)} h de déficit."
-                                    )
-                                elif _da_cands:
-                                    st.info(
-                                        f"Hay {len(_da_cands)} alternativa(s) candidata(s), pero ninguna resuelve "
-                                        "completamente el conflicto con las líneas disponibles. "
-                                        "La simulación reduciría el déficit pero no lo eliminaría."
-                                    )
-                                else:
-                                    st.warning(
-                                        "No hay alternativas candidatas con las líneas disponibles. "
-                                        "Considera ampliar semanas o revisar la asignación manual."
-                                    )
-
                                 # ── Tabla única: candidatas + descartadas ─────────
                                 _DA_NO_APLY = {
                                     "Incompatible", "Sin capacidad", "Ambigua",
@@ -9254,9 +9232,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                         if tl == "ACTIVA_RECALCULADA": return "Recalculada"
                                         if tl == "POTENCIAL_ESTIMADA": return "Potencial"
                                         return ""
+                                    def _da_clean_text(v):
+                                        if v is None: return ""
+                                        try:
+                                            if pd.isna(v): return ""
+                                        except (TypeError, ValueError):
+                                            pass
+                                        s = str(v).strip()
+                                        return "" if s.lower() in ("nan", "none", "null") else s
                                     def _da_get_comentario(r):
-                                        av = str(r.get("Aviso", "") or "")
-                                        mo = str(r.get("Motivo", "") or "")
+                                        av = _da_clean_text(r.get("Aviso"))
+                                        mo = _da_clean_text(r.get("Motivo"))
                                         if av: return av
                                         if mo: return mo
                                         e   = str(r.get("Estado", ""))
@@ -9318,7 +9304,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         disabled=[c for c in _da_edit_cols if c != "Aplicar"],
                                         hide_index=True,
                                         use_container_width=True,
-                                        height=min(400, max(110, len(_da_df_c) * 35 + 42)),
+                                        height=max(140, min(len(_da_df_c), 6) * 35 + 45),
                                         key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                     )
                                     _da_apply_multi_clicked = st.button(
@@ -9469,7 +9455,6 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _da_sim:
                         with st.container(border=True):
                             st.markdown(f"#### {t('prog_alt_sim_title')}")
-                            st.warning("SIMULACIÓN ACTIVA — no modifica el plan real ni el Excel original.")
                             st.caption("Reparto simulado igualitario entre líneas seleccionadas. La mejora real acumulada puede diferir de la suma de mejoras estimadas.")
                             _da_n_cfl = (
                                 len(_da_sim["conflict_df_sim"])
@@ -9496,8 +9481,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 f"Alternativas aplicadas: {len(_da_sim['movimientos'])} · "
                                 f"Conflictos restantes: {_da_n_cfl}"
                             )
-                            for _da_av in _da_sim.get("avisos", []):
-                                st.caption(f"⚠ {_da_av}")
                             st.markdown(f"##### {t('prog_alt_sim_moved_header')}")
                             _da_mov_df = pd.DataFrame([{
                                 "Proyecto":      m["proyecto"],
@@ -9512,7 +9495,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "h/sem prom.":   m.get("h_sem_prom", ""),
                                 "Mejora sola h": m["mejora_h_est"],
                                 "Comentario":    (
-                                    str(m.get("aviso") or "")
+                                    (lambda v: "" if (not v or str(v).strip().lower() in ("nan", "none", "null")) else str(v).strip())(m.get("aviso"))
                                     or (
                                         "Se mueve el 100 % de la carga seleccionada."
                                         if m.get("fraccion_pct", "100 %") == "100 %"
@@ -9524,6 +9507,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _prog_round_display_df(_da_mov_df),
                                 use_container_width=True,
                                 hide_index=True,
+                                height=max(140, min(len(_da_mov_df), 6) * 35 + 45),
                             )
                             st.markdown(f"##### {t('prog_alt_sim_conflicts_header')}")
                             _da_cfl_sim = _da_sim.get("conflict_df_sim")
@@ -9532,7 +9516,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _prog_round_display_df(_da_cfl_sim),
                                     use_container_width=True,
                                     hide_index=True,
-                                    height=min(200, max(110, len(_da_cfl_sim) * 32 + 42)),
+                                    height=max(140, min(len(_da_cfl_sim), 6) * 35 + 45),
                                 )
                             else:
                                 st.success("Sin conflictos en la simulación.")
