@@ -8198,6 +8198,100 @@ def _simulate_prog_move_line(
     return pd.concat([_sim, _filas_alt], ignore_index=True)
 
 
+def _simulate_prog_split_line(
+    load_df,
+    proyecto: str,
+    linea_actual: str,
+    lineas_destino: list,
+    fracciones=None,
+) -> dict:
+    """
+    Reparte el proyecto entre N líneas destino con fracción de horas por semana.
+    Devuelve {"load_df": DataFrame, "moved_ok": bool, "warning": str, "fracciones": list}.
+    Si moved_ok=False, load_df es copia intacta.
+    """
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        return {
+            "load_df": pd.DataFrame() if load_df is None else load_df.copy(),
+            "moved_ok": False,
+            "warning": "load_df vacío.",
+            "fracciones": [],
+        }
+
+    n = len(lineas_destino)
+    if n == 0:
+        return {
+            "load_df": load_df.copy(), "moved_ok": False,
+            "warning": "Sin destinos especificados.", "fracciones": [],
+        }
+
+    _sim = load_df.copy()
+    _mask = (
+        (_sim["Proyecto"].astype(str) == str(proyecto)) &
+        (_sim["Línea"].astype(str)    == str(linea_actual))
+    )
+    _filas = _sim[_mask].copy()
+
+    if _filas.empty:
+        return {
+            "load_df": _sim,
+            "moved_ok": False,
+            "warning": f"Proyecto '{proyecto}' no tiene filas en línea '{linea_actual}'.",
+            "fracciones": [1.0 / n] * n,
+        }
+
+    if n == 1:
+        _sim = _sim[~_mask].copy()
+        _filas_alt = _filas.copy()
+        _filas_alt["Línea"] = str(lineas_destino[0])
+        return {
+            "load_df": pd.concat([_sim, _filas_alt], ignore_index=True),
+            "moved_ok": True, "warning": "", "fracciones": [1.0],
+        }
+
+    # Normalizar fracciones
+    if fracciones is None or len(fracciones) != n:
+        fracciones = [1.0 / n] * n
+    _total_f = sum(fracciones)
+    if _total_f <= 0:
+        fracciones = [1.0 / n] * n
+    else:
+        fracciones = [f / _total_f for f in fracciones]
+
+    _sim = _sim[~_mask].copy()
+    _partes = []
+    for i, _dest in enumerate(lineas_destino):
+        _part = _filas.copy()
+        _part["Línea"] = str(_dest)
+        _part["Horas proyecto semana"] = (
+            _part["Horas proyecto semana"] * fracciones[i]
+        ).round(2)
+        _partes.append(_part)
+
+    # Ajuste de redondeo por semana: preservar total de Horas proyecto semana para cada Semana
+    for _sem in _filas["Semana"].unique():
+        _orig_sem = _filas.loc[_filas["Semana"] == _sem, "Horas proyecto semana"].sum()
+        _parts_sem = sum(
+            _p.loc[_p["Semana"] == _sem, "Horas proyecto semana"].sum()
+            for _p in _partes
+        )
+        _diff_sem = round(_orig_sem - _parts_sem, 4)
+        if abs(_diff_sem) > 0.001:
+            _p0_sem_idx = _partes[0].index[_partes[0]["Semana"] == _sem]
+            if len(_p0_sem_idx) > 0:
+                _first = _p0_sem_idx[0]
+                _partes[0].at[_first, "Horas proyecto semana"] = round(
+                    float(_partes[0].at[_first, "Horas proyecto semana"]) + _diff_sem, 2
+                )
+
+    return {
+        "load_df":   pd.concat([_sim] + _partes, ignore_index=True),
+        "moved_ok":  True,
+        "warning":   "",
+        "fracciones": fracciones,
+    }
+
+
 def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
     """
     Resuelve una línea alternativa raw contra las líneas de cap_df.
@@ -9197,9 +9291,21 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Desmárcalas antes de simular."
                                             )
                                         else:
-                                            _da_dup = _da_sel_full["Proyecto"].value_counts()
-                                            if (_da_dup > 1).any():
-                                                st.warning(t("prog_alt_sim_multi_proj_warn"))
+                                            # Validar duplicado exacto: mismo (Proyecto, Línea actual, Línea candidata)
+                                            _da_dup_cols = [
+                                                c for c in ["Proyecto", "Línea actual", "Línea candidata"]
+                                                if c in _da_sel_full.columns
+                                            ]
+                                            _da_has_dup = (
+                                                _da_sel_full.duplicated(subset=_da_dup_cols, keep=False).any()
+                                                if len(_da_dup_cols) == 3 else False
+                                            )
+                                            if _da_has_dup:
+                                                st.warning(
+                                                    "Hay alternativas duplicadas seleccionadas "
+                                                    "(mismo Proyecto + Línea actual + Línea destino). "
+                                                    "Desmarca los duplicados antes de simular."
+                                                )
                                             else:
                                                 _da_load_src = _prog_result.get("load_df")
                                                 if _da_load_src is not None:
@@ -9211,39 +9317,66 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     _da_def_base  = _recompute_prog_deficit_global(
                                                         _da_load_src, _da_cap_base
                                                     )["deficit_total_h"]
-                                                    _da_movs: list  = []
+                                                    _da_movs: list = []
                                                     _da_avisos_acc: list = []
+
+                                                    # Agrupar por (Proyecto, Línea actual)
+                                                    _da_grupos: dict = {}
                                                     for _, _da_sr in _da_sel_full.iterrows():
-                                                        _da_m_proj = str(_da_sr["Proyecto"])
-                                                        _da_m_lac  = str(_da_sr["Línea actual"])
-                                                        _da_m_ldst = str(_da_sr["Línea candidata"])
-                                                        _da_m_dh   = _da_sr.get("capacidad_destino_h")
-                                                        _da_load_acc = _simulate_prog_move_line(
-                                                            _da_load_acc, _da_m_proj,
-                                                            _da_m_lac, _da_m_ldst,
+                                                        _da_gk = (
+                                                            str(_da_sr["Proyecto"]),
+                                                            str(_da_sr["Línea actual"]),
                                                         )
-                                                        try:
-                                                            _da_m_dh_f = float(_da_m_dh)
-                                                            if not pd.isna(_da_m_dh_f):
-                                                                _da_cap_acc.loc[
-                                                                    _da_cap_acc["Línea"].astype(str) == _da_m_ldst,
-                                                                    "Capacidad h/sem",
-                                                                ] = _da_m_dh_f
-                                                        except (TypeError, ValueError):
-                                                            pass
-                                                        _da_av = str(_da_sr.get("Aviso") or "")
-                                                        _da_movs.append({
-                                                            "proyecto":      _da_m_proj,
-                                                            "linea_actual":  _da_m_lac,
-                                                            "linea_destino": _da_m_ldst,
-                                                            "mejora_h_est":  float(_da_sr.get("Mejora h") or 0.0),
-                                                            "tipo_linea":    str(_da_sr.get("tipo_linea") or ""),
-                                                            "aviso":         _da_av,
-                                                        })
-                                                        if _da_av:
+                                                        _da_grupos.setdefault(_da_gk, []).append(_da_sr)
+
+                                                    for (_da_gproj, _da_glac), _da_glist in _da_grupos.items():
+                                                        _da_gdests = [str(r["Línea candidata"]) for r in _da_glist]
+                                                        _da_split  = _simulate_prog_split_line(
+                                                            _da_load_acc, _da_gproj, _da_glac, _da_gdests,
+                                                        )
+                                                        if not _da_split["moved_ok"]:
                                                             _da_avisos_acc.append(
-                                                                f"{_da_m_proj}: {_da_av}"
+                                                                f"{_da_gproj}: {_da_split['warning']}"
                                                             )
+                                                            continue
+                                                        _da_load_acc = _da_split["load_df"]
+                                                        _da_fracs    = _da_split["fracciones"]
+                                                        for _da_gi, _da_sr in enumerate(_da_glist):
+                                                            _da_m_ldst = str(_da_sr["Línea candidata"])
+                                                            _da_m_dh   = _da_sr.get("capacidad_destino_h")
+                                                            _da_frac   = (
+                                                                _da_fracs[_da_gi]
+                                                                if _da_gi < len(_da_fracs)
+                                                                else 1.0 / len(_da_glist)
+                                                            )
+                                                            try:
+                                                                _da_m_dh_f = float(_da_m_dh)
+                                                                if not pd.isna(_da_m_dh_f):
+                                                                    _da_cap_acc.loc[
+                                                                        _da_cap_acc["Línea"].astype(str) == _da_m_ldst,
+                                                                        "Capacidad h/sem",
+                                                                    ] = _da_m_dh_f
+                                                            except (TypeError, ValueError):
+                                                                pass
+                                                            _da_av = str(
+                                                                _da_sr.get("Aviso") or
+                                                                _da_sr.get("Motivo") or ""
+                                                            )
+                                                            _da_movs.append({
+                                                                "proyecto":     _da_gproj,
+                                                                "linea_actual": _da_glac,
+                                                                "linea_destino": _da_m_ldst,
+                                                                "fraccion":     round(_da_frac, 4),
+                                                                "fraccion_pct": f"{round(_da_frac * 100, 1)} %",
+                                                                "mejora_h_est": float(_da_sr.get("Mejora h") or 0.0),
+                                                                "tipo_linea":   str(_da_sr.get("tipo_linea") or ""),
+                                                                "aviso":        _da_av,
+                                                            })
+                                                            if _da_av:
+                                                                _da_avisos_acc.append(
+                                                                    f"{_da_gproj}: {_da_av}"
+                                                                )
+
                                                     _da_final = _recompute_prog_deficit_global(
                                                         _da_load_acc, _da_cap_acc
                                                     )
@@ -9269,6 +9402,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         with st.container(border=True):
                             st.markdown(f"#### {t('prog_alt_sim_title')}")
                             st.info(t("prog_alt_sim_warn"))
+                            st.caption("Reparto simulado igualitario entre líneas seleccionadas. La mejora real acumulada puede diferir de la suma de mejoras estimadas.")
                             _da_s1, _da_s2, _da_s3, _da_s4, _da_s5 = st.columns(5)
                             with _da_s1:
                                 st.metric(
@@ -9304,6 +9438,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "Proyecto":      m["proyecto"],
                                 "Línea actual":  m["linea_actual"],
                                 "Línea destino": m["linea_destino"],
+                                "Fracción":      m.get("fraccion_pct", "100 %"),
                                 "Mejora est. h": m["mejora_h_est"],
                                 "Tipo":          m["tipo_linea"],
                                 "Aviso":         m["aviso"],
