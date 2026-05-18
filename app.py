@@ -9234,7 +9234,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             label="Estado", width=120,
                                         ),
                                         "Mejora h": st.column_config.NumberColumn(
-                                            label="Mejora h", format="%.1f",
+                                            label="Mejora sola h", format="%.1f",
                                         ),
                                         "tipo_linea": st.column_config.TextColumn(
                                             label="Tipo línea",
@@ -9362,15 +9362,26 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                 _da_sr.get("Aviso") or
                                                                 _da_sr.get("Motivo") or ""
                                                             )
+                                                            _da_dest_mask_h = (
+                                                                (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
+                                                                (_da_load_acc["Línea"].astype(str)    == _da_m_ldst)
+                                                            )
+                                                            _da_dest_rows_h = _da_load_acc[_da_dest_mask_h]
+                                                            _da_h_movidas = round(float(_da_dest_rows_h["Horas proyecto semana"].sum()), 1)
+                                                            _da_sem_cnt   = int(_da_dest_rows_h["Semana"].nunique())
+                                                            _da_h_sem_p   = round(_da_h_movidas / _da_sem_cnt, 1) if _da_sem_cnt > 0 else 0.0
                                                             _da_movs.append({
-                                                                "proyecto":     _da_gproj,
-                                                                "linea_actual": _da_glac,
+                                                                "proyecto":      _da_gproj,
+                                                                "linea_actual":  _da_glac,
                                                                 "linea_destino": _da_m_ldst,
-                                                                "fraccion":     round(_da_frac, 4),
-                                                                "fraccion_pct": f"{round(_da_frac * 100, 1)} %",
-                                                                "mejora_h_est": float(_da_sr.get("Mejora h") or 0.0),
-                                                                "tipo_linea":   str(_da_sr.get("tipo_linea") or ""),
-                                                                "aviso":        _da_av,
+                                                                "fraccion":      round(_da_frac, 4),
+                                                                "fraccion_pct":  f"{round(_da_frac * 100, 1)} %",
+                                                                "horas_movidas": _da_h_movidas,
+                                                                "sem_count":     _da_sem_cnt,
+                                                                "h_sem_prom":    _da_h_sem_p,
+                                                                "mejora_h_est":  float(_da_sr.get("Mejora h") or 0.0),
+                                                                "tipo_linea":    str(_da_sr.get("tipo_linea") or ""),
+                                                                "aviso":         _da_av,
                                                             })
                                                             if _da_av:
                                                                 _da_avisos_acc.append(
@@ -9439,6 +9450,8 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "Línea actual":  m["linea_actual"],
                                 "Línea destino": m["linea_destino"],
                                 "Fracción":      m.get("fraccion_pct", "100 %"),
+                                "Horas movidas": m.get("horas_movidas", ""),
+                                "h/sem prom.":   m.get("h_sem_prom", ""),
                                 "Mejora est. h": m["mejora_h_est"],
                                 "Tipo":          m["tipo_linea"],
                                 "Aviso":         m["aviso"],
