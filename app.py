@@ -8790,9 +8790,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_lineas_act = _da_proj_rows["Línea"].astype(str).unique().tolist()
                                 if len(_da_lineas_act) > 1:
                                     _da_descartadas.append({
-                                        "Proyecto": _da_proj, "Línea alternativa": "—",
-                                        "Motivo": f"Carga en múltiples líneas ({', '.join(_da_lineas_act)}). No soportado en V1.",
-                                        "Tipo": "No soportado",
+                                        "Proyecto":          _da_proj,
+                                        "Línea alternativa": "—",
+                                        "Línea actual":      _da_lineas_act[0],
+                                        "Motivo":            f"Carga en múltiples líneas ({', '.join(_da_lineas_act)}). No soportado en V1.",
+                                        "Tipo":              "No soportado",
                                     })
                                     continue
 
@@ -8801,9 +8803,11 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                 if not _da_mask_p.any():
                                     _da_descartadas.append({
-                                        "Proyecto": _da_proj, "Línea alternativa": "—",
-                                        "Motivo": "Proyecto no encontrado en datos del Excel.",
-                                        "Tipo": "No encontrado",
+                                        "Proyecto":          _da_proj,
+                                        "Línea alternativa": "—",
+                                        "Línea actual":      _da_linea_act,
+                                        "Motivo":            "Proyecto no encontrado en datos del Excel.",
+                                        "Tipo":              "No encontrado",
                                     })
                                     continue
 
@@ -8812,9 +8816,11 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                 if not _da_alt_list:
                                     _da_descartadas.append({
-                                        "Proyecto": _da_proj, "Línea alternativa": "(sin alternativas)",
-                                        "Motivo": "Sin líneas alternativas en el Excel.",
-                                        "Tipo": "Sin alternativas",
+                                        "Proyecto":          _da_proj,
+                                        "Línea alternativa": "(sin alternativas)",
+                                        "Línea actual":      _da_linea_act,
+                                        "Motivo":            "Sin líneas alternativas en el Excel.",
+                                        "Tipo":              "Sin alternativas",
                                     })
                                     continue
 
@@ -8831,6 +8837,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_descartadas.append({
                                             "Proyecto":          _da_proj,
                                             "Línea alternativa": _da_alt_raw_l,
+                                            "Línea actual":      _da_linea_act,
                                             "Línea resuelta":    None,
                                             "Modelo proyecto":   _da_modelo_p,
                                             "Motivo":            _da_res["motivo"],
@@ -8844,6 +8851,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_descartadas.append({
                                             "Proyecto":          _da_proj,
                                             "Línea alternativa": _da_alt_raw_l,
+                                            "Línea actual":      _da_linea_act,
                                             "Línea resuelta":    _da_ldest,
                                             "Modelo proyecto":   _da_modelo_p,
                                             "Motivo":            "La línea alternativa es la misma que la línea actual.",
@@ -8861,6 +8869,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             _da_descartadas.append({
                                                 "Proyecto":                   _da_proj,
                                                 "Línea alternativa":          _da_alt_raw_l,
+                                                "Línea actual":               _da_linea_act,
                                                 "Línea resuelta":             _da_ldest,
                                                 "Modelo proyecto":            _da_modelo_p,
                                                 "Modelos permitidos en línea": "(ninguno en tabla)",
@@ -8878,6 +8887,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             _da_descartadas.append({
                                                 "Proyecto":                   _da_proj,
                                                 "Línea alternativa":          _da_alt_raw_l,
+                                                "Línea actual":               _da_linea_act,
                                                 "Línea resuelta":             _da_ldest,
                                                 "Modelo proyecto":            _da_modelo_p,
                                                 "Modelos permitidos en línea": ", ".join(str(_m) for _m in _da_allowed_mdls),
@@ -8892,6 +8902,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_descartadas.append({
                                             "Proyecto":          _da_proj,
                                             "Línea alternativa": _da_alt_raw_l,
+                                            "Línea actual":      _da_linea_act,
                                             "Línea resuelta":    _da_ldest,
                                             "Modelo proyecto":   _da_modelo_p,
                                             "capacidad_destino_h": (
@@ -8942,17 +8953,26 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _da_mejora   = round(_da_def_antes - _da_def_desp, 1)
 
                                     if _da_mejora <= 0:
+                                        _da_cap_dest_eval = None
+                                        try:
+                                            if _da_cap_v2_used is not None and not pd.isna(_da_cap_v2_used):
+                                                _da_cap_dest_eval = float(_da_cap_v2_used)
+                                            elif not _da_cap_row.empty:
+                                                _da_cap_dest_eval = float(_da_cap_row["Capacidad h/sem"].iloc[0])
+                                        except (TypeError, ValueError):
+                                            _da_cap_dest_eval = None
                                         _da_descartadas.append({
                                             "Proyecto":          _da_proj,
                                             "Línea alternativa": _da_alt_raw_l,
+                                            "Línea actual":      _da_linea_act,
                                             "Línea resuelta":    _da_ldest,
                                             "Modelo proyecto":   _da_modelo_p,
                                             "tipo_linea":        _da_tipo_linea,
                                             "modelo_capacidad_usado": _da_mdl_cap_us,
                                             "capacidad_origen":  _da_cap_orig,
                                             "capacidad_destino_h": (
-                                                round(float(_da_cap_row["Capacidad h/sem"].iloc[0]), 1)
-                                                if not _da_cap_row.empty else None
+                                                round(_da_cap_dest_eval, 1)
+                                                if _da_cap_dest_eval is not None else None
                                             ),
                                             "Capacidad V2 usada": _da_cap_v2_used,
                                             "Déficit actual h":  round(_da_def_antes, 1),
@@ -9050,30 +9070,74 @@ if st.session_state.active_tab == "📋 Programación real":
                                 st.warning(_da_error)
                             else:
                                 _da_cands = _da_alt_result.get("candidatas", [])
-                                if _da_cands:
-                                    _da_df_c = pd.DataFrame(_da_cands)
-                                    _da_df_c["_sort"] = _da_df_c["Resultado"].map({"Libera": 0, "Reduce": 1}).fillna(2)
+                                _da_descs = _da_alt_result.get("descartadas", [])
+
+                                # ── Tabla única: candidatas + descartadas ─────────
+                                _DA_NO_APLY = {
+                                    "Incompatible", "Sin capacidad", "Ambigua",
+                                    "No encontrada", "Misma línea", "Sin alternativas",
+                                    "No soportado", "No encontrado",
+                                }
+                                _da_all_rows: list = []
+                                for _r in _da_cands:
+                                    _row = dict(_r)
+                                    _row["Estado"] = "Recomendable"
+                                    _da_all_rows.append(_row)
+                                for _r in _da_descs:
+                                    _row = dict(_r)
+                                    _tipo = str(_row.get("Tipo", ""))
+                                    if _tipo in ("No mejora", "Empeora"):
+                                        _row["Estado"] = "No recomendada"
+                                    elif _tipo in _DA_NO_APLY:
+                                        _row["Estado"] = "No aplicable"
+                                    else:
+                                        _row["Estado"] = "Revisar"
+                                    # Normalizar Línea candidata para descartadas
+                                    if "Línea candidata" not in _row:
+                                        _lr = _row.get("Línea resuelta")
+                                        _la = _row.get("Línea alternativa", "")
+                                        _row["Línea candidata"] = _lr if _lr else (_la or "")
+                                    if "Resultado" not in _row:
+                                        _row["Resultado"] = ""
+                                    _da_all_rows.append(_row)
+
+                                if not _da_all_rows:
+                                    st.caption(t("prog_alt_no_alts_found"))
+                                else:
+                                    _da_df_c = pd.DataFrame(_da_all_rows)
+                                    _da_est_ord = {
+                                        "Recomendable": 0, "No recomendada": 1,
+                                        "No aplicable": 2, "Revisar": 3,
+                                    }
+                                    _da_df_c["_sort_e"] = _da_df_c["Estado"].map(_da_est_ord).fillna(3)
+                                    _da_df_c["_sort_m"] = pd.to_numeric(
+                                        _da_df_c["Mejora h"] if "Mejora h" in _da_df_c.columns else 0,
+                                        errors="coerce",
+                                    ).fillna(0)
                                     _da_df_c = (
                                         _da_df_c
-                                        .sort_values(["_sort", "Mejora h", "Proyecto"],
-                                                     ascending=[True, False, True])
-                                        .drop(columns=["_sort"])
+                                        .sort_values(
+                                            ["_sort_e", "_sort_m", "Proyecto"],
+                                            ascending=[True, False, True],
+                                        )
+                                        .drop(columns=["_sort_e", "_sort_m"])
                                         .reset_index(drop=True)
                                     )
-
-                                    # ── Tabla única con checkbox de selección ────────
                                     _da_df_c["Aplicar"] = False
                                     _da_edit_cols = [c for c in [
-                                        "Aplicar",
+                                        "Aplicar", "Estado",
                                         "Proyecto", "Línea actual", "Línea candidata",
                                         "Resultado", "Mejora h",
                                         "tipo_linea", "modelo_capacidad_usado",
                                         "capacidad_origen", "capacidad_destino_h",
-                                        "Aviso",
+                                        "Capacidad V2 usada", "Motivo", "Aviso",
                                     ] if c in _da_df_c.columns]
                                     _da_edit_cfg = {
                                         "Aplicar": st.column_config.CheckboxColumn(
                                             label="Aplicar", default=False, width=70,
+                                        ),
+                                        "Estado": st.column_config.TextColumn(
+                                            label="Estado", width=120,
                                         ),
                                         "Mejora h": st.column_config.NumberColumn(
                                             label="Mejora h", format="%.1f",
@@ -9090,6 +9154,12 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "capacidad_destino_h": st.column_config.NumberColumn(
                                             label="Cap. destino h", format="%.1f",
                                         ),
+                                        "Capacidad V2 usada": st.column_config.NumberColumn(
+                                            label="Cap. V2 h", format="%.1f",
+                                        ),
+                                        "Motivo": st.column_config.TextColumn(
+                                            label="Motivo", width=200,
+                                        ),
                                     }
                                     _da_df_edited = st.data_editor(
                                         _da_df_c[_da_edit_cols],
@@ -9097,11 +9167,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         disabled=[c for c in _da_edit_cols if c != "Aplicar"],
                                         hide_index=True,
                                         use_container_width=True,
-                                        height=min(300, max(110, len(_da_df_c) * 35 + 42)),
+                                        height=min(400, max(110, len(_da_df_c) * 35 + 42)),
                                         key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                     )
-
-                                    # ── Botón plural ─────────────────────────────────
                                     _da_apply_multi_clicked = st.button(
                                         t("prog_alt_apply_multi_btn"),
                                         key=f"prog_alt_apply_multi_btn_{plant_id}",
@@ -9114,6 +9182,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_sel_full = _da_df_c.loc[_da_sel_idx]
                                         if _da_sel_full.empty:
                                             st.caption(t("prog_alt_sim_no_selection"))
+                                        elif "Estado" in _da_sel_full.columns and (
+                                            _da_sel_full["Estado"] == "No aplicable"
+                                        ).any():
+                                            st.warning(
+                                                "Hay alternativas marcadas que no son aplicables. "
+                                                "Desmarca las no aplicables antes de simular."
+                                            )
+                                        elif "Estado" in _da_sel_full.columns and (
+                                            _da_sel_full["Estado"] == "Revisar"
+                                        ).any():
+                                            st.warning(
+                                                "Hay alternativas marcadas pendientes de revisar. "
+                                                "Desmárcalas antes de simular."
+                                            )
                                         else:
                                             _da_dup = _da_sel_full["Proyecto"].value_counts()
                                             if (_da_dup > 1).any():
@@ -9178,8 +9260,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         "avisos":          _da_avisos_acc,
                                                     }
                                                     st.rerun()
-                                else:
-                                    st.caption(t("prog_alt_no_alts_found"))
                         else:
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
 
@@ -9544,8 +9624,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.session_state[f"prog_audit_section_{plant_id}"] = "capacidad"
                         if st.button("Carga calculada",        key=f"prog_audit_btn_carga_{plant_id}",  use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
-                        if st.button("Alternativas descartadas", key=f"prog_audit_btn_desc_{plant_id}", use_container_width=True):
-                            st.session_state[f"prog_audit_section_{plant_id}"] = "descartadas"
                         if st.button("Avisos",                 key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
                         if st.button("Conflictos completos",   key=f"prog_audit_btn_conf_{plant_id}",   use_container_width=True):
@@ -9595,45 +9673,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             use_container_width=True,
                             hide_index=True,
                         )
-
-                elif _aud_sel == "descartadas":
-                    st.markdown("##### Alternativas descartadas / avisos técnicos")
-                    _da_alt_result_aud = st.session_state.get(f"_prog_alt_result_{plant_id}")
-                    if _da_alt_result_aud is None:
-                        st.caption("Ejecuta 'Calcular alternativas candidatas' para ver alternativas descartadas.")
-                    else:
-                        _da_desc_aud = _da_alt_result_aud.get("descartadas", [])
-                        if _da_desc_aud:
-                            st.markdown(f"**{t('prog_alt_tech_expander').format(n=len(_da_desc_aud))}**")
-                            _da_desc_df = _prog_round_display_df(pd.DataFrame(_da_desc_aud))
-                            _da_desc_col_cfg = {}
-                            for _ddc, _ddw in [
-                                ("Motivo", 220), ("Aviso", 260), ("Detalle", 260), ("Nota", 220),
-                                ("Modelo proyecto", 120), ("Línea resuelta", 120),
-                                ("tipo_linea", 130), ("modelo_capacidad_usado", 140),
-                                ("capacidad_origen", 140), ("Modelos permitidos en línea", 180),
-                            ]:
-                                if _ddc in _da_desc_df.columns:
-                                    _da_desc_col_cfg[_ddc] = st.column_config.TextColumn(label=_ddc, width=_ddw)
-                            for _ddc_n, _ddc_fmt in [
-                                ("capacidad_destino_h", "%.1f"),
-                                ("Capacidad V2 usada", "%.1f"),
-                                ("Déficit actual h", "%.1f"),
-                                ("Déficit simulado h", "%.1f"),
-                                ("Mejora h", "%.1f"),
-                            ]:
-                                if _ddc_n in _da_desc_df.columns:
-                                    _da_desc_col_cfg[_ddc_n] = st.column_config.NumberColumn(
-                                        label=_ddc_n, format=_ddc_fmt
-                                    )
-                            st.dataframe(
-                                _da_desc_df,
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config=_da_desc_col_cfg or None,
-                            )
-                        else:
-                            st.caption("Sin alternativas descartadas.")
 
                 elif _aud_sel == "avisos":
                     st.markdown("##### Avisos de importación y programación")
