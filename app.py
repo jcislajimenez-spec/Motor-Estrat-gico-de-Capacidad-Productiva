@@ -9166,6 +9166,28 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_cands = _da_alt_result.get("candidatas", [])
                                 _da_descs = _da_alt_result.get("descartadas", [])
 
+                                # ── Orientación post-conflicto ────────────────────
+                                _da_libera = [r for r in _da_cands if r.get("Resultado") == "Libera"]
+                                if _da_libera:
+                                    _da_best = max(_da_libera, key=lambda r: float(r.get("Mejora h") or 0))
+                                    st.info(
+                                        f"Hay {len(_da_cands)} alternativa(s) evaluada(s). "
+                                        f"La de mayor impacto mueve **{_da_best.get('Proyecto')}** "
+                                        f"a **{_da_best.get('Línea candidata')}** y libera "
+                                        f"{round(float(_da_best.get('Mejora h') or 0), 1)} h de déficit."
+                                    )
+                                elif _da_cands:
+                                    st.info(
+                                        f"Hay {len(_da_cands)} alternativa(s) candidata(s), pero ninguna resuelve "
+                                        "completamente el conflicto con las líneas disponibles. "
+                                        "La simulación reduciría el déficit pero no lo eliminaría."
+                                    )
+                                else:
+                                    st.warning(
+                                        "No hay alternativas candidatas con las líneas disponibles. "
+                                        "Considera ampliar semanas o revisar la asignación manual."
+                                    )
+
                                 # ── Tabla única: candidatas + descartadas ─────────
                                 _DA_NO_APLY = {
                                     "Incompatible", "Sin capacidad", "Ambigua",
@@ -9218,41 +9240,76 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .reset_index(drop=True)
                                     )
                                     _da_df_c["Aplicar"] = False
+                                    # ── Columnas de display operativo ─────────────
+                                    def _da_get_movimiento(r):
+                                        lac = str(r.get("Línea actual", "") or "")
+                                        lcd = str(r.get("Línea candidata", "") or "")
+                                        return f"{lac} → {lcd}" if lac and lcd else (lac or lcd)
+                                    def _da_get_supuesto(r):
+                                        e = str(r.get("Estado", ""))
+                                        if e == "No aplicable": return "No aplicable"
+                                        if e == "Revisar":      return "Revisar"
+                                        tl = str(r.get("tipo_linea", "") or "")
+                                        if tl == "ACTIVA_ESCENARIO":   return "Escenario"
+                                        if tl == "ACTIVA_RECALCULADA": return "Recalculada"
+                                        if tl == "POTENCIAL_ESTIMADA": return "Potencial"
+                                        return ""
+                                    def _da_get_comentario(r):
+                                        av = str(r.get("Aviso", "") or "")
+                                        mo = str(r.get("Motivo", "") or "")
+                                        if av: return av
+                                        if mo: return mo
+                                        e   = str(r.get("Estado", ""))
+                                        res = str(r.get("Resultado", ""))
+                                        if e == "Recomendable" and res == "Libera":
+                                            return "Libera el déficit si se aplica sola."
+                                        if e == "Recomendable" and res == "Reduce":
+                                            return "Reduce el déficit, pero puede dejar conflictos."
+                                        if e == "No recomendada": return "Se puede simular, pero no mejora."
+                                        if e == "No aplicable":   return "No se puede simular."
+                                        if e == "Revisar":        return "Revisar datos antes de simular."
+                                        return ""
+                                    _da_df_c["Movimiento"]     = _da_df_c.apply(_da_get_movimiento, axis=1)
+                                    _da_df_c["Supuesto"]       = _da_df_c.apply(_da_get_supuesto, axis=1)
+                                    _da_df_c["Comentario"]     = _da_df_c.apply(_da_get_comentario, axis=1)
+                                    _da_df_c["Horas destino h"] = (
+                                        _da_df_c["capacidad_destino_h"].copy()
+                                        if "capacidad_destino_h" in _da_df_c.columns
+                                        else None
+                                    )
+                                    # ── Leyenda de Estado ─────────────────────────
+                                    st.caption(
+                                        "**Recomendable** → mejora el déficit, puedes aplicarla. "
+                                        "**No recomendada** → no mejora o empeora en simulación individual. "
+                                        "**No aplicable** → incompatible técnicamente. "
+                                        "**Revisar** → datos insuficientes para evaluar."
+                                    )
                                     _da_edit_cols = [c for c in [
-                                        "Aplicar", "Estado",
-                                        "Proyecto", "Línea actual", "Línea candidata",
-                                        "Resultado", "Mejora h",
-                                        "tipo_linea", "modelo_capacidad_usado",
-                                        "capacidad_origen", "capacidad_destino_h",
-                                        "Capacidad V2 usada", "Motivo", "Aviso",
+                                        "Aplicar", "Estado", "Proyecto",
+                                        "Movimiento", "Resultado", "Mejora h",
+                                        "Supuesto", "Horas destino h", "Comentario",
                                     ] if c in _da_df_c.columns]
                                     _da_edit_cfg = {
                                         "Aplicar": st.column_config.CheckboxColumn(
                                             label="Aplicar", default=False, width=70,
                                         ),
                                         "Estado": st.column_config.TextColumn(
-                                            label="Estado", width=120,
+                                            label="Estado", width=110,
+                                        ),
+                                        "Movimiento": st.column_config.TextColumn(
+                                            label="Movimiento", width=160,
                                         ),
                                         "Mejora h": st.column_config.NumberColumn(
                                             label="Mejora sola h", format="%.1f",
                                         ),
-                                        "tipo_linea": st.column_config.TextColumn(
-                                            label="Tipo línea",
+                                        "Supuesto": st.column_config.TextColumn(
+                                            label="Supuesto", width=110,
                                         ),
-                                        "modelo_capacidad_usado": st.column_config.TextColumn(
-                                            label="Modelo cap.",
+                                        "Horas destino h": st.column_config.NumberColumn(
+                                            label="Horas destino h", format="%.1f",
                                         ),
-                                        "capacidad_origen": st.column_config.TextColumn(
-                                            label="Origen cap.",
-                                        ),
-                                        "capacidad_destino_h": st.column_config.NumberColumn(
-                                            label="Cap. destino h", format="%.1f",
-                                        ),
-                                        "Capacidad V2 usada": st.column_config.NumberColumn(
-                                            label="Cap. V2 h", format="%.1f",
-                                        ),
-                                        "Motivo": st.column_config.TextColumn(
-                                            label="Motivo", width=200,
+                                        "Comentario": st.column_config.TextColumn(
+                                            label="Comentario", width=260,
                                         ),
                                     }
                                     _da_df_edited = st.data_editor(
@@ -9412,9 +9469,14 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _da_sim:
                         with st.container(border=True):
                             st.markdown(f"#### {t('prog_alt_sim_title')}")
-                            st.info(t("prog_alt_sim_warn"))
+                            st.warning("SIMULACIÓN ACTIVA — no modifica el plan real ni el Excel original.")
                             st.caption("Reparto simulado igualitario entre líneas seleccionadas. La mejora real acumulada puede diferir de la suma de mejoras estimadas.")
-                            _da_s1, _da_s2, _da_s3, _da_s4, _da_s5 = st.columns(5)
+                            _da_n_cfl = (
+                                len(_da_sim["conflict_df_sim"])
+                                if _da_sim.get("conflict_df_sim") is not None
+                                else 0
+                            )
+                            _da_s1, _da_s2, _da_s3 = st.columns(3)
                             with _da_s1:
                                 st.metric(
                                     "Déficit inicial",
@@ -9430,31 +9492,33 @@ if st.session_state.active_tab == "📋 Programación real":
                                     "Mejora real acumulada",
                                     f"+{round(_da_sim['mejora_total_h'], 1)} h",
                                 )
-                            with _da_s4:
-                                st.metric(
-                                    "Alternativas aplicadas",
-                                    str(len(_da_sim["movimientos"])),
-                                )
-                            with _da_s5:
-                                _da_n_cfl = (
-                                    len(_da_sim["conflict_df_sim"])
-                                    if _da_sim.get("conflict_df_sim") is not None
-                                    else 0
-                                )
-                                st.metric("Conflictos restantes", str(_da_n_cfl))
+                            st.caption(
+                                f"Alternativas aplicadas: {len(_da_sim['movimientos'])} · "
+                                f"Conflictos restantes: {_da_n_cfl}"
+                            )
                             for _da_av in _da_sim.get("avisos", []):
                                 st.caption(f"⚠ {_da_av}")
                             st.markdown(f"##### {t('prog_alt_sim_moved_header')}")
                             _da_mov_df = pd.DataFrame([{
                                 "Proyecto":      m["proyecto"],
-                                "Línea actual":  m["linea_actual"],
-                                "Línea destino": m["linea_destino"],
+                                "Movimiento":    f"{m['linea_actual']} → {m['linea_destino']}",
+                                "Modo":          (
+                                    "Carga completa"
+                                    if m.get("fraccion_pct", "100 %") == "100 %"
+                                    else "Reparto igualitario"
+                                ),
                                 "Fracción":      m.get("fraccion_pct", "100 %"),
                                 "Horas movidas": m.get("horas_movidas", ""),
                                 "h/sem prom.":   m.get("h_sem_prom", ""),
-                                "Mejora est. h": m["mejora_h_est"],
-                                "Tipo":          m["tipo_linea"],
-                                "Aviso":         m["aviso"],
+                                "Mejora sola h": m["mejora_h_est"],
+                                "Comentario":    (
+                                    str(m.get("aviso") or "")
+                                    or (
+                                        "Se mueve el 100 % de la carga seleccionada."
+                                        if m.get("fraccion_pct", "100 %") == "100 %"
+                                        else "Reparto igualitario de la carga seleccionada."
+                                    )
+                                ),
                             } for m in _da_sim["movimientos"]])
                             st.dataframe(
                                 _prog_round_display_df(_da_mov_df),
@@ -9649,6 +9713,11 @@ if st.session_state.active_tab == "📋 Programación real":
                 # ── fin 14C.2B ───────────────────────────────────────────────────────
 
                 # ── Gantt: vista temporal por proyecto — ancho completo ──────────────
+                if st.session_state.get(f"_prog_alt_sim_{plant_id}"):
+                    st.info(
+                        "El Gantt muestra el **plan real**. "
+                        "La simulación activa ha redistribuido carga; el Gantt no refleja esos cambios."
+                    )
                 st.markdown(f"#### {t('prog_gantt_header')}")
                 if _gt_styled is not None:
                     st.caption("🔴 Déficit de línea · 🟠 Alta saturación · 🟢 Sin conflicto")
