@@ -6927,7 +6927,7 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             )
 
                         # ── Export — función (sin cambio de contenido) ───────────────
-                        def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname, _tramos_meta_exp=None):
+                        def _build_sim_export_xlsx(_tabla, _kpis, _cap_base, _n_esp, _pname, _scname, _tramos_meta_exp=None, _mix_min=None, _mix_prom=None, _mix_max=None):
                             import io as _io_exp
                             _buf_exp = _io_exp.BytesIO()
                             _estado_map_exp = {
@@ -6940,6 +6940,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             _tabla_exp["Estado"] = _tabla_exp["Estado"].map(
                                 lambda v: _estado_map_exp.get(v, v)
                             )
+                            _tabla_exp["Promedio estructural según mix (h/sem)"] = _mix_prom
+                            _tabla_exp["Banda estructural mín. (h/sem)"]         = _mix_min
+                            _tabla_exp["Banda estructural máx. (h/sem)"]         = _mix_max
                             _pico_str = f"Sem {_kpis['semana_pico']}" if _kpis["semana_pico"] != "—" else "—"
                             _resumen_exp = pd.DataFrame([
                                 {"Parámetro": "Planta",                    "Valor": _pname},
@@ -7000,6 +7003,9 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                     selected_plant_name,
                                     _sim_sc_name,
                                     _sim_result.get("tramos_meta"),
+                                    _mix_min=_mix_min_h if _mix_max_h > 0 else None,
+                                    _mix_prom=_mix_prom_h if _mix_max_h > 0 else None,
+                                    _mix_max=_mix_max_h if _mix_max_h > 0 else None,
                                 ),
                                 file_name=_export_fname,
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
