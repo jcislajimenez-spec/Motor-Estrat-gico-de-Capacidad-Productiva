@@ -9529,30 +9529,39 @@ if st.session_state.active_tab == "📋 Programación real":
                                         t_ac = str(r.get("tipo_accion", ""))
                                         return "Ampliar semanas" if t_ac == "extend_duration" else "Mover línea"
                                     def _da_get_problema(r):
-                                        la = _da_linea_act_key(r)
+                                        la_raw = _da_linea_act_key(r)
+                                        la = _da_clean_text(la_raw)
+                                        if not la:
+                                            return "Déficit pendiente de revisar"
                                         d = r.get("Déficit actual h")
                                         try:
-                                            d_f = round(float(d), 1)
-                                            return f"Déficit L{la}: {d_f} h" if la else f"Déficit: {d_f} h"
+                                            d_f = float(d)
+                                            if not pd.isna(d_f):
+                                                return f"Déficit en {la}: {round(d_f, 1)} h"
                                         except (TypeError, ValueError):
                                             pass
-                                        mo = _da_clean_text(r.get("Motivo"))
-                                        return mo if mo else (f"Déficit L{la}" if la else "Déficit")
+                                        return f"Déficit en {la}"
                                     def _da_get_alt_propuesta(r):
                                         t_ac = str(r.get("tipo_accion", ""))
                                         if t_ac == "extend_duration":
-                                            da = r.get("duracion_actual")
-                                            ds = r.get("duracion_simulada")
-                                            sfa = r.get("semana_fin_actual")
-                                            sfs = r.get("semana_fin_simulada")
                                             p = []
-                                            if da is not None and ds is not None:
-                                                p.append(f"{int(da)}→{int(ds)} sem")
-                                            if sfa is not None and sfs is not None:
-                                                p.append(f"fin S{int(sfa)}→S{int(sfs)}")
+                                            try:
+                                                da = r.get("duracion_actual")
+                                                ds = r.get("duracion_simulada")
+                                                if da is not None and ds is not None:
+                                                    p.append(f"{int(float(da))}→{int(float(ds))} sem")
+                                            except (TypeError, ValueError):
+                                                pass
+                                            try:
+                                                sfa = r.get("semana_fin_actual")
+                                                sfs = r.get("semana_fin_simulada")
+                                                if sfa is not None and sfs is not None:
+                                                    p.append(f"fin S{int(float(sfa))}→S{int(float(sfs))}")
+                                            except (TypeError, ValueError):
+                                                pass
                                             return " · ".join(p) if p else ""
-                                        la = str(r.get("Línea actual", "") or "")
-                                        lc = str(r.get("Línea candidata", "") or "")
+                                        la = _da_clean_text(r.get("Línea actual", ""))
+                                        lc = _da_clean_text(r.get("Línea candidata", ""))
                                         return f"{la} → {lc}" if la and lc else (la or lc)
                                     def _da_get_aviso_unified(r):
                                         av = _da_clean_text(r.get("Aviso"))
@@ -9672,14 +9681,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Hay alternativas marcadas que no son aplicables. "
                                                 "Desmarca las no aplicables antes de simular."
                                             )
-                                        elif "Estado" in _da_sel_full.columns and (
-                                            _da_sel_full["Estado"] == "Revisar"
-                                        ).any():
-                                            st.warning(
-                                                "Hay alternativas marcadas pendientes de revisar. "
-                                                "Desmárcalas antes de simular."
-                                            )
                                         else:
+                                            _da_has_revisar = (
+                                                "Estado" in _da_sel_full.columns
+                                                and (_da_sel_full["Estado"] == "Revisar").any()
+                                            )
                                             # Validar duplicado exacto: mismo (Proyecto, Línea actual, Línea candidata)
                                             _da_dup_cols = [
                                                 c for c in ["Proyecto", "Línea actual", "Línea candidata"]
@@ -9854,6 +9860,12 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         _da_final = _recompute_prog_deficit_global(
                                                             _da_load_acc, _da_cap_acc
                                                         )
+                                                        if _da_has_revisar:
+                                                            st.warning(
+                                                                "Simulación aplicada. Algunas alternativas marcadas "
+                                                                "como 'Revisar' pueden requerir confirmación manual "
+                                                                "antes de llevarse al plan real."
+                                                            )
                                                         st.session_state[f"_prog_alt_sim_{plant_id}"] = {
                                                             "movimientos":     _da_movs,
                                                             "load_df_sim":     _da_load_acc,
