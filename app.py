@@ -8337,7 +8337,7 @@ def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
             "motivo": f"Línea ambigua: '{_candidata}' coincide con {', '.join(_sufijo_matches)}",
         }
 
-    return {"linea": None, "motivo": f"Línea '{linea_raw}' no encontrada en escenario activo"}
+    return {"linea": None, "motivo": f"Línea '{linea_raw}' no encontrada en el catálogo de líneas/capacidades"}
 
 
 # ── fin 14D helpers ──────────────────────────────────────────────────────────
@@ -8854,6 +8854,54 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_cap_df_alts = _prog_cap_df
                             # ── fin catálogo aumentado ──────────────────────────────────────────
 
+                            # ── Fase 2A: estructuras para catálogo de 3 niveles ─────────────────
+                            # Cycle times para todos los modelos (para calcular cap. de líneas no activas)
+                            _da_tc_buf = times_df.copy()
+                            _da_tc_buf["cycle_time"] = pd.to_numeric(
+                                _da_tc_buf["cycle_time"], errors="coerce"
+                            ).fillna(0.0)
+                            _da_ctm_all: dict = _da_tc_buf.groupby("model")["cycle_time"].sum().to_dict()
+
+                            # Compat completa: line_id_upper → set(model_upper)
+                            _da_compat_by_line: dict = {}
+                            for _, _cfc_r in compat_df[compat_df["compatible"] == 1].iterrows():
+                                _cl_k = str(_cfc_r["line_id"]).strip().upper()
+                                _cm_k = str(_cfc_r["model"]).strip().upper()
+                                _da_compat_by_line.setdefault(_cl_k, set()).add(_cm_k)
+
+                            # Todas las líneas físicas de planta
+                            _da_line_ids_plant: list = [str(_lid_p).strip() for _lid_p in line_ids_nave]
+                            _da_line_ids_plant_upper: set = {_lid_p.upper() for _lid_p in _da_line_ids_plant}
+
+                            # Caché de capacidades para líneas no activas
+                            _da_cap_cache_ext: dict = {}
+
+                            def _da_compute_cap_ext(_lid_c: str, _mdl_c: str) -> float:
+                                _ck = (str(_lid_c).strip().upper(), str(_mdl_c).strip().upper())
+                                if _ck in _da_cap_cache_ext:
+                                    return _da_cap_cache_ext[_ck]
+                                _ct = float(_da_ctm_all.get(str(_mdl_c).strip().upper(), 0.0) or 0.0)
+                                if _ct <= 0:
+                                    _da_cap_cache_ext[_ck] = 0.0
+                                    return 0.0
+                                try:
+                                    _, _, _cu = compute_line_detail(
+                                        _lid_c, _mdl_c, times_df, stations_df, hours_eff
+                                    )
+                                    _cap_c = float(_cu) * _ct
+                                except Exception:
+                                    _cap_c = 0.0
+                                _da_cap_cache_ext[_ck] = _cap_c
+                                return _cap_c
+
+                            # DataFrame con todas las líneas físicas (para resolver referencias explícitas del Excel)
+                            _da_plant_all_df = pd.DataFrame({"Línea": _da_line_ids_plant})
+
+                            # cap_df extendida: se irán añadiendo líneas de planta no activas según se computen
+                            _da_cap_df_alts_ext = _da_cap_df_alts.copy()
+                            _da_ext_added_lines: set = set()
+                            # ── fin Fase 2A pre-cómputo ──────────────────────────────────────────
+
                             # Mapa normalizado de allowed_by_line para lookup robusto ante
                             # diferencias de espacios o mayúsculas en los IDs de línea.
                             _da_allowed_by_line_norm: dict = {
@@ -8911,28 +8959,22 @@ if st.session_state.active_tab == "📋 Programación real":
                                     })
                                     continue
 
-                                _da_alt_raw  = str(_da_df_proy.loc[_da_mask_p, "Líneas alternativas"].iloc[0])
-                                _da_alt_list = _parse_prog_lineas_alternativas(_da_alt_raw)
-
-                                if not _da_alt_list:
-                                    _da_descartadas.append({
-                                        "Proyecto":          _da_proj,
-                                        "Línea alternativa": "(sin alternativas)",
-                                        "Línea actual":      _da_linea_act,
-                                        "Motivo":            "Sin líneas alternativas en el Excel.",
-                                        "Tipo":              "Sin alternativas",
-                                    })
-                                    continue
-
                                 _da_modelo_p = (
                                     str(_da_df_proy.loc[_da_mask_p, "Modelo / familia"].iloc[0])
                                     if "Modelo / familia" in _da_df_proy.columns else ""
                                 )
+                                _da_alt_raw  = str(_da_df_proy.loc[_da_mask_p, "Líneas alternativas"].iloc[0])
+                                _da_alt_list = _parse_prog_lineas_alternativas(_da_alt_raw)
+
+                                _da_explicitas_norm: set = set()
 
                                 for _da_alt_raw_l in _da_alt_list:
                                     _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _prog_cap_df)
                                     if _da_res.get("linea") is None:
-                                        _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts)
+                                        _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_cap_df_alts_ext)
+                                    if _da_res.get("linea") is None:
+                                        # Fase 2A – Nivel 3: resolver contra catálogo completo de planta
+                                        _da_res = _resolver_prog_linea_alternativa(_da_alt_raw_l, _da_plant_all_df)
                                     if _da_res["linea"] is None:
                                         _da_descartadas.append({
                                             "Proyecto":          _da_proj,
@@ -8946,6 +8988,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         continue
 
                                     _da_ldest = _da_res["linea"]
+                                    _da_explicitas_norm.add(str(_da_ldest).strip().upper())
 
                                     if _da_ldest == _da_linea_act:
                                         _da_descartadas.append({
@@ -8959,30 +9002,27 @@ if st.session_state.active_tab == "📋 Programación real":
                                         })
                                         continue
 
-                                    # ── Filtro de compatibilidad real ──────────────────────────
-                                    # Solo bloquea si el proyecto tiene modelo/familia informado.
-                                    # Consulta allowed_by_line con el ID canónico ya resuelto (_da_ldest).
+                                    # ── Filtro de compatibilidad (Fase 2A: activo + planta completa) ──
                                     _da_mdl_norm = _da_modelo_p.strip().upper() if _da_modelo_p not in ("", "nan", "None") else ""
                                     if _da_mdl_norm:
-                                        _da_allowed_mdls = _da_allowed_by_line_norm.get(str(_da_ldest).strip().upper(), [])
-                                        if not _da_allowed_mdls:
-                                            _da_descartadas.append({
-                                                "Proyecto":                   _da_proj,
-                                                "Línea alternativa":          _da_alt_raw_l,
-                                                "Línea actual":               _da_linea_act,
-                                                "Línea resuelta":             _da_ldest,
-                                                "Modelo proyecto":            _da_modelo_p,
-                                                "Modelos permitidos en línea": "(ninguno en tabla)",
-                                                "Motivo":                     t("prog_alt_incompat_model"),
-                                                "Tipo":                       "Incompatible",
-                                            })
-                                            continue
-                                        _da_es_compat = any(
-                                            _da_mdl_norm == str(_cm).strip().upper()
-                                            or str(_cm).strip().upper().startswith(_da_mdl_norm + "-")
-                                            or _da_mdl_norm.startswith(str(_cm).strip().upper() + "-")
-                                            for _cm in _da_allowed_mdls
-                                        )
+                                        _da_ldest_upper = str(_da_ldest).strip().upper()
+                                        _da_allowed_mdls = _da_allowed_by_line_norm.get(_da_ldest_upper, [])
+                                        if _da_allowed_mdls:
+                                            _da_es_compat = any(
+                                                _da_mdl_norm == str(_cm).strip().upper()
+                                                or str(_cm).strip().upper().startswith(_da_mdl_norm + "-")
+                                                or _da_mdl_norm.startswith(str(_cm).strip().upper() + "-")
+                                                for _cm in _da_allowed_mdls
+                                            )
+                                        else:
+                                            # Línea no en escenario activo: consultar tabla completa de compat
+                                            _da_full_mods = _da_compat_by_line.get(_da_ldest_upper, set())
+                                            _da_es_compat = any(
+                                                _da_mdl_norm == _cm
+                                                or _cm.startswith(_da_mdl_norm + "-")
+                                                or _da_mdl_norm.startswith(_cm + "-")
+                                                for _cm in _da_full_mods
+                                            )
                                         if not _da_es_compat:
                                             _da_descartadas.append({
                                                 "Proyecto":                   _da_proj,
@@ -8990,39 +9030,82 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Línea actual":               _da_linea_act,
                                                 "Línea resuelta":             _da_ldest,
                                                 "Modelo proyecto":            _da_modelo_p,
-                                                "Modelos permitidos en línea": ", ".join(str(_m) for _m in _da_allowed_mdls),
+                                                "Modelos permitidos en línea": (
+                                                    ", ".join(str(_m) for _m in _da_allowed_mdls)
+                                                    if _da_allowed_mdls else "(ninguno en tabla activa)"
+                                                ),
                                                 "Motivo":                     t("prog_alt_incompat_model"),
                                                 "Tipo":                       "Incompatible",
                                             })
                                             continue
                                     # ── fin filtro de compatibilidad ───────────────────────────
 
-                                    _da_cap_row = _da_cap_df_alts[_da_cap_df_alts["Línea"].astype(str) == _da_ldest]
+                                    _da_cap_ext_used: float | None = None
+                                    _da_cap_row = _da_cap_df_alts_ext[
+                                        _da_cap_df_alts_ext["Línea"].astype(str) == _da_ldest
+                                    ]
                                     if _da_cap_row.empty or float(_da_cap_row["Capacidad h/sem"].iloc[0]) <= 0:
-                                        _da_descartadas.append({
-                                            "Proyecto":          _da_proj,
-                                            "Línea alternativa": _da_alt_raw_l,
-                                            "Línea actual":      _da_linea_act,
-                                            "Línea resuelta":    _da_ldest,
-                                            "Modelo proyecto":   _da_modelo_p,
-                                            "capacidad_destino_h": (
-                                                round(float(_da_cap_row["Capacidad h/sem"].iloc[0]), 1)
-                                                if not _da_cap_row.empty else 0.0
-                                            ),
-                                            "Motivo":            "Capacidad = 0 o línea no disponible en escenario.",
-                                            "Tipo":              "Sin capacidad",
-                                        })
-                                        continue
+                                        # Fase 2A: línea en planta pero no en catálogo activo/V2 → calcular capacidad
+                                        if str(_da_ldest).strip().upper() in _da_line_ids_plant_upper and _da_mdl_norm:
+                                            _da_cap_ext_used = _da_compute_cap_ext(_da_ldest, _da_modelo_p)
+                                            if _da_cap_ext_used and _da_cap_ext_used > 0:
+                                                _da_ldest_up2 = str(_da_ldest).strip().upper()
+                                                if _da_ldest_up2 not in _da_ext_added_lines:
+                                                    _da_cap_df_alts_ext = pd.concat(
+                                                        [_da_cap_df_alts_ext, pd.DataFrame([{
+                                                            "Línea": _da_ldest,
+                                                            "Capacidad h/sem": _da_cap_ext_used,
+                                                            "Modelo asignado": _da_modelo_p,
+                                                        }])],
+                                                        ignore_index=True,
+                                                    )
+                                                    _da_ext_added_lines.add(_da_ldest_up2)
+                                                _da_cap_row = _da_cap_df_alts_ext[
+                                                    _da_cap_df_alts_ext["Línea"].astype(str) == _da_ldest
+                                                ]
+                                            else:
+                                                _da_cap_ext_used = None
+                                                _da_descartadas.append({
+                                                    "Proyecto":          _da_proj,
+                                                    "Línea alternativa": _da_alt_raw_l,
+                                                    "Línea actual":      _da_linea_act,
+                                                    "Línea resuelta":    _da_ldest,
+                                                    "Modelo proyecto":   _da_modelo_p,
+                                                    "capacidad_destino_h": 0.0,
+                                                    "Motivo": "Sin capacidad calculable para este modelo en línea de planta.",
+                                                    "Tipo":   "Sin capacidad",
+                                                })
+                                                continue
+                                        else:
+                                            _da_descartadas.append({
+                                                "Proyecto":          _da_proj,
+                                                "Línea alternativa": _da_alt_raw_l,
+                                                "Línea actual":      _da_linea_act,
+                                                "Línea resuelta":    _da_ldest,
+                                                "Modelo proyecto":   _da_modelo_p,
+                                                "capacidad_destino_h": (
+                                                    round(float(_da_cap_row["Capacidad h/sem"].iloc[0]), 1)
+                                                    if not _da_cap_row.empty else 0.0
+                                                ),
+                                                "Motivo": "Capacidad = 0 o línea no disponible en escenario.",
+                                                "Tipo":   "Sin capacidad",
+                                            })
+                                            continue
 
                                     # ── Capacidad contextual para ACTIVA_RECALCULADA ───────────
                                     # Si V2 calculó capacidad para el modelo del proyecto en esta
                                     # línea, usar esa capacidad solo para _da_after (déficit después).
                                     # _da_def_antes sigue siendo el déficit real actual del plan.
-                                    _da_cap_df_sim  = _da_cap_df_alts   # default: sin modificación
+                                    # Fase 2A: default usa cap_df extendida (incluye líneas de planta computadas)
+                                    _da_cap_df_sim  = _da_cap_df_alts_ext
                                     _da_tipo_linea  = ""
                                     _da_mdl_cap_us  = _da_cap_model_map.get(_da_ldest, "")
                                     _da_cap_orig    = "escenario_activo"
                                     _da_cap_v2_used: float | None = None
+                                    if _da_cap_ext_used is not None:
+                                        _da_cap_orig   = "calculada_fase2a"
+                                        _da_mdl_cap_us = _da_modelo_p if _da_modelo_p else _da_mdl_cap_us
+                                        _da_tipo_linea = "Explícita en Excel"
                                     if _da_mdl_norm and _da_v2_lineas_ss:
                                         _da_vl_v2 = _da_v2_lineas_ss.get(str(_da_ldest).strip().upper())
                                         if _da_vl_v2 is not None:
@@ -9037,7 +9120,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     for _cm in _da_mc_v2
                                                 )
                                                 if _da_enc_v2 and _da_cap_v2 > 0:
-                                                    _da_cap_df_sim = _da_cap_df_alts.copy()
+                                                    _da_cap_df_sim = _da_cap_df_alts_ext.copy()
                                                     _da_cap_df_sim.loc[
                                                         _da_cap_df_sim["Línea"].astype(str) == _da_ldest,
                                                         "Capacidad h/sem",
@@ -9131,9 +9214,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         )
 
                                     _da_cap_dest_h = (
-                                        _da_cap_v2_used
-                                        if _da_cap_v2_used is not None
-                                        else float(_da_cap_row["Capacidad h/sem"].iloc[0])
+                                        _da_cap_v2_used if _da_cap_v2_used is not None
+                                        else (_da_cap_ext_used if _da_cap_ext_used is not None
+                                              else float(_da_cap_row["Capacidad h/sem"].iloc[0]))
                                     )
                                     _da_candidatas.append({
                                         "alt_id":                 f"{len(_da_candidatas)}||{_da_proj}||{_da_linea_act}||{_da_ldest}",
@@ -9151,10 +9234,135 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "Aviso":                  " · ".join(_da_avisos),
                                     })
 
+                                # Fase 2A – Nivel 2: sugeridas compatibles LIBRES (siempre, excluye explícitas del Excel)
+                                _da_mdl_n2 = _da_modelo_p.strip().upper() if _da_modelo_p not in ("", "nan", "None") else ""
+                                if _da_mdl_n2:
+                                    _da_l2_cands: list = []
+                                    _da_lac_upper = str(_da_linea_act).strip().upper()
+                                    for _sl_id in _da_line_ids_plant:
+                                        _sl_up = str(_sl_id).strip().upper()
+                                        if _sl_up == _da_lac_upper:
+                                            continue
+                                        if _sl_up in _da_explicitas_norm:
+                                            continue  # ya evaluada como alternativa explícita del Excel
+                                        _sl_mods = _da_compat_by_line.get(_sl_up, set())
+                                        _sl_ok = any(
+                                            _da_mdl_n2 == _cm
+                                            or _cm.startswith(_da_mdl_n2 + "-")
+                                            or _da_mdl_n2.startswith(_cm + "-")
+                                            for _cm in _sl_mods
+                                        )
+                                        if not _sl_ok:
+                                            continue
+                                        _sl_in_act = _sl_up in _da_lineas_en_prog_cap
+                                        if _sl_in_act:
+                                            _sl_row_c = _prog_cap_df[
+                                                _prog_cap_df["Línea"].astype(str).str.strip().str.upper() == _sl_up
+                                            ]
+                                            _sl_cap_h = float(_sl_row_c["Capacidad h/sem"].iloc[0]) if not _sl_row_c.empty else 0.0
+                                            if _sl_cap_h <= 0:
+                                                continue
+                                        else:
+                                            _sl_cap_h = _da_compute_cap_ext(_sl_id, _da_modelo_p)
+                                            if _sl_cap_h <= 0:
+                                                continue
+                                            if _sl_up not in _da_ext_added_lines:
+                                                _da_cap_df_alts_ext = pd.concat(
+                                                    [_da_cap_df_alts_ext, pd.DataFrame([{
+                                                        "Línea": _sl_id,
+                                                        "Capacidad h/sem": _sl_cap_h,
+                                                        "Modelo asignado": _da_modelo_p,
+                                                    }])],
+                                                    ignore_index=True,
+                                                )
+                                                _da_ext_added_lines.add(_sl_up)
+                                        _sl_sim = _simulate_prog_move_line(
+                                            _da_load_base, _da_proj, _da_linea_act, str(_sl_id)
+                                        )
+                                        _sl_after = _recompute_prog_deficit_global(
+                                            _sl_sim, _da_cap_df_alts_ext
+                                        )
+                                        _sl_mej = round(_da_def_antes - _sl_after["deficit_total_h"], 1)
+                                        if _sl_mej <= 0:
+                                            continue
+                                        # Recoger conflictos nuevos
+                                        _sl_cp_d: set = set()
+                                        if not _sl_after["conflict_df"].empty:
+                                            for _, _sldr in _sl_after["conflict_df"].iterrows():
+                                                try:
+                                                    _sl_cp_d.add((int(_sldr["Semana"]), str(_sldr["Línea"])))
+                                                except (ValueError, TypeError):
+                                                    pass
+                                        _sl_nv = _sl_cp_d - _da_conflict_pairs_base
+                                        # Sugeridas con conflicto nuevo → descartadas "Compatible no libre"
+                                        if _sl_nv:
+                                            _da_descartadas.append({
+                                                "Proyecto":          _da_proj,
+                                                "Línea alternativa": f"(sugerida) {_sl_id}",
+                                                "Línea actual":      _da_linea_act,
+                                                "Línea resuelta":    str(_sl_id),
+                                                "Modelo proyecto":   _da_modelo_p,
+                                                "Motivo": "Compatible, pero genera conflicto tras simular el movimiento.",
+                                                "Tipo":   "Compatible no libre",
+                                            })
+                                            continue
+                                        _sl_sp = _sl_sim[_sl_sim["Proyecto"].astype(str) == _da_proj]
+                                        _sl_ec = any(
+                                            (int(_sr["Semana"]), str(_sr["Línea"])) in _sl_cp_d
+                                            for _, _sr in _sl_sp.iterrows()
+                                        ) if not _sl_sp.empty else False
+                                        _sl_def_dest = sum(
+                                            1 for _s2, _l2 in _sl_cp_d if str(_l2) == str(_sl_id)
+                                        )
+                                        _da_l2_cands.append({
+                                            "_mej": _sl_mej, "_dd": _sl_def_dest,
+                                            "_cap": _sl_cap_h, "_act": _sl_in_act,
+                                            "lid": str(_sl_id), "cap_h": _sl_cap_h,
+                                            "mej": _sl_mej,
+                                            "def_desp": float(_sl_after["deficit_total_h"]),
+                                            "res": "Libera" if not _sl_ec else "Reduce",
+                                        })
+                                    _da_l2_cands.sort(
+                                        key=lambda x: (-x["_mej"], x["_dd"], -x["_cap"], not x["_act"])
+                                    )
+                                    for _slc in _da_l2_cands[:3]:
+                                        _sl_tipo = "Activa en escenario" if _slc["_act"] else "Sugerida compatible"
+                                        _da_candidatas.append({
+                                            "alt_id":                 f"{len(_da_candidatas)}||{_da_proj}||{_da_linea_act}||{_slc['lid']}",
+                                            "capacidad_destino_h":    _slc["cap_h"],
+                                            "Proyecto":               _da_proj,
+                                            "Línea actual":           _da_linea_act,
+                                            "Línea candidata":        _slc["lid"],
+                                            "tipo_linea":             _sl_tipo,
+                                            "modelo_capacidad_usado": _da_modelo_p,
+                                            "capacidad_origen":       "calculada_fase2a",
+                                            "Resultado":              _slc["res"],
+                                            "Mejora h":               _slc["mej"],
+                                            "Déficit actual h":       _da_def_antes,
+                                            "Déficit simulado h":     _slc["def_desp"],
+                                            "Aviso":                  "",
+                                        })
+                                    if not _da_alt_list and not _da_l2_cands:
+                                        _da_descartadas.append({
+                                            "Proyecto":          _da_proj,
+                                            "Línea alternativa": "(sin alternativas)",
+                                            "Línea actual":      _da_linea_act,
+                                            "Motivo":            "Sin líneas alternativas en Excel ni compatibles disponibles en planta.",
+                                            "Tipo":              "Sin alternativas",
+                                        })
+                                elif not _da_alt_list:
+                                    _da_descartadas.append({
+                                        "Proyecto":          _da_proj,
+                                        "Línea alternativa": "(sin alternativas)",
+                                        "Línea actual":      _da_linea_act,
+                                        "Motivo":            "Sin líneas alternativas en el Excel.",
+                                        "Tipo":              "Sin alternativas",
+                                    })
+
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
                                 "candidatas":  _da_candidatas,
                                 "descartadas": _da_descartadas,
-                                "cap_df_alts": _da_cap_df_alts,
+                                "cap_df_alts": _da_cap_df_alts_ext,
                             }
                             st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
                                 st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
@@ -9176,7 +9384,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _DA_NO_APLY = {
                                     "Incompatible", "Sin capacidad", "Ambigua",
                                     "No encontrada", "Misma línea", "Sin alternativas",
-                                    "No soportado", "No encontrado",
+                                    "No soportado", "No encontrado", "Compatible no libre",
                                 }
                                 _da_all_rows: list = []
                                 for _r in _da_cands:
