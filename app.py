@@ -8298,53 +8298,6 @@ def _simulate_prog_split_line(
     }
 
 
-def _simulate_prog_extend_duration(
-    load_df,
-    proyecto: str,
-    linea: str,
-    sem_inicio: int,
-    new_dur: int,
-    tot_h: float,
-) -> dict:
-    """
-    Redistribuye tot_h de un proyecto en la misma línea con new_dur semanas
-    desde sem_inicio. Devuelve {"load_df": DataFrame, "ok": bool, "warning": str}.
-    """
-    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
-        return {
-            "load_df": pd.DataFrame() if load_df is None else load_df.copy(),
-            "ok": False, "warning": "load_df vacío.",
-        }
-    _base = load_df.copy()
-    _mask = (
-        (_base["Proyecto"].astype(str) == str(proyecto)) &
-        (_base["Línea"].astype(str)    == str(linea))
-    )
-    _filas = _base[_mask]
-    if _filas.empty:
-        return {"load_df": _base, "ok": False,
-                "warning": f"Proyecto '{proyecto}' sin filas en línea '{linea}'."}
-
-    _row_tmpl = _filas.iloc[0].to_dict()
-    _h_each   = [round(tot_h / new_dur, 1)] * new_dur
-    _diff_h   = round(tot_h - sum(_h_each), 1)
-    if _diff_h != 0:
-        _h_each[0] = round(_h_each[0] + _diff_h, 1)
-
-    _has_dur_col = "Duración usada" in _base.columns
-    _new_rows = []
-    for _ni in range(new_dur):
-        _nr = {**_row_tmpl, "Semana": sem_inicio + _ni, "Horas proyecto semana": _h_each[_ni]}
-        if _has_dur_col:
-            _nr["Duración usada"] = new_dur
-        _new_rows.append(_nr)
-    return {
-        "load_df": pd.concat([_base[~_mask], pd.DataFrame(_new_rows)], ignore_index=True),
-        "ok": True,
-        "warning": "",
-    }
-
-
 def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
     """
     Resuelve una línea alternativa raw contra las líneas de cap_df.
@@ -9183,247 +9136,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                         else float(_da_cap_row["Capacidad h/sem"].iloc[0])
                                     )
                                     _da_candidatas.append({
-                                        "tipo_accion":            "move_line",
                                         "alt_id":                 f"{len(_da_candidatas)}||{_da_proj}||{_da_linea_act}||{_da_ldest}",
                                         "capacidad_destino_h":    _da_cap_dest_h,
                                         "Proyecto":               _da_proj,
-                                        "linea_actual":           _da_linea_act,
-                                        "linea_destino":          _da_ldest,
                                         "Línea actual":           _da_linea_act,
                                         "Línea candidata":        _da_ldest,
                                         "tipo_linea":             _da_tipo_linea,
                                         "modelo_capacidad_usado": _da_mdl_cap_us,
                                         "capacidad_origen":       _da_cap_orig,
-                                        "efecto_deficit":         _da_resultado,
+                                        "Resultado":              _da_resultado,
                                         "Mejora h":               _da_mejora,
                                         "Déficit actual h":       _da_def_antes,
                                         "Déficit simulado h":     _da_def_desp,
                                         "Aviso":                  " · ".join(_da_avisos),
                                     })
-
-                            # ── Temporal candidates: extend_duration ──────────
-                            _dat_base_res_btn = _recompute_prog_deficit_global(
-                                _da_load_base, _da_cap_df_alts
-                            )
-                            _dat_def_lb: dict = {}
-                            for _, _dtcfl in _dat_base_res_btn["conflict_df"].iterrows():
-                                _dl = str(_dtcfl["Línea"])
-                                _dat_def_lb[_dl] = (
-                                    _dat_def_lb.get(_dl, 0.0) + float(_dtcfl["Déficit h"])
-                                )
-                            _da_cap_lkp_t: dict = {}
-                            if _da_cap_df_alts is not None and not _da_cap_df_alts.empty:
-                                for _, _ctr in _da_cap_df_alts.iterrows():
-                                    _da_cap_lkp_t[str(_ctr["Línea"])] = float(
-                                        _ctr["Capacidad h/sem"]
-                                    )
-
-                            for _da_proj_t in _da_implicados:
-                                _da_pt_rows = _da_load_base[
-                                    _da_load_base["Proyecto"].astype(str) == _da_proj_t
-                                ]
-                                if _da_pt_rows.empty:
-                                    continue
-                                _da_pt_lins = _da_pt_rows["Línea"].astype(str).unique().tolist()
-                                if len(_da_pt_lins) != 1:
-                                    continue
-                                _da_pt_lin   = _da_pt_lins[0]
-                                _da_pt_sems  = sorted(_da_pt_rows["Semana"].astype(int).unique().tolist())
-                                _da_pt_dur   = len(_da_pt_sems)
-                                _da_pt_si    = min(_da_pt_sems)
-                                _da_pt_toth  = round(float(_da_pt_rows["Horas proyecto semana"].sum()), 1)
-                                if _da_pt_dur <= 0 or _da_pt_toth <= 0:
-                                    continue
-                                _da_pt_def_l = _dat_def_lb.get(_da_pt_lin, 0.0)
-                                if _da_pt_def_l <= 0:
-                                    continue
-
-                                _da_pt_ff  = "Sin dato"
-                                _da_pt_ent: int | None = None
-                                _da_pt_mask = _da_df_proy["Proyecto"].astype(str) == _da_proj_t
-                                if _da_pt_mask.any():
-                                    if "Firme/Flexible" in _da_df_proy.columns:
-                                        _ff_vt = str(
-                                            _da_df_proy.loc[_da_pt_mask, "Firme/Flexible"].iloc[0]
-                                        )
-                                        if _ff_vt.strip().lower() not in ("nan", "none", "", "null"):
-                                            _da_pt_ff = _ff_vt.strip()
-                                    if "Semana entrega objetivo" in _da_df_proy.columns:
-                                        try:
-                                            _da_pt_ent = int(
-                                                _da_df_proy.loc[
-                                                    _da_pt_mask, "Semana entrega objetivo"
-                                                ].iloc[0]
-                                            )
-                                        except (TypeError, ValueError):
-                                            pass
-
-                                _da_pt_tmpl  = _da_pt_rows.iloc[0].to_dict()
-                                _da_pt_maxd  = 52 - _da_pt_si + 1
-                                _da_pt_best  = None
-                                _da_pt_bred  = 0.0
-                                _da_pt_bgred = 0.0
-                                _da_pt_elim  = False
-
-                                for _nd in range(_da_pt_dur + 1, _da_pt_maxd + 1):
-                                    _he = [round(_da_pt_toth / _nd, 1)] * _nd
-                                    _dh = round(_da_pt_toth - sum(_he), 1)
-                                    if _dh != 0:
-                                        _he[0] = round(_he[0] + _dh, 1)
-                                    _nr_t = [
-                                        {**_da_pt_tmpl, "Semana": _da_pt_si + _ni,
-                                         "Horas proyecto semana": _he[_ni]}
-                                        for _ni in range(_nd)
-                                    ]
-                                    _tr_df = pd.concat(
-                                        [
-                                            _da_load_base[
-                                                ~(
-                                                    (_da_load_base["Proyecto"].astype(str) == _da_proj_t) &
-                                                    (_da_load_base["Línea"].astype(str) == _da_pt_lin)
-                                                )
-                                            ],
-                                            pd.DataFrame(_nr_t),
-                                        ],
-                                        ignore_index=True,
-                                    )
-                                    _tr_res   = _recompute_prog_deficit_global(_tr_df, _da_cap_df_alts)
-                                    _afl      = sum(
-                                        float(r["Déficit h"])
-                                        for _, r in _tr_res["conflict_df"].iterrows()
-                                        if str(r["Línea"]) == _da_pt_lin
-                                    )
-                                    _afg      = _tr_res["deficit_total_h"]
-                                    _red_l    = round(_da_pt_def_l - _afl, 1)
-                                    _red_g    = round(
-                                        _dat_base_res_btn["deficit_total_h"] - _afg, 1
-                                    )
-                                    _le       = _afl <= 0
-                                    _ngh      = _red_g >= 0
-                                    if _le and _ngh:
-                                        _da_pt_best  = _nd
-                                        _da_pt_bred  = _red_l
-                                        _da_pt_bgred = _red_g
-                                        _da_pt_elim  = True
-                                        break
-                                    _ib = (
-                                        _da_pt_best is None
-                                        or _red_g > _da_pt_bgred
-                                        or (_red_g == _da_pt_bgred and _red_l > _da_pt_bred)
-                                    )
-                                    if _ib:
-                                        _da_pt_best  = _nd
-                                        _da_pt_bred  = _red_l
-                                        _da_pt_bgred = _red_g
-                                        if _le:
-                                            _da_pt_elim = True
-
-                                if _da_pt_best is None or _da_pt_bred <= 0:
-                                    continue
-
-                                _da_pt_sf_act  = _da_pt_si + _da_pt_dur - 1
-                                _da_pt_sf_sim  = _da_pt_si + _da_pt_best - 1
-                                _da_pt_hsim    = round(_da_pt_toth / _da_pt_best, 1)
-                                _da_pt_delta   = _da_pt_best - _da_pt_dur
-
-                                # Downstream conflict check
-                                _he_b = [round(_da_pt_toth / _da_pt_best, 1)] * _da_pt_best
-                                _dh_b = round(_da_pt_toth - sum(_he_b), 1)
-                                if _dh_b != 0:
-                                    _he_b[0] = round(_he_b[0] + _dh_b, 1)
-                                _nr_b = [
-                                    {**_da_pt_tmpl, "Semana": _da_pt_si + _ni,
-                                     "Horas proyecto semana": _he_b[_ni]}
-                                    for _ni in range(_da_pt_best)
-                                ]
-                                _bt_df  = pd.concat(
-                                    [
-                                        _da_load_base[
-                                            ~(
-                                                (_da_load_base["Proyecto"].astype(str) == _da_proj_t) &
-                                                (_da_load_base["Línea"].astype(str) == _da_pt_lin)
-                                            )
-                                        ],
-                                        pd.DataFrame(_nr_b),
-                                    ],
-                                    ignore_index=True,
-                                )
-                                _bt_res = _recompute_prog_deficit_global(_bt_df, _da_cap_df_alts)
-
-                                # Compare downstream deficit before vs after: semanas > semana_fin_actual
-                                _base_ds: dict = {}
-                                for _, _bdr in _dat_base_res_btn["conflict_df"].iterrows():
-                                    if (str(_bdr["Línea"]) == _da_pt_lin
-                                            and int(_bdr["Semana"]) > _da_pt_sf_act):
-                                        _base_ds[int(_bdr["Semana"])] = float(_bdr["Déficit h"])
-                                _after_ds: dict = {}
-                                for _, _adr in _bt_res["conflict_df"].iterrows():
-                                    if (str(_adr["Línea"]) == _da_pt_lin
-                                            and int(_adr["Semana"]) > _da_pt_sf_act):
-                                        _after_ds[int(_adr["Semana"])] = float(_adr["Déficit h"])
-                                _has_ds = any(
-                                    _after_ds.get(_s, 0.0) > _base_ds.get(_s, 0.0)
-                                    for _s in set(_after_ds) | set(_base_ds)
-                                )
-
-                                _da_pt_es_firme = _da_pt_ff.strip().lower() == "firme"
-                                if _da_pt_bgred < 0:
-                                    _da_pt_estado = "Revisar"
-                                elif _has_ds:
-                                    _da_pt_estado = "Revisar"
-                                elif _da_pt_es_firme:
-                                    _da_pt_estado = "Revisar"
-                                elif _da_pt_ff == "Sin dato":
-                                    _da_pt_estado = "Revisar"
-                                elif _da_pt_ent is not None and _da_pt_sf_sim > _da_pt_ent:
-                                    _da_pt_estado = "Revisar"
-                                else:
-                                    _da_pt_estado = "Recomendable"
-
-                                _da_pt_impacto = ""
-                                if _da_pt_ent is not None:
-                                    _gap_t = _da_pt_sf_sim - _da_pt_ent
-                                    if _gap_t > 0:
-                                        _da_pt_impacto = f"+{_gap_t} sem sobre entrega"
-                                    elif _gap_t == 0:
-                                        _da_pt_impacto = "Justo en entrega"
-                                    else:
-                                        _da_pt_impacto = f"{abs(_gap_t)} sem antes de entrega"
-
-                                _da_pt_avisos: list = []
-                                if _has_ds:
-                                    _da_pt_avisos.append(
-                                        "Genera o agrava conflicto posterior en la misma línea"
-                                    )
-                                if _da_pt_es_firme:
-                                    _da_pt_avisos.append("Proyecto Firme")
-                                elif _da_pt_ff == "Sin dato":
-                                    _da_pt_avisos.append("Firme/Flexible no informado")
-
-                                _da_candidatas.append({
-                                    "tipo_accion":         "extend_duration",
-                                    "alt_id":              f"ext||{_da_proj_t}||{_da_pt_lin}||{_da_pt_best}",
-                                    "Proyecto":            _da_proj_t,
-                                    "linea_actual":        _da_pt_lin,
-                                    "linea_destino":       _da_pt_lin,
-                                    "duracion_actual":     _da_pt_dur,
-                                    "duracion_simulada":   _da_pt_best,
-                                    "semana_inicio":       _da_pt_si,
-                                    "semana_fin_actual":   _da_pt_sf_act,
-                                    "semana_fin_simulada": _da_pt_sf_sim,
-                                    "horas_totales":       _da_pt_toth,
-                                    "h_sem_actual":        round(_da_pt_toth / _da_pt_dur, 1),
-                                    "h_sem_simulada":      _da_pt_hsim,
-                                    "capacidad_destino_h": _da_cap_lkp_t.get(_da_pt_lin),
-                                    "Mejora h":            _da_pt_bred,
-                                    "Déficit actual h":    _da_pt_def_l,
-                                    "efecto_deficit":      "Libera" if _da_pt_elim else "Reduce",
-                                    "Aviso":               " · ".join(_da_pt_avisos),
-                                    "Estado":              _da_pt_estado,
-                                    "Impacto":             _da_pt_impacto,
-                                    "_global_red":         max(_da_pt_bgred, 0.0),
-                                    "_eliminates":         _da_pt_elim,
-                                })
 
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
                                 "candidatas":  _da_candidatas,
@@ -9455,8 +9181,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_all_rows: list = []
                                 for _r in _da_cands:
                                     _row = dict(_r)
-                                    if "Estado" not in _row:
-                                        _row["Estado"] = "Recomendable"
+                                    _row["Estado"] = "Recomendable"
                                     _da_all_rows.append(_row)
                                 for _r in _da_descs:
                                     _row = dict(_r)
@@ -9523,125 +9248,89 @@ if st.session_state.active_tab == "📋 Programación real":
                                             pass
                                         s = str(v).strip()
                                         return "" if s.lower() in ("nan", "none", "null") else s
-                                    def _da_linea_act_key(r):
-                                        return str(r.get("linea_actual") or r.get("Línea actual", "") or "")
-                                    def _da_get_tipo_display(r):
-                                        t_ac = str(r.get("tipo_accion", ""))
-                                        return "Ampliar semanas" if t_ac == "extend_duration" else "Mover línea"
-                                    def _da_get_problema(r):
-                                        la = _da_linea_act_key(r)
-                                        d = r.get("Déficit actual h")
-                                        try:
-                                            d_f = round(float(d), 1)
-                                            return f"Déficit L{la}: {d_f} h" if la else f"Déficit: {d_f} h"
-                                        except (TypeError, ValueError):
-                                            pass
-                                        mo = _da_clean_text(r.get("Motivo"))
-                                        return mo if mo else (f"Déficit L{la}" if la else "Déficit")
-                                    def _da_get_alt_propuesta(r):
-                                        t_ac = str(r.get("tipo_accion", ""))
-                                        if t_ac == "extend_duration":
-                                            da = r.get("duracion_actual")
-                                            ds = r.get("duracion_simulada")
-                                            sfa = r.get("semana_fin_actual")
-                                            sfs = r.get("semana_fin_simulada")
-                                            p = []
-                                            if da is not None and ds is not None:
-                                                p.append(f"{int(da)}→{int(ds)} sem")
-                                            if sfa is not None and sfs is not None:
-                                                p.append(f"fin S{int(sfa)}→S{int(sfs)}")
-                                            return " · ".join(p) if p else ""
-                                        la = str(r.get("Línea actual", "") or "")
-                                        lc = str(r.get("Línea candidata", "") or "")
-                                        return f"{la} → {lc}" if la and lc else (la or lc)
-                                    def _da_get_aviso_unified(r):
+                                    def _da_get_movimiento(r):
+                                        lac = str(r.get("Línea actual", "") or "")
+                                        lcd = str(r.get("Línea candidata", "") or "")
+                                        return f"{lac} → {lcd}" if lac and lcd else (lac or lcd)
+                                    def _da_get_comentario_v2(r):
                                         av = _da_clean_text(r.get("Aviso"))
-                                        if av: return av
                                         mo = _da_clean_text(r.get("Motivo"))
+                                        if av: return av
                                         if mo: return mo
                                         e   = str(r.get("Estado", ""))
-                                        ef  = str(r.get("efecto_deficit", ""))
-                                        if e == "Recomendable" and ef == "Libera":
+                                        res = str(r.get("Resultado", ""))
+                                        if e == "Recomendable" and res == "Libera":
                                             return "El destino puede absorber la carga evaluada."
-                                        if e == "Recomendable" and ef == "Reduce":
-                                            return "Reduce, pero no elimina todo el déficit."
+                                        if e == "Recomendable" and res == "Reduce":
+                                            return "Reduce, pero no elimina todo el déficit evaluado."
                                         if e == "No recomendada": return "No reduce el déficit."
                                         if e == "No aplicable":   return "No se puede simular."
-                                        if e == "Revisar":        return "Revisar antes de simular."
+                                        if e == "Revisar":        return "Revisar datos antes de simular."
                                         return ""
+                                    _da_df_c["Movimiento"] = _da_df_c.apply(_da_get_movimiento, axis=1)
+                                    _da_df_c["Comentario"] = _da_df_c.apply(_da_get_comentario_v2, axis=1)
 
-                                    # Intermediate lookups (used for Impacto of move_line)
-                                    def _da_row_la_linea(r):
-                                        return _da_linea_act_key(r)
-                                    def _da_row_cap_dest(r):
-                                        cd = r.get("capacidad_destino_h")
-                                        try:
-                                            v = float(cd)
-                                            return None if pd.isna(v) else v
-                                        except (TypeError, ValueError):
-                                            return None
-                                    def _da_row_carga_orig(r):
-                                        la = _da_linea_act_key(r)
-                                        return _da_load_pl.get(
-                                            (str(r.get("Proyecto", "")), la), (None, None)
-                                        )[0]
-                                    def _da_get_impacto(r):
-                                        t_ac = str(r.get("tipo_accion", ""))
-                                        if t_ac == "extend_duration":
-                                            return _da_clean_text(r.get("Impacto"))
-                                        cd = _da_row_cap_dest(r)
-                                        co = _da_row_carga_orig(r)
+                                    def _da_row_carga(r):
+                                        return _da_load_pl.get((str(r.get("Proyecto", "")), str(r.get("Línea actual", ""))), (None, None))[0]
+                                    def _da_row_semanas(r):
+                                        return _da_load_pl.get((str(r.get("Proyecto", "")), str(r.get("Línea actual", ""))), (None, None))[1]
+                                    def _da_row_caporig(r):
+                                        return _da_srcap.get(str(r.get("Línea actual", "")), None)
+
+                                    _da_df_c["Carga origen prom. h/sem"] = _da_df_c.apply(_da_row_carga, axis=1)
+                                    _da_df_c["Cap. origen h/sem"]        = _da_df_c.apply(_da_row_caporig, axis=1)
+                                    _da_df_c["Semanas"]                  = _da_df_c.apply(_da_row_semanas, axis=1)
+                                    _da_df_c["Cap. destino h/sem"]       = (
+                                        _da_df_c["capacidad_destino_h"].copy()
+                                        if "capacidad_destino_h" in _da_df_c.columns else None
+                                    )
+                                    def _da_row_margen(r):
+                                        cd = r.get("Cap. destino h/sem")
+                                        co = r.get("Carga origen prom. h/sem")
                                         try:
                                             cd_f = float(cd); co_f = float(co)
                                             if not pd.isna(cd_f) and not pd.isna(co_f):
-                                                m = round(cd_f - co_f, 1)
-                                                return f"Margen {'+' if m >= 0 else ''}{m} h/sem"
+                                                return round(cd_f - co_f, 1)
                                         except (TypeError, ValueError):
                                             pass
-                                        return ""
-
-                                    _da_df_c["Tipo"]                 = _da_df_c.apply(_da_get_tipo_display, axis=1)
-                                    _da_df_c["Problema"]             = _da_df_c.apply(_da_get_problema, axis=1)
-                                    _da_df_c["Alternativa propuesta"] = _da_df_c.apply(_da_get_alt_propuesta, axis=1)
-                                    _da_df_c["Resultado"]            = _da_df_c["Estado"].fillna("")
-                                    _da_df_c["Déficit eliminado (h)"] = (
-                                        _da_df_c["Mejora h"] if "Mejora h" in _da_df_c.columns else None
-                                    )
-                                    _da_df_c["Impacto"]              = _da_df_c.apply(_da_get_impacto, axis=1)
-                                    _da_df_c["Aviso"]                = _da_df_c.apply(_da_get_aviso_unified, axis=1)
+                                        return None
+                                    _da_df_c["Margen si 100% h/sem"]       = _da_df_c.apply(_da_row_margen, axis=1)
+                                    _da_df_c["Déficit que eliminaría (h)"] = _da_df_c["Mejora h"] if "Mejora h" in _da_df_c.columns else None
 
                                     _da_edit_cols = [c for c in [
-                                        "Aplicar", "Tipo", "Proyecto",
-                                        "Problema", "Alternativa propuesta", "Resultado",
-                                        "Déficit eliminado (h)", "Impacto", "Aviso",
+                                        "Aplicar", "Estado", "Proyecto",
+                                        "Movimiento", "Resultado",
+                                        "Carga origen prom. h/sem", "Cap. origen h/sem",
+                                        "Cap. destino h/sem", "Margen si 100% h/sem",
+                                        "Semanas", "Déficit que eliminaría (h)", "Comentario",
                                     ] if c in _da_df_c.columns]
                                     _da_edit_cfg = {
                                         "Aplicar": st.column_config.CheckboxColumn(
                                             label="Aplicar", default=False, width=70,
                                         ),
-                                        "Tipo": st.column_config.TextColumn(
-                                            label="Tipo", width=120,
+                                        "Estado": st.column_config.TextColumn(
+                                            label="Estado", width=110,
                                         ),
-                                        "Proyecto": st.column_config.TextColumn(
-                                            label="Proyecto",
+                                        "Movimiento": st.column_config.TextColumn(
+                                            label="Movimiento", width=160,
                                         ),
-                                        "Problema": st.column_config.TextColumn(
-                                            label="Problema", width=180,
+                                        "Carga origen prom. h/sem": st.column_config.NumberColumn(
+                                            label="Carga origen prom. h/sem", format="%.1f",
                                         ),
-                                        "Alternativa propuesta": st.column_config.TextColumn(
-                                            label="Alternativa propuesta", width=200,
+                                        "Cap. origen h/sem": st.column_config.NumberColumn(
+                                            label="Cap. origen h/sem", format="%.1f",
                                         ),
-                                        "Resultado": st.column_config.TextColumn(
-                                            label="Resultado", width=80,
+                                        "Cap. destino h/sem": st.column_config.NumberColumn(
+                                            label="Cap. destino h/sem", format="%.1f",
                                         ),
-                                        "Déficit eliminado (h)": st.column_config.NumberColumn(
-                                            label="Déficit eliminado (h)", format="%.1f",
+                                        "Margen si 100% h/sem": st.column_config.NumberColumn(
+                                            label="Margen si 100% h/sem", format="%.1f",
                                         ),
-                                        "Impacto": st.column_config.TextColumn(
-                                            label="Impacto", width=180,
+                                        "Déficit que eliminaría (h)": st.column_config.NumberColumn(
+                                            label="Déficit que eliminaría (h)", format="%.1f",
                                         ),
-                                        "Aviso": st.column_config.TextColumn(
-                                            label="Aviso", width=260,
+                                        "Comentario": st.column_config.TextColumn(
+                                            label="Comentario", width=260,
                                         ),
                                     }
                                     _da_df_edited = st.data_editor(
@@ -9696,180 +9385,428 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     "Desmarca los duplicados antes de simular."
                                                 )
                                             else:
-                                                # Incompatibility: same project cannot mix move_line + extend_duration
-                                                _da_incompat_p: list = []
-                                                if "tipo_accion" in _da_sel_full.columns:
-                                                    for _ip in _da_sel_full["Proyecto"].unique():
-                                                        _ip_tipos = _da_sel_full.loc[
-                                                            _da_sel_full["Proyecto"] == _ip, "tipo_accion"
-                                                        ].astype(str).unique()
-                                                        if "move_line" in _ip_tipos and "extend_duration" in _ip_tipos:
-                                                            _da_incompat_p.append(str(_ip))
-                                                if _da_incompat_p:
-                                                    st.warning(
-                                                        "Un mismo proyecto no puede tener 'Mover línea' y "
-                                                        "'Ampliar semanas' seleccionados a la vez. "
-                                                        f"Proyectos afectados: {', '.join(_da_incompat_p)}."
+                                                _da_load_src = _prog_result.get("load_df")
+                                                if _da_load_src is not None:
+                                                    _da_cap_base = _da_alt_result.get(
+                                                        "cap_df_alts", _prog_cap_df
                                                     )
-                                                else:
-                                                    _da_load_src = _prog_result.get("load_df")
-                                                    if _da_load_src is not None:
-                                                        _da_cap_base = _da_alt_result.get(
-                                                            "cap_df_alts", _prog_cap_df
+                                                    _da_load_acc  = _da_load_src.copy()
+                                                    _da_cap_acc   = _da_cap_base.copy()
+                                                    _da_def_base  = _recompute_prog_deficit_global(
+                                                        _da_load_src, _da_cap_base
+                                                    )["deficit_total_h"]
+                                                    _da_movs: list = []
+                                                    _da_avisos_acc: list = []
+
+                                                    # Agrupar por (Proyecto, Línea actual)
+                                                    _da_grupos: dict = {}
+                                                    for _, _da_sr in _da_sel_full.iterrows():
+                                                        _da_gk = (
+                                                            str(_da_sr["Proyecto"]),
+                                                            str(_da_sr["Línea actual"]),
                                                         )
-                                                        _da_load_acc  = _da_load_src.copy()
-                                                        _da_cap_acc   = _da_cap_base.copy()
-                                                        _da_def_base  = _recompute_prog_deficit_global(
-                                                            _da_load_src, _da_cap_base
-                                                        )["deficit_total_h"]
-                                                        _da_movs: list = []
-                                                        _da_avisos_acc: list = []
+                                                        _da_grupos.setdefault(_da_gk, []).append(_da_sr)
 
-                                                        # Split by tipo_accion
-                                                        _da_ml_rows: list = []
-                                                        _da_ed_rows: list = []
-                                                        for _, _da_sr in _da_sel_full.iterrows():
-                                                            if str(_da_sr.get("tipo_accion", "")) == "extend_duration":
-                                                                _da_ed_rows.append(_da_sr)
-                                                            else:
-                                                                _da_ml_rows.append(_da_sr)
-
-                                                        # ── move_line: group and split ────────────
-                                                        _da_grupos: dict = {}
-                                                        for _da_sr in _da_ml_rows:
-                                                            _da_gk = (
-                                                                str(_da_sr["Proyecto"]),
-                                                                str(_da_sr["Línea actual"]),
+                                                    for (_da_gproj, _da_glac), _da_glist in _da_grupos.items():
+                                                        _da_gdests = [str(r["Línea candidata"]) for r in _da_glist]
+                                                        _da_orig_total_h = round(float(
+                                                            _da_load_acc[
+                                                                (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
+                                                                (_da_load_acc["Línea"].astype(str)    == _da_glac)
+                                                            ]["Horas proyecto semana"].sum()
+                                                        ), 1)
+                                                        _da_split  = _simulate_prog_split_line(
+                                                            _da_load_acc, _da_gproj, _da_glac, _da_gdests,
+                                                        )
+                                                        if not _da_split["moved_ok"]:
+                                                            _da_avisos_acc.append(
+                                                                f"{_da_gproj}: {_da_split['warning']}"
                                                             )
-                                                            _da_grupos.setdefault(_da_gk, []).append(_da_sr)
-
-                                                        for (_da_gproj, _da_glac), _da_glist in _da_grupos.items():
-                                                            _da_gdests = [str(r["Línea candidata"]) for r in _da_glist]
-                                                            _da_orig_total_h = round(float(
-                                                                _da_load_acc[
-                                                                    (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
-                                                                    (_da_load_acc["Línea"].astype(str)    == _da_glac)
-                                                                ]["Horas proyecto semana"].sum()
-                                                            ), 1)
-                                                            _da_split  = _simulate_prog_split_line(
-                                                                _da_load_acc, _da_gproj, _da_glac, _da_gdests,
+                                                            continue
+                                                        _da_load_acc = _da_split["load_df"]
+                                                        _da_fracs    = _da_split["fracciones"]
+                                                        for _da_gi, _da_sr in enumerate(_da_glist):
+                                                            _da_m_ldst = str(_da_sr["Línea candidata"])
+                                                            _da_m_dh   = _da_sr.get("capacidad_destino_h")
+                                                            _da_frac   = (
+                                                                _da_fracs[_da_gi]
+                                                                if _da_gi < len(_da_fracs)
+                                                                else 1.0 / len(_da_glist)
                                                             )
-                                                            if not _da_split["moved_ok"]:
-                                                                _da_avisos_acc.append(
-                                                                    f"{_da_gproj}: {_da_split['warning']}"
-                                                                )
-                                                                continue
-                                                            _da_load_acc = _da_split["load_df"]
-                                                            _da_fracs    = _da_split["fracciones"]
-                                                            for _da_gi, _da_sr in enumerate(_da_glist):
-                                                                _da_m_ldst = str(_da_sr["Línea candidata"])
-                                                                _da_m_dh   = _da_sr.get("capacidad_destino_h")
-                                                                _da_frac   = (
-                                                                    _da_fracs[_da_gi]
-                                                                    if _da_gi < len(_da_fracs)
-                                                                    else 1.0 / len(_da_glist)
-                                                                )
-                                                                try:
-                                                                    _da_m_dh_f = float(_da_m_dh)
-                                                                    if not pd.isna(_da_m_dh_f):
-                                                                        _da_cap_acc.loc[
-                                                                            _da_cap_acc["Línea"].astype(str) == _da_m_ldst,
-                                                                            "Capacidad h/sem",
-                                                                        ] = _da_m_dh_f
-                                                                except (TypeError, ValueError):
-                                                                    pass
-                                                                _da_av = str(
-                                                                    _da_sr.get("Aviso") or
-                                                                    _da_sr.get("Motivo") or ""
-                                                                )
-                                                                _da_dest_mask_h = (
-                                                                    (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
-                                                                    (_da_load_acc["Línea"].astype(str)    == _da_m_ldst)
-                                                                )
-                                                                _da_dest_rows_h = _da_load_acc[_da_dest_mask_h]
-                                                                _da_h_movidas = round(float(_da_dest_rows_h["Horas proyecto semana"].sum()), 1)
-                                                                _da_sem_cnt   = int(_da_dest_rows_h["Semana"].nunique())
-                                                                _da_h_sem_p   = round(_da_h_movidas / _da_sem_cnt, 1) if _da_sem_cnt > 0 else 0.0
-                                                                _da_movs.append({
-                                                                    "tipo":               "mover_linea",
-                                                                    "proyecto":           _da_gproj,
-                                                                    "linea_actual":       _da_glac,
-                                                                    "linea_destino":      _da_m_ldst,
-                                                                    "fraccion":           round(_da_frac, 4),
-                                                                    "fraccion_pct":       f"{round(_da_frac * 100, 1)} %",
-                                                                    "horas_movidas":      _da_h_movidas,
-                                                                    "sem_count":          _da_sem_cnt,
-                                                                    "h_sem_prom":         _da_h_sem_p,
-                                                                    "mejora_h_est":       float(_da_sr.get("Mejora h") or 0.0),
-                                                                    "tipo_linea":         str(_da_sr.get("tipo_linea") or ""),
-                                                                    "aviso":              _da_av,
-                                                                    "carga_total_origen": _da_orig_total_h,
-                                                                })
-                                                                if _da_av:
-                                                                    _da_avisos_acc.append(
-                                                                        f"{_da_gproj}: {_da_av}"
-                                                                    )
-
-                                                        # ── extend_duration ───────────────────────
-                                                        for _da_sr_ed in _da_ed_rows:
-                                                            _da_ed_proj = str(_da_sr_ed.get("Proyecto", ""))
-                                                            _da_ed_lin  = str(_da_sr_ed.get("linea_actual", ""))
-                                                            _da_ed_si   = int(_da_sr_ed.get("semana_inicio") or 0)
-                                                            _da_ed_nd   = int(_da_sr_ed.get("duracion_simulada") or 0)
-                                                            _da_ed_toth = float(_da_sr_ed.get("horas_totales") or 0.0)
-                                                            _da_ed_dact = int(_da_sr_ed.get("duracion_actual") or 0)
-                                                            _da_ed_av   = str(_da_sr_ed.get("Aviso", "") or "")
-                                                            if _da_ed_nd <= 0 or _da_ed_toth <= 0:
-                                                                _da_avisos_acc.append(
-                                                                    f"{_da_ed_proj}: datos insuficientes para ampliar semanas."
-                                                                )
-                                                                continue
-                                                            _da_ed_res = _simulate_prog_extend_duration(
-                                                                _da_load_acc, _da_ed_proj, _da_ed_lin,
-                                                                _da_ed_si, _da_ed_nd, _da_ed_toth,
+                                                            try:
+                                                                _da_m_dh_f = float(_da_m_dh)
+                                                                if not pd.isna(_da_m_dh_f):
+                                                                    _da_cap_acc.loc[
+                                                                        _da_cap_acc["Línea"].astype(str) == _da_m_ldst,
+                                                                        "Capacidad h/sem",
+                                                                    ] = _da_m_dh_f
+                                                            except (TypeError, ValueError):
+                                                                pass
+                                                            _da_av = str(
+                                                                _da_sr.get("Aviso") or
+                                                                _da_sr.get("Motivo") or ""
                                                             )
-                                                            if not _da_ed_res["ok"]:
-                                                                _da_avisos_acc.append(
-                                                                    f"{_da_ed_proj}: {_da_ed_res['warning']}"
-                                                                )
-                                                                continue
-                                                            _da_load_acc = _da_ed_res["load_df"]
+                                                            _da_dest_mask_h = (
+                                                                (_da_load_acc["Proyecto"].astype(str) == _da_gproj) &
+                                                                (_da_load_acc["Línea"].astype(str)    == _da_m_ldst)
+                                                            )
+                                                            _da_dest_rows_h = _da_load_acc[_da_dest_mask_h]
+                                                            _da_h_movidas = round(float(_da_dest_rows_h["Horas proyecto semana"].sum()), 1)
+                                                            _da_sem_cnt   = int(_da_dest_rows_h["Semana"].nunique())
+                                                            _da_h_sem_p   = round(_da_h_movidas / _da_sem_cnt, 1) if _da_sem_cnt > 0 else 0.0
                                                             _da_movs.append({
-                                                                "tipo":          "ampliar_semanas",
-                                                                "proyecto":      _da_ed_proj,
-                                                                "linea_actual":  _da_ed_lin,
-                                                                "linea_destino": _da_ed_lin,
-                                                                "sem_inicio":    _da_ed_si,
-                                                                "dur_antes":     _da_ed_dact,
-                                                                "dur_despues":   _da_ed_nd,
-                                                                "horas_totales": _da_ed_toth,
-                                                                "mejora_h_est":  float(_da_sr_ed.get("Mejora h") or 0.0),
-                                                                "aviso":         _da_ed_av,
+                                                                "proyecto":           _da_gproj,
+                                                                "linea_actual":       _da_glac,
+                                                                "linea_destino":      _da_m_ldst,
+                                                                "fraccion":           round(_da_frac, 4),
+                                                                "fraccion_pct":       f"{round(_da_frac * 100, 1)} %",
+                                                                "horas_movidas":      _da_h_movidas,
+                                                                "sem_count":          _da_sem_cnt,
+                                                                "h_sem_prom":         _da_h_sem_p,
+                                                                "mejora_h_est":       float(_da_sr.get("Mejora h") or 0.0),
+                                                                "tipo_linea":         str(_da_sr.get("tipo_linea") or ""),
+                                                                "aviso":              _da_av,
+                                                                "carga_total_origen": _da_orig_total_h,
                                                             })
-                                                            if _da_ed_av:
+                                                            if _da_av:
                                                                 _da_avisos_acc.append(
-                                                                    f"{_da_ed_proj}: {_da_ed_av}"
+                                                                    f"{_da_gproj}: {_da_av}"
                                                                 )
 
-                                                        _da_final = _recompute_prog_deficit_global(
-                                                            _da_load_acc, _da_cap_acc
-                                                        )
-                                                        st.session_state[f"_prog_alt_sim_{plant_id}"] = {
-                                                            "movimientos":     _da_movs,
-                                                            "load_df_sim":     _da_load_acc,
-                                                            "cap_df_sim":      _da_cap_acc,
-                                                            "conflict_df_sim": _da_final["conflict_df"],
-                                                            "deficit_antes":   _da_def_base,
-                                                            "deficit_despues": _da_final["deficit_total_h"],
-                                                            "mejora_total_h":  round(
-                                                                _da_def_base - _da_final["deficit_total_h"], 1
-                                                            ),
-                                                            "avisos":          _da_avisos_acc,
-                                                        }
-                                                        st.session_state[f"prog_gantt_vista_{plant_id}"] = "Simulación"
-                                                        st.rerun()
+                                                    _da_final = _recompute_prog_deficit_global(
+                                                        _da_load_acc, _da_cap_acc
+                                                    )
+                                                    st.session_state[f"_prog_alt_sim_{plant_id}"] = {
+                                                        "movimientos":     _da_movs,
+                                                        "load_df_sim":     _da_load_acc,
+                                                        "cap_df_sim":      _da_cap_acc,
+                                                        "conflict_df_sim": _da_final["conflict_df"],
+                                                        "deficit_antes":   _da_def_base,
+                                                        "deficit_despues": _da_final["deficit_total_h"],
+                                                        "mejora_total_h":  round(
+                                                            _da_def_base - _da_final["deficit_total_h"], 1
+                                                        ),
+                                                        "avisos":          _da_avisos_acc,
+                                                    }
+                                                    st.session_state[f"prog_gantt_vista_{plant_id}"] = "Simulación"
+                                                    st.rerun()
                         else:
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
+
+                    # ── 3H.4B.1 Alternativas de ajuste temporal (solo lectura) ────────
+                    _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
+                    _dat_load_src   = _prog_result.get("load_df") if _prog_result else None
+                    _dat_cfl_src    = _prog_result.get("conflict_df") if _prog_result else None
+                    if (
+                        _dat_load_src is not None
+                        and not _dat_load_src.empty
+                        and _dat_cfl_src is not None
+                        and not _dat_cfl_src.empty
+                    ):
+                        with st.container(border=True):
+                            st.markdown("#### Alternativas de ajuste temporal")
+                            _dat_df_proy = (
+                                _dat_parsed_src.get("proyectos")
+                                if _dat_parsed_src else None
+                            )
+                            _dat_implicados = _get_prog_projects_in_conflict(
+                                _dat_load_src, _dat_cfl_src
+                            )
+                            # Base deficit per line (recomputed for consistency with trials)
+                            _dat_base_res    = _recompute_prog_deficit_global(_dat_load_src, _prog_cap_df)
+                            _dat_def_linea_b: dict = {}
+                            for _, _dlcfl in _dat_base_res["conflict_df"].iterrows():
+                                _dl = str(_dlcfl["Línea"])
+                                _dat_def_linea_b[_dl] = (
+                                    _dat_def_linea_b.get(_dl, 0.0) + float(_dlcfl["Déficit h"])
+                                )
+
+                            _dat_rows: list = []
+                            for _dtp in _dat_implicados:
+                                _dtp_rows = _dat_load_src[
+                                    _dat_load_src["Proyecto"].astype(str) == _dtp
+                                ]
+                                if _dtp_rows.empty:
+                                    continue
+                                _dtp_lineas = _dtp_rows["Línea"].astype(str).unique().tolist()
+                                if len(_dtp_lineas) > 1:
+                                    _dat_rows.append({
+                                        "Estado": "No aplicable",
+                                        "Proyecto": _dtp,
+                                        "Línea": ", ".join(_dtp_lineas),
+                                        "Firme/Flexible": "Sin dato",
+                                        "Semanas actuales": None,
+                                        "Semanas simuladas": None,
+                                        "+ semanas": None,
+                                        "h/sem actual": None,
+                                        "h/sem simulada": None,
+                                        "Déficit global eliminado (h)": 0.0,
+                                        "Entrega objetivo": "Sin dato",
+                                        "Fin simulado": "",
+                                        "Impacto entrega": "",
+                                        "Comentario": "Carga en múltiples líneas — no soportado",
+                                    })
+                                    continue
+
+                                _dtp_linea  = _dtp_lineas[0]
+                                _dtp_sems   = sorted(_dtp_rows["Semana"].astype(int).unique().tolist())
+                                _dur_actual = len(_dtp_sems)
+                                _sem_inicio = min(_dtp_sems)
+                                _tot_h      = round(float(_dtp_rows["Horas proyecto semana"].sum()), 1)
+                                if _dur_actual <= 0 or _tot_h <= 0:
+                                    continue
+                                _h_sem_act = round(_tot_h / _dur_actual, 1)
+
+                                # Project meta from parsed Excel
+                                _dtp_ff  = "Sin dato"
+                                _dtp_ent: int | None = None
+                                if _dat_df_proy is not None:
+                                    _dtp_m = _dat_df_proy["Proyecto"].astype(str) == _dtp
+                                    if _dtp_m.any():
+                                        if "Firme/Flexible" in _dat_df_proy.columns:
+                                            _ff_v = str(
+                                                _dat_df_proy.loc[_dtp_m, "Firme/Flexible"].iloc[0]
+                                            )
+                                            if _ff_v.strip().lower() not in (
+                                                "nan", "none", "", "null"
+                                            ):
+                                                _dtp_ff = _ff_v.strip()
+                                        if "Semana entrega objetivo" in _dat_df_proy.columns:
+                                            try:
+                                                _dtp_ent = int(
+                                                    _dat_df_proy.loc[
+                                                        _dtp_m, "Semana entrega objetivo"
+                                                    ].iloc[0]
+                                                )
+                                            except (TypeError, ValueError):
+                                                pass
+
+                                _es_firme    = _dtp_ff.strip().lower() == "firme"
+                                _def_linea_b = _dat_def_linea_b.get(_dtp_linea, 0.0)
+                                _row_tmpl    = _dtp_rows.iloc[0].to_dict()
+
+                                # Iterative search: try every duration up to the week-52 horizon
+                                # Priority: (1) first dur that fixes line + no global harm;
+                                # (2) else best global reduction; (3) tie → best line; (4) tie → smallest dur.
+                                _max_dur         = 52 - _sem_inicio + 1
+                                _best_dur        = None
+                                _best_red        = 0.0
+                                _best_global_red = 0.0
+                                _eliminates      = False
+
+                                for _new_dur in range(_dur_actual + 1, _max_dur + 1):
+                                    _h_each = [round(_tot_h / _new_dur, 1)] * _new_dur
+                                    _diff_h = round(_tot_h - sum(_h_each), 1)
+                                    if _diff_h != 0:
+                                        _h_each[0] = round(_h_each[0] + _diff_h, 1)
+
+                                    _new_rows = []
+                                    for _ni, _ns in enumerate(
+                                        range(_sem_inicio, _sem_inicio + _new_dur)
+                                    ):
+                                        _nr = dict(_row_tmpl)
+                                        _nr["Semana"] = _ns
+                                        _nr["Horas proyecto semana"] = _h_each[_ni]
+                                        _new_rows.append(_nr)
+
+                                    _trial_df = pd.concat(
+                                        [
+                                            _dat_load_src[
+                                                ~(
+                                                    (_dat_load_src["Proyecto"].astype(str) == _dtp)
+                                                    & (_dat_load_src["Línea"].astype(str) == _dtp_linea)
+                                                )
+                                            ],
+                                            pd.DataFrame(_new_rows),
+                                        ],
+                                        ignore_index=True,
+                                    )
+                                    _trial_res = _recompute_prog_deficit_global(
+                                        _trial_df, _prog_cap_df
+                                    )
+                                    _def_after_line   = sum(
+                                        float(r["Déficit h"])
+                                        for _, r in _trial_res["conflict_df"].iterrows()
+                                        if str(r["Línea"]) == _dtp_linea
+                                    )
+                                    _def_after_global = _trial_res["deficit_total_h"]
+                                    _reduction        = round(_def_linea_b - _def_after_line, 1)
+                                    _global_red_iter  = round(
+                                        _dat_base_res["deficit_total_h"] - _def_after_global, 1
+                                    )
+                                    _line_elim       = _def_after_line <= 0
+                                    _no_global_harm  = _global_red_iter >= 0
+
+                                    if _line_elim and _no_global_harm:
+                                        # Priority 1: fixes line without global harm → smallest wins
+                                        _best_dur        = _new_dur
+                                        _best_red        = _reduction
+                                        _best_global_red = _global_red_iter
+                                        _eliminates      = True
+                                        break
+
+                                    # Fallback: max global, then max line, then smallest (by loop order)
+                                    _is_better = (
+                                        _best_dur is None
+                                        or _global_red_iter > _best_global_red
+                                        or (
+                                            _global_red_iter == _best_global_red
+                                            and _reduction > _best_red
+                                        )
+                                    )
+                                    if _is_better:
+                                        _best_dur        = _new_dur
+                                        _best_red        = _reduction
+                                        _best_global_red = _global_red_iter
+                                        if _line_elim:
+                                            _eliminates = True
+
+                                if _best_dur is None:
+                                    _dat_rows.append({
+                                        "Estado": "No aplicable",
+                                        "Proyecto": _dtp,
+                                        "Línea": _dtp_linea,
+                                        "Firme/Flexible": _dtp_ff,
+                                        "Semanas actuales": _dur_actual,
+                                        "Semanas simuladas": None,
+                                        "+ semanas": None,
+                                        "h/sem actual": _h_sem_act,
+                                        "h/sem simulada": None,
+                                        "Déficit global eliminado (h)": 0.0,
+                                        "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
+                                        "Fin simulado": "",
+                                        "Impacto entrega": "",
+                                        "Comentario": "Ya en semana 52 — no es posible ampliar.",
+                                    })
+                                    continue
+
+                                _h_sem_sim = round(_tot_h / _best_dur, 1)
+                                _new_fin   = _sem_inicio + _best_dur - 1
+                                _delta_sem = _best_dur - _dur_actual
+
+                                if _best_red <= 0:
+                                    _estado     = "No mejora"
+                                    _comentario = "Ampliar duración no reduce el déficit en esta línea."
+                                elif _best_global_red < 0:
+                                    _estado     = "Revisar"
+                                    _comentario = "Fija la línea pero desplaza déficit a otras semanas/líneas."
+                                elif _es_firme:
+                                    _estado     = "Revisar"
+                                    _comentario = "Proyecto marcado como Firme."
+                                elif _dtp_ff == "Sin dato":
+                                    _estado     = "Revisar"
+                                    _comentario = "Firme/Flexible no informado."
+                                elif _dtp_ent is not None and _new_fin > _dtp_ent:
+                                    _estado     = "Revisar"
+                                    _comentario = (
+                                        f"Fin simulado (S{_new_fin}) supera entrega objetivo"
+                                        f" (S{_dtp_ent})."
+                                    )
+                                else:
+                                    _estado     = "Recomendable"
+                                    _comentario = (
+                                        "Elimina déficit en la línea."
+                                        if _eliminates
+                                        else f"Reduce déficit {_best_red} h en línea {_dtp_linea}."
+                                    )
+
+                                _impacto = ""
+                                if _dtp_ent is not None:
+                                    _gap = _new_fin - _dtp_ent
+                                    if _gap > 0:
+                                        _impacto = f"+{_gap} sem sobre entrega"
+                                    elif _gap == 0:
+                                        _impacto = "Justo en entrega"
+                                    else:
+                                        _impacto = f"{abs(_gap)} sem antes de entrega"
+
+                                _dat_rows.append({
+                                    "Estado": _estado,
+                                    "Proyecto": _dtp,
+                                    "Línea": _dtp_linea,
+                                    "Firme/Flexible": _dtp_ff,
+                                    "Semanas actuales": _dur_actual,
+                                    "Semanas simuladas": _best_dur,
+                                    "+ semanas": _delta_sem,
+                                    "h/sem actual": _h_sem_act,
+                                    "h/sem simulada": _h_sem_sim,
+                                    "Déficit global eliminado (h)": max(_best_global_red, 0.0),
+                                    "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
+                                    "Fin simulado": f"S{_new_fin}",
+                                    "Impacto entrega": _impacto,
+                                    "Comentario": _comentario,
+                                })
+
+                            if not _dat_rows:
+                                st.caption("No hay candidatos para ajuste temporal.")
+                            else:
+                                _dat_df = pd.DataFrame(_dat_rows)
+                                _dat_sort_map = {
+                                    "Recomendable": 0, "Revisar": 1,
+                                    "No mejora": 2, "No aplicable": 3,
+                                }
+                                _dat_df["_sort_e"] = _dat_df["Estado"].map(
+                                    _dat_sort_map
+                                ).fillna(3)
+                                _dat_df["_sort_d"] = pd.to_numeric(
+                                    _dat_df["Déficit global eliminado (h)"], errors="coerce"
+                                ).fillna(0)
+                                _dat_df = (
+                                    _dat_df
+                                    .sort_values(
+                                        ["_sort_e", "_sort_d", "Proyecto"],
+                                        ascending=[True, False, True],
+                                    )
+                                    .drop(columns=["_sort_e", "_sort_d"])
+                                    .reset_index(drop=True)
+                                )
+                                _dat_h = max(140, min(len(_dat_df), 5) * 35 + 45)
+                                st.dataframe(
+                                    _dat_df,
+                                    use_container_width=True,
+                                    height=_dat_h,
+                                    hide_index=True,
+                                    column_config={
+                                        "Estado": st.column_config.TextColumn(
+                                            "Estado", width="small"
+                                        ),
+                                        "Proyecto": st.column_config.TextColumn("Proyecto"),
+                                        "Línea": st.column_config.TextColumn(
+                                            "Línea", width="small"
+                                        ),
+                                        "Firme/Flexible": st.column_config.TextColumn(
+                                            "Firme/Flexible", width="small"
+                                        ),
+                                        "Semanas actuales": st.column_config.NumberColumn(
+                                            "Sem. actuales", format="%d", width="small"
+                                        ),
+                                        "Semanas simuladas": st.column_config.NumberColumn(
+                                            "Sem. simuladas", format="%d", width="small"
+                                        ),
+                                        "+ semanas": st.column_config.NumberColumn(
+                                            "+ sem.", format="%d", width="small"
+                                        ),
+                                        "h/sem actual": st.column_config.NumberColumn(
+                                            "h/sem actual", format="%.1f", width="small"
+                                        ),
+                                        "h/sem simulada": st.column_config.NumberColumn(
+                                            "h/sem sim.", format="%.1f", width="small"
+                                        ),
+                                        "Déficit global eliminado (h)": st.column_config.NumberColumn(
+                                            "Déficit global eliminado (h)", format="%.1f"
+                                        ),
+                                        "Entrega objetivo": st.column_config.TextColumn(
+                                            "Entrega obj.", width="small"
+                                        ),
+                                        "Fin simulado": st.column_config.TextColumn(
+                                            "Fin sim.", width="small"
+                                        ),
+                                        "Impacto entrega": st.column_config.TextColumn(
+                                            "Impacto entrega"
+                                        ),
+                                        "Comentario": st.column_config.TextColumn("Comentario"),
+                                    },
+                                )
 
                     # ── Simulación acumulada ─────────────────────────────────────────
                     _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
