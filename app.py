@@ -8827,7 +8827,11 @@ if st.session_state.active_tab == "📋 Programación real":
                             hide_index=True,
                             height=min(220, max(100, len(_qsr_top5) * 32 + 48)),
                         )
-                    # ── Alternativas candidatas ───────────────────────────────
+                # ── fin 14D.1A ─────────────────────────────────────────────────────────
+
+                # ── Acciones simulables: Mover línea | Ampliar semanas ──────────────────
+                _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
+                with _tab_ml:
                     if _da_has_conflicts and _da_has_load:
                         st.markdown(f"#### {t('prog_alt_header')}")
                         _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
@@ -8838,7 +8842,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.caption(f"⚠ {t('prog_alt_v2_stale_warn')}")
                     else:
                         st.caption(t("prog_alt_no_conflicts"))
-                # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 if _da_has_conflicts and _da_has_load:
                     if _da_btn_clicked:
@@ -9407,7 +9410,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 # ── Mostrar resultado alternativas (tras cálculo, un solo clic) ─────────
                 if _da_has_conflicts and _da_has_load:
-                    with _da_main_col:
+                    with _tab_ml:
                         _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
                         if _da_alt_result is not None:
                             _da_error = _da_alt_result.get("error")
@@ -9753,320 +9756,321 @@ if st.session_state.active_tab == "📋 Programación real":
                         else:
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
 
-                    # ── 3H.4B.1 Alternativas de ajuste temporal (solo lectura) ────────
-                    _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
-                    _dat_load_src   = _prog_result.get("load_df") if _prog_result else None
-                    _dat_cfl_src    = _prog_result.get("conflict_df") if _prog_result else None
-                    if (
-                        _dat_load_src is not None
-                        and not _dat_load_src.empty
-                        and _dat_cfl_src is not None
-                        and not _dat_cfl_src.empty
-                    ):
-                        with st.container(border=True):
-                            st.markdown("#### Alternativas de ajuste temporal")
-                            _dat_df_proy = (
-                                _dat_parsed_src.get("proyectos")
-                                if _dat_parsed_src else None
-                            )
-                            _dat_implicados = _get_prog_projects_in_conflict(
-                                _dat_load_src, _dat_cfl_src
-                            )
-                            # Base deficit per line (recomputed for consistency with trials)
-                            _dat_base_res    = _recompute_prog_deficit_global(_dat_load_src, _prog_cap_df)
-                            _dat_def_linea_b: dict = {}
-                            for _, _dlcfl in _dat_base_res["conflict_df"].iterrows():
-                                _dl = str(_dlcfl["Línea"])
-                                _dat_def_linea_b[_dl] = (
-                                    _dat_def_linea_b.get(_dl, 0.0) + float(_dlcfl["Déficit h"])
+                    with _tab_as:
+                        # ── 3H.4B.1 Alternativas de ajuste temporal (solo lectura) ────────
+                        _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
+                        _dat_load_src   = _prog_result.get("load_df") if _prog_result else None
+                        _dat_cfl_src    = _prog_result.get("conflict_df") if _prog_result else None
+                        if (
+                            _dat_load_src is not None
+                            and not _dat_load_src.empty
+                            and _dat_cfl_src is not None
+                            and not _dat_cfl_src.empty
+                        ):
+                            with st.container(border=True):
+                                st.markdown("#### Alternativas de ajuste temporal")
+                                _dat_df_proy = (
+                                    _dat_parsed_src.get("proyectos")
+                                    if _dat_parsed_src else None
                                 )
+                                _dat_implicados = _get_prog_projects_in_conflict(
+                                    _dat_load_src, _dat_cfl_src
+                                )
+                                # Base deficit per line (recomputed for consistency with trials)
+                                _dat_base_res    = _recompute_prog_deficit_global(_dat_load_src, _prog_cap_df)
+                                _dat_def_linea_b: dict = {}
+                                for _, _dlcfl in _dat_base_res["conflict_df"].iterrows():
+                                    _dl = str(_dlcfl["Línea"])
+                                    _dat_def_linea_b[_dl] = (
+                                        _dat_def_linea_b.get(_dl, 0.0) + float(_dlcfl["Déficit h"])
+                                    )
 
-                            _dat_rows: list = []
-                            for _dtp in _dat_implicados:
-                                _dtp_rows = _dat_load_src[
-                                    _dat_load_src["Proyecto"].astype(str) == _dtp
-                                ]
-                                if _dtp_rows.empty:
-                                    continue
-                                _dtp_lineas = _dtp_rows["Línea"].astype(str).unique().tolist()
-                                if len(_dtp_lineas) > 1:
-                                    _dat_rows.append({
-                                        "Estado": "No aplicable",
-                                        "Proyecto": _dtp,
-                                        "Línea": ", ".join(_dtp_lineas),
-                                        "Firme/Flexible": "Sin dato",
-                                        "Semanas actuales": None,
-                                        "Semanas simuladas": None,
-                                        "+ semanas": None,
-                                        "h/sem actual": None,
-                                        "h/sem simulada": None,
-                                        "Déficit global eliminado (h)": 0.0,
-                                        "Entrega objetivo": "Sin dato",
-                                        "Fin simulado": "",
-                                        "Impacto entrega": "",
-                                        "Comentario": "Carga en múltiples líneas — no soportado",
-                                    })
-                                    continue
+                                _dat_rows: list = []
+                                for _dtp in _dat_implicados:
+                                    _dtp_rows = _dat_load_src[
+                                        _dat_load_src["Proyecto"].astype(str) == _dtp
+                                    ]
+                                    if _dtp_rows.empty:
+                                        continue
+                                    _dtp_lineas = _dtp_rows["Línea"].astype(str).unique().tolist()
+                                    if len(_dtp_lineas) > 1:
+                                        _dat_rows.append({
+                                            "Estado": "No aplicable",
+                                            "Proyecto": _dtp,
+                                            "Línea": ", ".join(_dtp_lineas),
+                                            "Firme/Flexible": "Sin dato",
+                                            "Semanas actuales": None,
+                                            "Semanas simuladas": None,
+                                            "+ semanas": None,
+                                            "h/sem actual": None,
+                                            "h/sem simulada": None,
+                                            "Déficit global eliminado (h)": 0.0,
+                                            "Entrega objetivo": "Sin dato",
+                                            "Fin simulado": "",
+                                            "Impacto entrega": "",
+                                            "Comentario": "Carga en múltiples líneas — no soportado",
+                                        })
+                                        continue
 
-                                _dtp_linea  = _dtp_lineas[0]
-                                _dtp_sems   = sorted(_dtp_rows["Semana"].astype(int).unique().tolist())
-                                _dur_actual = len(_dtp_sems)
-                                _sem_inicio = min(_dtp_sems)
-                                _tot_h      = round(float(_dtp_rows["Horas proyecto semana"].sum()), 1)
-                                if _dur_actual <= 0 or _tot_h <= 0:
-                                    continue
-                                _h_sem_act = round(_tot_h / _dur_actual, 1)
+                                    _dtp_linea  = _dtp_lineas[0]
+                                    _dtp_sems   = sorted(_dtp_rows["Semana"].astype(int).unique().tolist())
+                                    _dur_actual = len(_dtp_sems)
+                                    _sem_inicio = min(_dtp_sems)
+                                    _tot_h      = round(float(_dtp_rows["Horas proyecto semana"].sum()), 1)
+                                    if _dur_actual <= 0 or _tot_h <= 0:
+                                        continue
+                                    _h_sem_act = round(_tot_h / _dur_actual, 1)
 
-                                # Project meta from parsed Excel
-                                _dtp_ff  = "Sin dato"
-                                _dtp_ent: int | None = None
-                                if _dat_df_proy is not None:
-                                    _dtp_m = _dat_df_proy["Proyecto"].astype(str) == _dtp
-                                    if _dtp_m.any():
-                                        if "Firme/Flexible" in _dat_df_proy.columns:
-                                            _ff_v = str(
-                                                _dat_df_proy.loc[_dtp_m, "Firme/Flexible"].iloc[0]
-                                            )
-                                            if _ff_v.strip().lower() not in (
-                                                "nan", "none", "", "null"
-                                            ):
-                                                _dtp_ff = _ff_v.strip()
-                                        if "Semana entrega objetivo" in _dat_df_proy.columns:
-                                            try:
-                                                _dtp_ent = int(
-                                                    _dat_df_proy.loc[
-                                                        _dtp_m, "Semana entrega objetivo"
-                                                    ].iloc[0]
+                                    # Project meta from parsed Excel
+                                    _dtp_ff  = "Sin dato"
+                                    _dtp_ent: int | None = None
+                                    if _dat_df_proy is not None:
+                                        _dtp_m = _dat_df_proy["Proyecto"].astype(str) == _dtp
+                                        if _dtp_m.any():
+                                            if "Firme/Flexible" in _dat_df_proy.columns:
+                                                _ff_v = str(
+                                                    _dat_df_proy.loc[_dtp_m, "Firme/Flexible"].iloc[0]
                                                 )
-                                            except (TypeError, ValueError):
-                                                pass
+                                                if _ff_v.strip().lower() not in (
+                                                    "nan", "none", "", "null"
+                                                ):
+                                                    _dtp_ff = _ff_v.strip()
+                                            if "Semana entrega objetivo" in _dat_df_proy.columns:
+                                                try:
+                                                    _dtp_ent = int(
+                                                        _dat_df_proy.loc[
+                                                            _dtp_m, "Semana entrega objetivo"
+                                                        ].iloc[0]
+                                                    )
+                                                except (TypeError, ValueError):
+                                                    pass
 
-                                _es_firme    = _dtp_ff.strip().lower() == "firme"
-                                _def_linea_b = _dat_def_linea_b.get(_dtp_linea, 0.0)
-                                _row_tmpl    = _dtp_rows.iloc[0].to_dict()
+                                    _es_firme    = _dtp_ff.strip().lower() == "firme"
+                                    _def_linea_b = _dat_def_linea_b.get(_dtp_linea, 0.0)
+                                    _row_tmpl    = _dtp_rows.iloc[0].to_dict()
 
-                                # Iterative search: try every duration up to the week-52 horizon
-                                # Priority: (1) first dur that fixes line + no global harm;
-                                # (2) else best global reduction; (3) tie → best line; (4) tie → smallest dur.
-                                _max_dur         = 52 - _sem_inicio + 1
-                                _best_dur        = None
-                                _best_red        = 0.0
-                                _best_global_red = 0.0
-                                _eliminates      = False
+                                    # Iterative search: try every duration up to the week-52 horizon
+                                    # Priority: (1) first dur that fixes line + no global harm;
+                                    # (2) else best global reduction; (3) tie → best line; (4) tie → smallest dur.
+                                    _max_dur         = 52 - _sem_inicio + 1
+                                    _best_dur        = None
+                                    _best_red        = 0.0
+                                    _best_global_red = 0.0
+                                    _eliminates      = False
 
-                                for _new_dur in range(_dur_actual + 1, _max_dur + 1):
-                                    _h_each = [round(_tot_h / _new_dur, 1)] * _new_dur
-                                    _diff_h = round(_tot_h - sum(_h_each), 1)
-                                    if _diff_h != 0:
-                                        _h_each[0] = round(_h_each[0] + _diff_h, 1)
+                                    for _new_dur in range(_dur_actual + 1, _max_dur + 1):
+                                        _h_each = [round(_tot_h / _new_dur, 1)] * _new_dur
+                                        _diff_h = round(_tot_h - sum(_h_each), 1)
+                                        if _diff_h != 0:
+                                            _h_each[0] = round(_h_each[0] + _diff_h, 1)
 
-                                    _new_rows = []
-                                    for _ni, _ns in enumerate(
-                                        range(_sem_inicio, _sem_inicio + _new_dur)
-                                    ):
-                                        _nr = dict(_row_tmpl)
-                                        _nr["Semana"] = _ns
-                                        _nr["Horas proyecto semana"] = _h_each[_ni]
-                                        _new_rows.append(_nr)
+                                        _new_rows = []
+                                        for _ni, _ns in enumerate(
+                                            range(_sem_inicio, _sem_inicio + _new_dur)
+                                        ):
+                                            _nr = dict(_row_tmpl)
+                                            _nr["Semana"] = _ns
+                                            _nr["Horas proyecto semana"] = _h_each[_ni]
+                                            _new_rows.append(_nr)
 
-                                    _trial_df = pd.concat(
-                                        [
-                                            _dat_load_src[
-                                                ~(
-                                                    (_dat_load_src["Proyecto"].astype(str) == _dtp)
-                                                    & (_dat_load_src["Línea"].astype(str) == _dtp_linea)
-                                                )
+                                        _trial_df = pd.concat(
+                                            [
+                                                _dat_load_src[
+                                                    ~(
+                                                        (_dat_load_src["Proyecto"].astype(str) == _dtp)
+                                                        & (_dat_load_src["Línea"].astype(str) == _dtp_linea)
+                                                    )
+                                                ],
+                                                pd.DataFrame(_new_rows),
                                             ],
-                                            pd.DataFrame(_new_rows),
-                                        ],
-                                        ignore_index=True,
-                                    )
-                                    _trial_res = _recompute_prog_deficit_global(
-                                        _trial_df, _prog_cap_df
-                                    )
-                                    _def_after_line   = sum(
-                                        float(r["Déficit h"])
-                                        for _, r in _trial_res["conflict_df"].iterrows()
-                                        if str(r["Línea"]) == _dtp_linea
-                                    )
-                                    _def_after_global = _trial_res["deficit_total_h"]
-                                    _reduction        = round(_def_linea_b - _def_after_line, 1)
-                                    _global_red_iter  = round(
-                                        _dat_base_res["deficit_total_h"] - _def_after_global, 1
-                                    )
-                                    _line_elim       = _def_after_line <= 0
-                                    _no_global_harm  = _global_red_iter >= 0
-
-                                    if _line_elim and _no_global_harm:
-                                        # Priority 1: fixes line without global harm → smallest wins
-                                        _best_dur        = _new_dur
-                                        _best_red        = _reduction
-                                        _best_global_red = _global_red_iter
-                                        _eliminates      = True
-                                        break
-
-                                    # Fallback: max global, then max line, then smallest (by loop order)
-                                    _is_better = (
-                                        _best_dur is None
-                                        or _global_red_iter > _best_global_red
-                                        or (
-                                            _global_red_iter == _best_global_red
-                                            and _reduction > _best_red
+                                            ignore_index=True,
                                         )
-                                    )
-                                    if _is_better:
-                                        _best_dur        = _new_dur
-                                        _best_red        = _reduction
-                                        _best_global_red = _global_red_iter
-                                        if _line_elim:
-                                            _eliminates = True
+                                        _trial_res = _recompute_prog_deficit_global(
+                                            _trial_df, _prog_cap_df
+                                        )
+                                        _def_after_line   = sum(
+                                            float(r["Déficit h"])
+                                            for _, r in _trial_res["conflict_df"].iterrows()
+                                            if str(r["Línea"]) == _dtp_linea
+                                        )
+                                        _def_after_global = _trial_res["deficit_total_h"]
+                                        _reduction        = round(_def_linea_b - _def_after_line, 1)
+                                        _global_red_iter  = round(
+                                            _dat_base_res["deficit_total_h"] - _def_after_global, 1
+                                        )
+                                        _line_elim       = _def_after_line <= 0
+                                        _no_global_harm  = _global_red_iter >= 0
 
-                                if _best_dur is None:
+                                        if _line_elim and _no_global_harm:
+                                            # Priority 1: fixes line without global harm → smallest wins
+                                            _best_dur        = _new_dur
+                                            _best_red        = _reduction
+                                            _best_global_red = _global_red_iter
+                                            _eliminates      = True
+                                            break
+
+                                        # Fallback: max global, then max line, then smallest (by loop order)
+                                        _is_better = (
+                                            _best_dur is None
+                                            or _global_red_iter > _best_global_red
+                                            or (
+                                                _global_red_iter == _best_global_red
+                                                and _reduction > _best_red
+                                            )
+                                        )
+                                        if _is_better:
+                                            _best_dur        = _new_dur
+                                            _best_red        = _reduction
+                                            _best_global_red = _global_red_iter
+                                            if _line_elim:
+                                                _eliminates = True
+
+                                    if _best_dur is None:
+                                        _dat_rows.append({
+                                            "Estado": "No aplicable",
+                                            "Proyecto": _dtp,
+                                            "Línea": _dtp_linea,
+                                            "Firme/Flexible": _dtp_ff,
+                                            "Semanas actuales": _dur_actual,
+                                            "Semanas simuladas": None,
+                                            "+ semanas": None,
+                                            "h/sem actual": _h_sem_act,
+                                            "h/sem simulada": None,
+                                            "Déficit global eliminado (h)": 0.0,
+                                            "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
+                                            "Fin simulado": "",
+                                            "Impacto entrega": "",
+                                            "Comentario": "Ya en semana 52 — no es posible ampliar.",
+                                        })
+                                        continue
+
+                                    _h_sem_sim = round(_tot_h / _best_dur, 1)
+                                    _new_fin   = _sem_inicio + _best_dur - 1
+                                    _delta_sem = _best_dur - _dur_actual
+
+                                    if _best_red <= 0:
+                                        _estado     = "No mejora"
+                                        _comentario = "Ampliar duración no reduce el déficit en esta línea."
+                                    elif _best_global_red < 0:
+                                        _estado     = "Revisar"
+                                        _comentario = "Fija la línea pero desplaza déficit a otras semanas/líneas."
+                                    elif _es_firme:
+                                        _estado     = "Revisar"
+                                        _comentario = "Proyecto marcado como Firme."
+                                    elif _dtp_ff == "Sin dato":
+                                        _estado     = "Revisar"
+                                        _comentario = "Firme/Flexible no informado."
+                                    elif _dtp_ent is not None and _new_fin > _dtp_ent:
+                                        _estado     = "Revisar"
+                                        _comentario = (
+                                            f"Fin simulado (S{_new_fin}) supera entrega objetivo"
+                                            f" (S{_dtp_ent})."
+                                        )
+                                    else:
+                                        _estado     = "Recomendable"
+                                        _comentario = (
+                                            "Elimina déficit en la línea."
+                                            if _eliminates
+                                            else f"Reduce déficit {_best_red} h en línea {_dtp_linea}."
+                                        )
+
+                                    _impacto = ""
+                                    if _dtp_ent is not None:
+                                        _gap = _new_fin - _dtp_ent
+                                        if _gap > 0:
+                                            _impacto = f"+{_gap} sem sobre entrega"
+                                        elif _gap == 0:
+                                            _impacto = "Justo en entrega"
+                                        else:
+                                            _impacto = f"{abs(_gap)} sem antes de entrega"
+
                                     _dat_rows.append({
-                                        "Estado": "No aplicable",
+                                        "Estado": _estado,
                                         "Proyecto": _dtp,
                                         "Línea": _dtp_linea,
                                         "Firme/Flexible": _dtp_ff,
                                         "Semanas actuales": _dur_actual,
-                                        "Semanas simuladas": None,
-                                        "+ semanas": None,
+                                        "Semanas simuladas": _best_dur,
+                                        "+ semanas": _delta_sem,
                                         "h/sem actual": _h_sem_act,
-                                        "h/sem simulada": None,
-                                        "Déficit global eliminado (h)": 0.0,
+                                        "h/sem simulada": _h_sem_sim,
+                                        "Déficit global eliminado (h)": max(_best_global_red, 0.0),
                                         "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
-                                        "Fin simulado": "",
-                                        "Impacto entrega": "",
-                                        "Comentario": "Ya en semana 52 — no es posible ampliar.",
+                                        "Fin simulado": f"S{_new_fin}",
+                                        "Impacto entrega": _impacto,
+                                        "Comentario": _comentario,
                                     })
-                                    continue
 
-                                _h_sem_sim = round(_tot_h / _best_dur, 1)
-                                _new_fin   = _sem_inicio + _best_dur - 1
-                                _delta_sem = _best_dur - _dur_actual
-
-                                if _best_red <= 0:
-                                    _estado     = "No mejora"
-                                    _comentario = "Ampliar duración no reduce el déficit en esta línea."
-                                elif _best_global_red < 0:
-                                    _estado     = "Revisar"
-                                    _comentario = "Fija la línea pero desplaza déficit a otras semanas/líneas."
-                                elif _es_firme:
-                                    _estado     = "Revisar"
-                                    _comentario = "Proyecto marcado como Firme."
-                                elif _dtp_ff == "Sin dato":
-                                    _estado     = "Revisar"
-                                    _comentario = "Firme/Flexible no informado."
-                                elif _dtp_ent is not None and _new_fin > _dtp_ent:
-                                    _estado     = "Revisar"
-                                    _comentario = (
-                                        f"Fin simulado (S{_new_fin}) supera entrega objetivo"
-                                        f" (S{_dtp_ent})."
-                                    )
+                                if not _dat_rows:
+                                    st.caption("No hay candidatos para ajuste temporal.")
                                 else:
-                                    _estado     = "Recomendable"
-                                    _comentario = (
-                                        "Elimina déficit en la línea."
-                                        if _eliminates
-                                        else f"Reduce déficit {_best_red} h en línea {_dtp_linea}."
+                                    _dat_df = pd.DataFrame(_dat_rows)
+                                    _dat_sort_map = {
+                                        "Recomendable": 0, "Revisar": 1,
+                                        "No mejora": 2, "No aplicable": 3,
+                                    }
+                                    _dat_df["_sort_e"] = _dat_df["Estado"].map(
+                                        _dat_sort_map
+                                    ).fillna(3)
+                                    _dat_df["_sort_d"] = pd.to_numeric(
+                                        _dat_df["Déficit global eliminado (h)"], errors="coerce"
+                                    ).fillna(0)
+                                    _dat_df = (
+                                        _dat_df
+                                        .sort_values(
+                                            ["_sort_e", "_sort_d", "Proyecto"],
+                                            ascending=[True, False, True],
+                                        )
+                                        .drop(columns=["_sort_e", "_sort_d"])
+                                        .reset_index(drop=True)
                                     )
-
-                                _impacto = ""
-                                if _dtp_ent is not None:
-                                    _gap = _new_fin - _dtp_ent
-                                    if _gap > 0:
-                                        _impacto = f"+{_gap} sem sobre entrega"
-                                    elif _gap == 0:
-                                        _impacto = "Justo en entrega"
-                                    else:
-                                        _impacto = f"{abs(_gap)} sem antes de entrega"
-
-                                _dat_rows.append({
-                                    "Estado": _estado,
-                                    "Proyecto": _dtp,
-                                    "Línea": _dtp_linea,
-                                    "Firme/Flexible": _dtp_ff,
-                                    "Semanas actuales": _dur_actual,
-                                    "Semanas simuladas": _best_dur,
-                                    "+ semanas": _delta_sem,
-                                    "h/sem actual": _h_sem_act,
-                                    "h/sem simulada": _h_sem_sim,
-                                    "Déficit global eliminado (h)": max(_best_global_red, 0.0),
-                                    "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
-                                    "Fin simulado": f"S{_new_fin}",
-                                    "Impacto entrega": _impacto,
-                                    "Comentario": _comentario,
-                                })
-
-                            if not _dat_rows:
-                                st.caption("No hay candidatos para ajuste temporal.")
-                            else:
-                                _dat_df = pd.DataFrame(_dat_rows)
-                                _dat_sort_map = {
-                                    "Recomendable": 0, "Revisar": 1,
-                                    "No mejora": 2, "No aplicable": 3,
-                                }
-                                _dat_df["_sort_e"] = _dat_df["Estado"].map(
-                                    _dat_sort_map
-                                ).fillna(3)
-                                _dat_df["_sort_d"] = pd.to_numeric(
-                                    _dat_df["Déficit global eliminado (h)"], errors="coerce"
-                                ).fillna(0)
-                                _dat_df = (
-                                    _dat_df
-                                    .sort_values(
-                                        ["_sort_e", "_sort_d", "Proyecto"],
-                                        ascending=[True, False, True],
+                                    _dat_h = max(140, min(len(_dat_df), 5) * 35 + 45)
+                                    st.dataframe(
+                                        _dat_df,
+                                        use_container_width=True,
+                                        height=_dat_h,
+                                        hide_index=True,
+                                        column_config={
+                                            "Estado": st.column_config.TextColumn(
+                                                "Estado", width="small"
+                                            ),
+                                            "Proyecto": st.column_config.TextColumn("Proyecto"),
+                                            "Línea": st.column_config.TextColumn(
+                                                "Línea", width="small"
+                                            ),
+                                            "Firme/Flexible": st.column_config.TextColumn(
+                                                "Firme/Flexible", width="small"
+                                            ),
+                                            "Semanas actuales": st.column_config.NumberColumn(
+                                                "Sem. actuales", format="%d", width="small"
+                                            ),
+                                            "Semanas simuladas": st.column_config.NumberColumn(
+                                                "Sem. simuladas", format="%d", width="small"
+                                            ),
+                                            "+ semanas": st.column_config.NumberColumn(
+                                                "+ sem.", format="%d", width="small"
+                                            ),
+                                            "h/sem actual": st.column_config.NumberColumn(
+                                                "h/sem actual", format="%.1f", width="small"
+                                            ),
+                                            "h/sem simulada": st.column_config.NumberColumn(
+                                                "h/sem sim.", format="%.1f", width="small"
+                                            ),
+                                            "Déficit global eliminado (h)": st.column_config.NumberColumn(
+                                                "Déficit global eliminado (h)", format="%.1f"
+                                            ),
+                                            "Entrega objetivo": st.column_config.TextColumn(
+                                                "Entrega obj.", width="small"
+                                            ),
+                                            "Fin simulado": st.column_config.TextColumn(
+                                                "Fin sim.", width="small"
+                                            ),
+                                            "Impacto entrega": st.column_config.TextColumn(
+                                                "Impacto entrega"
+                                            ),
+                                            "Comentario": st.column_config.TextColumn("Comentario"),
+                                        },
                                     )
-                                    .drop(columns=["_sort_e", "_sort_d"])
-                                    .reset_index(drop=True)
-                                )
-                                _dat_h = max(140, min(len(_dat_df), 5) * 35 + 45)
-                                st.dataframe(
-                                    _dat_df,
-                                    use_container_width=True,
-                                    height=_dat_h,
-                                    hide_index=True,
-                                    column_config={
-                                        "Estado": st.column_config.TextColumn(
-                                            "Estado", width="small"
-                                        ),
-                                        "Proyecto": st.column_config.TextColumn("Proyecto"),
-                                        "Línea": st.column_config.TextColumn(
-                                            "Línea", width="small"
-                                        ),
-                                        "Firme/Flexible": st.column_config.TextColumn(
-                                            "Firme/Flexible", width="small"
-                                        ),
-                                        "Semanas actuales": st.column_config.NumberColumn(
-                                            "Sem. actuales", format="%d", width="small"
-                                        ),
-                                        "Semanas simuladas": st.column_config.NumberColumn(
-                                            "Sem. simuladas", format="%d", width="small"
-                                        ),
-                                        "+ semanas": st.column_config.NumberColumn(
-                                            "+ sem.", format="%d", width="small"
-                                        ),
-                                        "h/sem actual": st.column_config.NumberColumn(
-                                            "h/sem actual", format="%.1f", width="small"
-                                        ),
-                                        "h/sem simulada": st.column_config.NumberColumn(
-                                            "h/sem sim.", format="%.1f", width="small"
-                                        ),
-                                        "Déficit global eliminado (h)": st.column_config.NumberColumn(
-                                            "Déficit global eliminado (h)", format="%.1f"
-                                        ),
-                                        "Entrega objetivo": st.column_config.TextColumn(
-                                            "Entrega obj.", width="small"
-                                        ),
-                                        "Fin simulado": st.column_config.TextColumn(
-                                            "Fin sim.", width="small"
-                                        ),
-                                        "Impacto entrega": st.column_config.TextColumn(
-                                            "Impacto entrega"
-                                        ),
-                                        "Comentario": st.column_config.TextColumn("Comentario"),
-                                    },
-                                )
 
                     # ── Simulación acumulada ─────────────────────────────────────────
                     _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
