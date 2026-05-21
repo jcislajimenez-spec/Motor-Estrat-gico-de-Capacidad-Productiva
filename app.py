@@ -10075,8 +10075,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     # ── Simulación acumulada ─────────────────────────────────────────
                     _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
                     if _da_sim:
-                        with st.container(border=True):
-                            st.markdown(f"#### {t('prog_alt_sim_title')}")
+                        with st.expander(t("prog_alt_sim_title"), expanded=True):
                             _da_n_cfl = (
                                 len(_da_sim["conflict_df_sim"])
                                 if _da_sim.get("conflict_df_sim") is not None
