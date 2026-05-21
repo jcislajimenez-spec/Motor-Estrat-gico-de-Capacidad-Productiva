@@ -8793,6 +8793,41 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 _da_btn_clicked = False
                 with _da_main_col:
+                    # ── Qué se rompe: top 5 conflictos ───────────────────────
+                    _qsr_cdf = _prog_result["conflict_df"]
+                    if not _qsr_cdf.empty:
+                        st.markdown("#### Qué se rompe")
+                        _qsr_df = _qsr_cdf.copy()
+                        _qsr_load = _prog_result.get("load_df", pd.DataFrame())
+                        if not _qsr_load.empty and "Modelo / familia" in _qsr_load.columns:
+                            _qsr_mod = (
+                                _qsr_load.groupby(["Semana", "Línea"], as_index=False)
+                                .apply(lambda _g: pd.Series({
+                                    "Modelo / familia": ", ".join(sorted(set(
+                                        str(_v) for _v in _g["Modelo / familia"]
+                                        if str(_v) not in ("", "nan", "None")
+                                    ))) or "—",
+                                }))
+                            )
+                            _qsr_df = _qsr_df.merge(_qsr_mod, on=["Semana", "Línea"], how="left")
+                        _qsr_sort = "Déficit h" if "Déficit h" in _qsr_df.columns else "Semana"
+                        _qsr_top5 = (
+                            _qsr_df
+                            .sort_values(_qsr_sort, ascending=(_qsr_sort != "Déficit h"))
+                            .head(5)
+                            .reset_index(drop=True)
+                        )
+                        _qsr_disp = [c for c in [
+                            "Semana", "Línea", "Proyectos implicados",
+                            "Modelo / familia", "Déficit h",
+                        ] if c in _qsr_top5.columns]
+                        st.dataframe(
+                            _prog_round_display_df(_qsr_top5[_qsr_disp]),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(220, max(100, len(_qsr_top5) * 32 + 48)),
+                        )
+                    # ── Alternativas candidatas ───────────────────────────────
                     if _da_has_conflicts and _da_has_load:
                         st.markdown(f"#### {t('prog_alt_header')}")
                         _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
@@ -10476,64 +10511,64 @@ if st.session_state.active_tab == "📋 Programación real":
                 _qa_left_col, _qa_right_col = st.columns([3, 1])
 
                 with _qa_left_col:
-                    # ── Tabla "Qué se rompe" ──────────────────────────────────────
+                    # ── Tabla completa de conflictos (colapsada por defecto) ──
                     _cdf = _prog_result["conflict_df"].copy()
-                    st.markdown(t("prog_conflicts_header"))
-                    if _prog_result["conflict_df"].empty:
-                        st.success(t("prog_no_conflicts"))
-                    else:
-                        st.caption("Semanas y líneas con déficit. Proyectos implicados, no culpables únicos.")
-                        if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
-                            _cdf["Saturación %"] = _cdf.apply(
-                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
-                                if _r["Capacidad h"] > 0 else 0.0,
-                                axis=1,
-                            )
-                        _cdf = _cdf[
-                            [c for c in [
-                                "Semana", "Línea", "Carga h", "Capacidad h",
-                                "Déficit h", "Saturación %", "Proyectos implicados",
-                            ] if c in _cdf.columns]
-                        ].sort_values(
-                            ["Semana", "Déficit h"], ascending=[True, False]
-                        ).reset_index(drop=True)
-                        _cdf_display = _cdf[
-                            [c for c in [
-                                "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
-                                "Saturación %", "Proyectos implicados",
-                            ] if c in _cdf.columns]
-                        ]
-                        _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
-                        if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
-                            _enrich_agg = (
-                                _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
-                                .apply(lambda _g: pd.Series({
-                                    "Modelos implicados": ", ".join(sorted(set(
-                                        str(_v) for _v in _g["Modelo / familia"]
-                                        if str(_v) not in ("", "nan", "None")
-                                    ))) or "—",
-                                    "Equipos implicados": ", ".join(sorted(set(
-                                        str(_v) for _v in _g["Equipo / modelo"]
-                                        if str(_v) not in ("", "nan", "None")
-                                    ))) or "—",
-                                }))
-                            )
-                            _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
-                            _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
-                            _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
-                            st.dataframe(
-                                _prog_round_display_df(_cdf_display_enriched),
-                                use_container_width=True,
-                                hide_index=True,
-                                height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
-                            )
+                    with st.expander(t("prog_conflicts_header"), expanded=False):
+                        if _prog_result["conflict_df"].empty:
+                            st.success(t("prog_no_conflicts"))
                         else:
-                            st.dataframe(
-                                _prog_round_display_df(_cdf_display),
-                                use_container_width=True,
-                                hide_index=True,
-                                height=min(320, max(120, len(_cdf_display) * 32 + 48)),
-                            )
+                            st.caption("Semanas y líneas con déficit. Proyectos implicados, no culpables únicos.")
+                            if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
+                                _cdf["Saturación %"] = _cdf.apply(
+                                    lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                                    if _r["Capacidad h"] > 0 else 0.0,
+                                    axis=1,
+                                )
+                            _cdf = _cdf[
+                                [c for c in [
+                                    "Semana", "Línea", "Carga h", "Capacidad h",
+                                    "Déficit h", "Saturación %", "Proyectos implicados",
+                                ] if c in _cdf.columns]
+                            ].sort_values(
+                                ["Semana", "Déficit h"], ascending=[True, False]
+                            ).reset_index(drop=True)
+                            _cdf_display = _cdf[
+                                [c for c in [
+                                    "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
+                                    "Saturación %", "Proyectos implicados",
+                                ] if c in _cdf.columns]
+                            ]
+                            _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
+                            if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
+                                _enrich_agg = (
+                                    _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
+                                    .apply(lambda _g: pd.Series({
+                                        "Modelos implicados": ", ".join(sorted(set(
+                                            str(_v) for _v in _g["Modelo / familia"]
+                                            if str(_v) not in ("", "nan", "None")
+                                        ))) or "—",
+                                        "Equipos implicados": ", ".join(sorted(set(
+                                            str(_v) for _v in _g["Equipo / modelo"]
+                                            if str(_v) not in ("", "nan", "None")
+                                        ))) or "—",
+                                    }))
+                                )
+                                _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
+                                _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
+                                _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
+                                st.dataframe(
+                                    _prog_round_display_df(_cdf_display_enriched),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
+                                )
+                            else:
+                                st.dataframe(
+                                    _prog_round_display_df(_cdf_display),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    height=min(320, max(120, len(_cdf_display) * 32 + 48)),
+                                )
 
                 with _qa_right_col:
                     st.markdown("#### Auditoría")
