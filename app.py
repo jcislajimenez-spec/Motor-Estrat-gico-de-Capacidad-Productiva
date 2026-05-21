@@ -8471,10 +8471,10 @@ if st.session_state.active_tab == "📋 Programación real":
                     use_container_width=True,
                 )
 
-            # ── Franja compacta: uploader + contexto/calcular ─────────────────
+            # ── Franja compacta: uploader + contexto + botones en fila ──────
             with st.container(key=f"prog_hdr_franja_{plant_id}"):
 
-                _col_up, _col_ctx = st.columns([3, 2])
+                _col_up, _col_ctx, _col_b1, _col_b2 = st.columns([3, 2, 1, 1])
 
                 with _col_up:
                     _prog_uploaded = st.file_uploader(
@@ -8483,26 +8483,25 @@ if st.session_state.active_tab == "📋 Programación real":
                         key=f"prog_upload_{plant_id}",
                         label_visibility="collapsed",
                     )
-
-                # ── Parse + validación ────────────────────────────────────────
-                if _prog_uploaded is not None:
-                    _prog_hash        = _hashlib.sha256(_prog_uploaded.getvalue()).hexdigest()
-                    _prog_parsed_data = _parse_prog_excel(_prog_uploaded)
-                    if _prog_parsed_data["errors"]:
-                        for _perr in _prog_parsed_data["errors"]:
-                            st.error(f"Error: {_perr}")
-                        st.session_state.pop(f"_prog_parsed_{plant_id}", None)
-                    else:
-                        if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
+                    # ── Parse + validación ────────────────────────────────────
+                    if _prog_uploaded is not None:
+                        _prog_hash        = _hashlib.sha256(_prog_uploaded.getvalue()).hexdigest()
+                        _prog_parsed_data = _parse_prog_excel(_prog_uploaded)
+                        if _prog_parsed_data["errors"]:
+                            for _perr in _prog_parsed_data["errors"]:
+                                st.error(f"Error: {_perr}")
                             st.session_state.pop(f"_prog_parsed_{plant_id}", None)
-                            st.session_state.pop(f"_prog_v2_norm_{plant_id}", None)
-                            st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
-                            st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
-                            st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
-                            st.session_state.pop(f"_prog_v2_stale_{plant_id}", None)
-                            st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
-                        st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
-                        st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
+                        else:
+                            if _prog_hash != st.session_state.get(f"_prog_file_hash_{plant_id}"):
+                                st.session_state.pop(f"_prog_parsed_{plant_id}", None)
+                                st.session_state.pop(f"_prog_v2_norm_{plant_id}", None)
+                                st.session_state.pop(f"_prog_v2_result_{plant_id}", None)
+                                st.session_state.pop(f"_prog_v2_warnings_{plant_id}", None)
+                                st.session_state.pop(f"_prog_v2_lineas_{plant_id}", None)
+                                st.session_state.pop(f"_prog_v2_stale_{plant_id}", None)
+                                st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
+                            st.session_state[f"_prog_file_hash_{plant_id}"] = _prog_hash
+                            st.session_state[f"_prog_parsed_{plant_id}"]    = _prog_parsed_data
 
                 _prog_parsed = st.session_state.get(f"_prog_parsed_{plant_id}")
 
@@ -8526,23 +8525,26 @@ if st.session_state.active_tab == "📋 Programación real":
                         f"{len(_prog_planned_line_ids)} lín · {_fmt_num(_prog_cap_total)} h/sem"
                     )
 
-                    # ── Botón calcular ────────────────────────────────────────
-                    _prog_calc_clicked = False
+                # ── Botones en columnas independientes ────────────────────────
+                _prog_calc_clicked = False
+                with _col_b1:
                     if _prog_parsed is not None and not _prog_cap_df.empty:
                         with st.container(key=f"prog_hdr_calcular_{plant_id}"):
                             _prog_calc_clicked = st.button(
                                 t("prog_calc_btn"),
                                 key=f"prog_calc_btn_{plant_id}",
+                                use_container_width=True,
                             )
                     elif _prog_cap_df.empty:
                         st.caption(t("prog_calc_no_cap"))
 
-                    # ── Botón V2 ──────────────────────────────────────────────
-                    _prog_v2_calc_clicked = False
+                _prog_v2_calc_clicked = False
+                with _col_b2:
                     if _prog_parsed is not None and not _prog_cap_df.empty:
                         _prog_v2_calc_clicked = st.button(
                             "Calcular planificación V2",
                             key=f"prog_v2_calc_btn_{plant_id}",
+                            use_container_width=True,
                         )
 
             # ── Cuerpo de cálculo (sin tocar) ────────────────────────────────
@@ -8618,9 +8620,9 @@ if st.session_state.active_tab == "📋 Programación real":
                 _pkpis  = _prog_result["kpis"]
                 _n_excl = _pkpis["n_sin_linea"] + _pkpis["n_no_calc"]
 
-                # ── Veredicto ejecutivo ───────────────────────────────────────
+                # ── Veredicto compacto (detalle en los KPIs) ─────────────────
                 if _pkpis["n_conflict_weeks"] > 0:
-                    st.error(
+                    st.caption(
                         t("prog_verdict_conflict").format(
                             first=_pkpis["first_critical"],
                             line=_pkpis["most_tense"],
@@ -8628,11 +8630,9 @@ if st.session_state.active_tab == "📋 Programación real":
                         )
                     )
                 elif _n_excl > 0:
-                    st.warning(
-                        t("prog_verdict_ok_excl").format(n_excl=_n_excl)
-                    )
+                    st.caption(t("prog_verdict_ok_excl").format(n_excl=_n_excl))
                 else:
-                    st.success(
+                    st.caption(
                         t("prog_verdict_ok").format(
                             n_calc=_pkpis["n_calculated"],
                             n_total=_pkpis["n_loaded"],
