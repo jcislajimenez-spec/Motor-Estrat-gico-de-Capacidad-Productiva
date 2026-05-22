@@ -8799,6 +8799,8 @@ if st.session_state.active_tab == "📋 Programación real":
 }}
 </style>""", unsafe_allow_html=True)
                 _da_act_col, _da_btn_col = st.columns([4, 1])
+                with _da_act_col:
+                    st.markdown("#### Acciones simulables")
                 with _da_btn_col:
                     if _da_has_conflicts and _da_has_load:
                         _da_btn_clicked = st.button(
@@ -8806,17 +8808,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             key=f"prog_alt_btn_{plant_id}",
                             use_container_width=True,
                         )
-                with st.container(key=f"prog_sim_tabs_{plant_id}"):
-                    _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
-                with _tab_ml:
-                    if _da_has_conflicts and _da_has_load:
-                        if (
-                            st.session_state.get(f"_prog_v2_stale_{plant_id}", False)
-                            and st.session_state.get(f"_prog_v2_lineas_{plant_id}")
-                        ):
-                            st.caption(f"⚠ {t('prog_alt_v2_stale_warn')}")
-                    else:
-                        st.caption(t("prog_alt_no_conflicts"))
 
                 if _da_has_conflicts and _da_has_load:
                     if _da_btn_clicked:
@@ -9384,7 +9375,21 @@ if st.session_state.active_tab == "📋 Programación real":
                             )
 
                 # ── Mostrar resultado alternativas (tras cálculo, un solo clic) ─────────
-                if _da_has_conflicts and _da_has_load:
+                _has_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}") is not None
+                if not _da_has_conflicts or not _da_has_load:
+                    st.caption(t("prog_alt_no_conflicts"))
+                elif not _has_alt_result:
+                    st.caption("Pulsa Calcular alternativas para ver acciones simulables.")
+                if _has_alt_result and _da_has_conflicts and _da_has_load:
+                    st.markdown("#### Alternativas candidatas")
+                    with st.container(key=f"prog_sim_tabs_{plant_id}"):
+                        _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
+                    with _tab_ml:
+                        if (
+                            st.session_state.get(f"_prog_v2_stale_{plant_id}", False)
+                            and st.session_state.get(f"_prog_v2_lineas_{plant_id}")
+                        ):
+                            st.caption(f"⚠ {t('prog_alt_v2_stale_warn')}")
                     with _tab_ml:
                         _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}")
                         if _da_alt_result is not None:
