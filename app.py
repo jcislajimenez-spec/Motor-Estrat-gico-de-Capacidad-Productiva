@@ -8595,7 +8595,7 @@ if st.session_state.active_tab == "📋 Programación real":
                 _da_btn_clicked = False
 
                 # ── Gráfico carga vs capacidad (izq) + Alternativas candidatas (der) ──
-                _ch_main_col, _da_main_col = st.columns([3, 2])
+                _ch_main_col, _da_main_col = st.columns([1, 1])
 
                 with _ch_main_col:
                     _ch_load_df = _prog_result.get("load_df")
@@ -8711,7 +8711,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 hovertemplate="Capacidad: %{y:.1f} h<extra></extra>",
                             ))
                             _ch_fig.update_layout(
-                                height=260,
+                                height=330,
                                 margin=dict(l=0, r=0, t=20, b=0),
                                 legend=dict(
                                     orientation="h", yanchor="bottom", y=1.02,
@@ -8729,44 +8729,77 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 _da_btn_clicked = False
                 with _da_main_col:
-                    # ── Qué se rompe: top 5 conflictos ───────────────────────
+                    # ── Qué se rompe: conflictos enriquecidos (8 filas) ───────
                     _qsr_cdf = _prog_result["conflict_df"]
                     if not _qsr_cdf.empty:
                         st.markdown("#### Qué se rompe")
                         _qsr_df = _qsr_cdf.copy()
+                        if "Capacidad h" in _qsr_df.columns and "Carga h" in _qsr_df.columns:
+                            _qsr_df["Saturación %"] = _qsr_df.apply(
+                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                                if _r["Capacidad h"] > 0 else 0.0,
+                                axis=1,
+                            )
                         _qsr_load = _prog_result.get("load_df", pd.DataFrame())
-                        if not _qsr_load.empty and "Modelo / familia" in _qsr_load.columns:
-                            _qsr_mod = (
+                        if (not _qsr_load.empty
+                                and "Modelo / familia" in _qsr_load.columns
+                                and "Equipo / modelo" in _qsr_load.columns):
+                            _qsr_agg = (
                                 _qsr_load.groupby(["Semana", "Línea"], as_index=False)
                                 .apply(lambda _g: pd.Series({
-                                    "Modelo / familia": ", ".join(sorted(set(
+                                    "Modelos implicados": ", ".join(sorted(set(
+                                        str(_v) for _v in _g["Modelo / familia"]
+                                        if str(_v) not in ("", "nan", "None")
+                                    ))) or "—",
+                                    "Equipos implicados": ", ".join(sorted(set(
+                                        str(_v) for _v in _g["Equipo / modelo"]
+                                        if str(_v) not in ("", "nan", "None")
+                                    ))) or "—",
+                                }))
+                            )
+                            _qsr_df = _qsr_df.merge(_qsr_agg, on=["Semana", "Línea"], how="left")
+                            _qsr_df["Modelos implicados"] = _qsr_df["Modelos implicados"].fillna("—")
+                            _qsr_df["Equipos implicados"] = _qsr_df["Equipos implicados"].fillna("—")
+                        elif not _qsr_load.empty and "Modelo / familia" in _qsr_load.columns:
+                            _qsr_agg = (
+                                _qsr_load.groupby(["Semana", "Línea"], as_index=False)
+                                .apply(lambda _g: pd.Series({
+                                    "Modelos implicados": ", ".join(sorted(set(
                                         str(_v) for _v in _g["Modelo / familia"]
                                         if str(_v) not in ("", "nan", "None")
                                     ))) or "—",
                                 }))
                             )
-                            _qsr_df = _qsr_df.merge(_qsr_mod, on=["Semana", "Línea"], how="left")
+                            _qsr_df = _qsr_df.merge(_qsr_agg, on=["Semana", "Línea"], how="left")
+                            _qsr_df["Modelos implicados"] = _qsr_df["Modelos implicados"].fillna("—")
                         _qsr_sort = "Déficit h" if "Déficit h" in _qsr_df.columns else "Semana"
-                        _qsr_top5 = (
+                        _qsr_disp = (
                             _qsr_df
                             .sort_values(_qsr_sort, ascending=(_qsr_sort != "Déficit h"))
-                            .head(5)
                             .reset_index(drop=True)
                         )
-                        _qsr_disp = [c for c in [
-                            "Semana", "Línea", "Proyectos implicados",
-                            "Modelo / familia", "Déficit h",
-                        ] if c in _qsr_top5.columns]
+                        _qsr_cols = [c for c in [
+                            "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
+                            "Saturación %", "Proyectos implicados",
+                            "Modelos implicados", "Equipos implicados",
+                        ] if c in _qsr_disp.columns]
                         st.dataframe(
-                            _prog_round_display_df(_qsr_top5[_qsr_disp]),
+                            _prog_round_display_df(_qsr_disp[_qsr_cols]),
                             use_container_width=True,
                             hide_index=True,
-                            height=min(220, max(100, len(_qsr_top5) * 32 + 48)),
+                            height=330,
                         )
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 # ── Acciones simulables: Mover línea | Ampliar semanas ──────────────────
-                _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
+                st.markdown(f"""<style>
+[class*="st-key-prog_sim_tabs_{plant_id}"] button[data-testid="stTab"] p {{
+    font-size: 1.05rem;
+    font-weight: 600;
+}}
+</style>""", unsafe_allow_html=True)
+                with st.container(key=f"prog_sim_tabs_{plant_id}"):
+                    _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
                 with _tab_ml:
                     if _da_has_conflicts and _da_has_load:
                         st.markdown(f"#### {t('prog_alt_header')}")
@@ -9522,7 +9555,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             disabled=[c for c in _da_edit_cols if c != "Aplicar"],
                                             hide_index=True,
                                             use_container_width=True,
-                                            height=max(140, min(len(_da_df_c), 5) * 35 + 45),
+                                            height=max(140, min(len(_da_df_c), 6) * 35 + 45),
                                             key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                         )
                                     else:
@@ -9960,7 +9993,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .drop(columns=["_sort_e", "_sort_d"])
                                         .reset_index(drop=True)
                                     )
-                                    _dat_h = max(140, min(len(_dat_df), 5) * 35 + 45)
+                                    _dat_h = max(140, min(len(_dat_df), 6) * 35 + 45)
                                     st.dataframe(
                                         _dat_df,
                                         use_container_width=True,
@@ -10432,7 +10465,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         _gt_styled,
                         use_container_width=True,
                         hide_index=True,
-                        height=min(320, max(150, len(_gt_df) * 32 + 60)),
+                        height=min(600, max(260, len(_gt_df) * 32 + 60)),
                         column_config=_gt_col_cfg,
                     )
                 else:
