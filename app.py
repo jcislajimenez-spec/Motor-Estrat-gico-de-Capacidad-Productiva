@@ -10471,90 +10471,44 @@ if st.session_state.active_tab == "📋 Programación real":
                 else:
                     st.caption(t("prog_gantt_empty"))
 
-                # ── Franja: Qué se rompe (izq) | Auditoría índice (der) ──────────────
-                st.markdown("""<style>
-[class*="st-key-prog_audit_buttons"] { margin-top: 0.65rem; }
-[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] { margin-bottom: 0.22rem; }
-[class*="st-key-prog_audit_buttons"] div[data-testid="stButton"] button {
-    min-height: 2.0rem; padding: 0.22rem 0.55rem;
-    line-height: 1.1; white-space: nowrap;
-}
-</style>""", unsafe_allow_html=True)
-                _qa_left_col, _qa_right_col = st.columns([3, 1])
+                # ── Auditoría técnica ──────────────────────────────────────────────────
+                _cdf = _prog_result["conflict_df"].copy()
+                if not _cdf.empty and "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
+                    _cdf["Saturación %"] = _cdf.apply(
+                        lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
+                        if _r["Capacidad h"] > 0 else 0.0,
+                        axis=1,
+                    )
+                _cdf_cols = [c for c in [
+                    "Semana", "Línea", "Carga h", "Capacidad h",
+                    "Déficit h", "Saturación %", "Proyectos implicados",
+                ] if c in _cdf.columns]
+                if _cdf_cols:
+                    _cdf = _cdf[_cdf_cols]
+                _cdf_sort = [c for c in ["Semana", "Déficit h"] if c in _cdf.columns]
+                if _cdf_sort and not _cdf.empty:
+                    _cdf = _cdf.sort_values(
+                        _cdf_sort,
+                        ascending=[c == "Semana" for c in _cdf_sort],
+                    )
+                _cdf = _cdf.reset_index(drop=True)
 
-                with _qa_left_col:
-                    # ── Tabla completa de conflictos (colapsada por defecto) ──
-                    _cdf = _prog_result["conflict_df"].copy()
-                    with st.expander(t("prog_conflicts_header"), expanded=False):
-                        if _prog_result["conflict_df"].empty:
-                            st.success(t("prog_no_conflicts"))
-                        else:
-                            st.caption("Semanas y líneas con déficit. Proyectos implicados, no culpables únicos.")
-                            if "Capacidad h" in _cdf.columns and "Carga h" in _cdf.columns:
-                                _cdf["Saturación %"] = _cdf.apply(
-                                    lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
-                                    if _r["Capacidad h"] > 0 else 0.0,
-                                    axis=1,
-                                )
-                            _cdf = _cdf[
-                                [c for c in [
-                                    "Semana", "Línea", "Carga h", "Capacidad h",
-                                    "Déficit h", "Saturación %", "Proyectos implicados",
-                                ] if c in _cdf.columns]
-                            ].sort_values(
-                                ["Semana", "Déficit h"], ascending=[True, False]
-                            ).reset_index(drop=True)
-                            _cdf_display = _cdf[
-                                [c for c in [
-                                    "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
-                                    "Saturación %", "Proyectos implicados",
-                                ] if c in _cdf.columns]
-                            ]
-                            _load_df_enrich = _prog_result.get("load_df", pd.DataFrame())
-                            if not _load_df_enrich.empty and "Modelo / familia" in _load_df_enrich.columns and "Equipo / modelo" in _load_df_enrich.columns:
-                                _enrich_agg = (
-                                    _load_df_enrich.groupby(["Semana", "Línea"], as_index=False)
-                                    .apply(lambda _g: pd.Series({
-                                        "Modelos implicados": ", ".join(sorted(set(
-                                            str(_v) for _v in _g["Modelo / familia"]
-                                            if str(_v) not in ("", "nan", "None")
-                                        ))) or "—",
-                                        "Equipos implicados": ", ".join(sorted(set(
-                                            str(_v) for _v in _g["Equipo / modelo"]
-                                            if str(_v) not in ("", "nan", "None")
-                                        ))) or "—",
-                                    }))
-                                )
-                                _cdf_display_enriched = _cdf_display.merge(_enrich_agg, on=["Semana", "Línea"], how="left")
-                                _cdf_display_enriched["Modelos implicados"] = _cdf_display_enriched["Modelos implicados"].fillna("—")
-                                _cdf_display_enriched["Equipos implicados"] = _cdf_display_enriched["Equipos implicados"].fillna("—")
-                                st.dataframe(
-                                    _prog_round_display_df(_cdf_display_enriched),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    height=min(320, max(120, len(_cdf_display_enriched) * 32 + 48)),
-                                )
-                            else:
-                                st.dataframe(
-                                    _prog_round_display_df(_cdf_display),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    height=min(320, max(120, len(_cdf_display) * 32 + 48)),
-                                )
-
-                with _qa_right_col:
-                    st.markdown("#### Auditoría")
-                    st.caption("Detalle técnico")
-                    with st.container(key=f"prog_audit_buttons_{plant_id}"):
-                        if st.button("Proyectos excluidos",    key=f"prog_audit_btn_excl_{plant_id}",   use_container_width=True):
+                with st.expander("Auditoría técnica", expanded=False):
+                    _aud_c1, _aud_c2, _aud_c3, _aud_c4, _aud_c5 = st.columns(5)
+                    with _aud_c1:
+                        if st.button("Excluidos", key=f"prog_audit_btn_excl_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
-                        if st.button("Capacidad por línea",    key=f"prog_audit_btn_cap_{plant_id}",    use_container_width=True):
+                    with _aud_c2:
+                        if st.button("Capacidad", key=f"prog_audit_btn_cap_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "capacidad"
-                        if st.button("Carga calculada",        key=f"prog_audit_btn_carga_{plant_id}",  use_container_width=True):
+                    with _aud_c3:
+                        if st.button("Carga", key=f"prog_audit_btn_carga_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
-                        if st.button("Avisos",                 key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
+                    with _aud_c4:
+                        if st.button("Avisos", key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
-                        if st.button("Conflictos completos",   key=f"prog_audit_btn_conf_{plant_id}",   use_container_width=True):
+                    with _aud_c5:
+                        if st.button("Conflictos", key=f"prog_audit_btn_conf_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
 
                 # ── Contenido técnico seleccionado ──────────────────────────────────
