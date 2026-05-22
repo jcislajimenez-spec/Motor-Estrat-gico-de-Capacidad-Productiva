@@ -8298,6 +8298,103 @@ def _simulate_prog_split_line(
     }
 
 
+def _simulate_prog_extend_duration(
+    load_df,
+    proyecto: str,
+    linea: str,
+    semanas_simuladas: int,
+) -> dict:
+    """
+    Redistribuye las horas totales del proyecto+línea a semanas_simuladas semanas
+    desde la semana de inicio actual. No modifica el original.
+    Devuelve {"load_df", "ok", "warning", "sem_inicio", "h_sem_antes", "h_sem_despues"}.
+    """
+    _empty = {
+        "load_df":       load_df.copy() if load_df is not None else pd.DataFrame(),
+        "ok":            False,
+        "warning":       "",
+        "sem_inicio":    None,
+        "h_sem_antes":   None,
+        "h_sem_despues": None,
+    }
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        _empty["warning"] = "load_df vacío."
+        return _empty
+    for _col in ("Proyecto", "Línea", "Semana", "Horas proyecto semana"):
+        if _col not in load_df.columns:
+            _empty["warning"] = f"Columna '{_col}' no encontrada en load_df."
+            return _empty
+
+    _mask = (
+        (load_df["Proyecto"].astype(str) == str(proyecto)) &
+        (load_df["Línea"].astype(str)    == str(linea))
+    )
+    _filas = load_df[_mask].copy()
+    if _filas.empty:
+        _empty["warning"] = f"Proyecto '{proyecto}' no tiene filas en línea '{linea}'."
+        return _empty
+
+    try:
+        _sems = sorted(_filas["Semana"].astype(int).unique().tolist())
+    except (ValueError, TypeError):
+        _empty["warning"] = "No se puede convertir la columna Semana a entero."
+        return _empty
+    _dur_actual = len(_sems)
+    _sem_inicio = min(_sems)
+    _tot_h      = round(float(_filas["Horas proyecto semana"].sum()), 1)
+    if _dur_actual <= 0 or _tot_h <= 0:
+        _empty["warning"] = "No hay horas que redistribuir."
+        return _empty
+
+    _h_sem_antes = round(_tot_h / _dur_actual, 1)
+    try:
+        semanas_simuladas = int(semanas_simuladas)
+    except (ValueError, TypeError):
+        _empty["warning"] = (
+            f"Valor de semanas_simuladas no convertible a entero: '{semanas_simuladas}'."
+        )
+        return _empty
+    if semanas_simuladas <= _dur_actual:
+        _empty["warning"] = (
+            f"Semanas simuladas ({semanas_simuladas}) ≤ actuales ({_dur_actual}). Debe ser mayor."
+        )
+        return _empty
+    if _sem_inicio + semanas_simuladas - 1 > 52:
+        _empty["warning"] = (
+            f"El ajuste supera la semana 52 "
+            f"(inicio S{_sem_inicio} + {semanas_simuladas} sem → "
+            f"S{_sem_inicio + semanas_simuladas - 1})."
+        )
+        return _empty
+
+    _h_sem_despues = round(_tot_h / semanas_simuladas, 1)
+    _h_each        = [round(_tot_h / semanas_simuladas, 1)] * semanas_simuladas
+    _diff_h        = round(_tot_h - sum(_h_each), 1)
+    if _diff_h != 0:
+        _h_each[0] = round(_h_each[0] + _diff_h, 1)
+
+    _row_tmpl = _filas.iloc[0].to_dict()
+    _new_rows = []
+    for _ni, _ns in enumerate(range(_sem_inicio, _sem_inicio + semanas_simuladas)):
+        _nr = dict(_row_tmpl)
+        _nr["Semana"]                = _ns
+        _nr["Horas proyecto semana"] = _h_each[_ni]
+        _new_rows.append(_nr)
+
+    _sim_ext = pd.concat(
+        [load_df[~_mask], pd.DataFrame(_new_rows)],
+        ignore_index=True,
+    )
+    return {
+        "load_df":       _sim_ext,
+        "ok":            True,
+        "warning":       "",
+        "sem_inicio":    _sem_inicio,
+        "h_sem_antes":   _h_sem_antes,
+        "h_sem_despues": _h_sem_despues,
+    }
+
+
 def _resolver_prog_linea_alternativa(linea_raw: str, cap_df) -> dict:
     """
     Resuelve una línea alternativa raw contra las líneas de cap_df.
@@ -10018,13 +10115,25 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .drop(columns=["_sort_e", "_sort_d"])
                                         .reset_index(drop=True)
                                     )
-                                    _dat_h = 255
-                                    st.dataframe(
+                                    _dat_df["Aplicar"] = False
+                                    _dat_h   = 255
+                                    _ext_ver = st.session_state.get(
+                                        f"_prog_extend_editor_ver_{plant_id}", 0
+                                    )
+                                    _dat_cols_ro = [
+                                        c for c in _dat_df.columns if c != "Aplicar"
+                                    ]
+                                    _dat_edited = st.data_editor(
                                         _dat_df,
                                         use_container_width=True,
                                         height=_dat_h,
                                         hide_index=True,
+                                        key=f"prog_extend_editor_{plant_id}_{_ext_ver}",
+                                        disabled=_dat_cols_ro,
                                         column_config={
+                                            "Aplicar": st.column_config.CheckboxColumn(
+                                                "Aplicar", width="small", default=False
+                                            ),
                                             "Estado": st.column_config.TextColumn(
                                                 "Estado", width="small"
                                             ),
@@ -10065,6 +10174,116 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Comentario": st.column_config.TextColumn("Comentario"),
                                         },
                                     )
+                                    if st.button(
+                                        "Aplicar ajuste temporal seleccionado",
+                                        key=f"prog_extend_apply_btn_{plant_id}",
+                                        type="primary",
+                                        use_container_width=True,
+                                    ):
+                                        _ext_sel = _dat_edited[
+                                            _dat_edited["Aplicar"] == True
+                                        ].copy()
+                                        if _ext_sel.empty:
+                                            st.caption("Selecciona al menos una fila.")
+                                        elif (_ext_sel["Estado"] == "No aplicable").any():
+                                            st.warning(
+                                                "Hay filas marcadas como No aplicable. "
+                                                "Desmarca esas filas antes de simular."
+                                            )
+                                        elif (_ext_sel["Estado"] == "No mejora").any():
+                                            st.warning(
+                                                "Hay filas marcadas como No mejora. "
+                                                "Desmarca esas filas antes de simular."
+                                            )
+                                        elif _ext_sel["Semanas simuladas"].isna().any():
+                                            st.warning(
+                                                "Alguna fila seleccionada no tiene semanas "
+                                                "simuladas válidas."
+                                            )
+                                        elif _ext_sel["Proyecto"].duplicated().any():
+                                            st.warning(
+                                                "Hay proyectos duplicados en la selección. "
+                                                "Solo puede haber una fila por proyecto."
+                                            )
+                                        else:
+                                            _ext_load_acc  = _dat_load_src.copy()
+                                            _ext_movs: list  = []
+                                            _ext_avisos: list = []
+                                            _ext_ok = True
+                                            for _, _ext_r in _ext_sel.iterrows():
+                                                _ext_res = _simulate_prog_extend_duration(
+                                                    _ext_load_acc,
+                                                    str(_ext_r["Proyecto"]),
+                                                    str(_ext_r["Línea"]),
+                                                    int(_ext_r["Semanas simuladas"]),
+                                                )
+                                                if not _ext_res["ok"]:
+                                                    st.warning(
+                                                        f"{_ext_r['Proyecto']}: "
+                                                        f"{_ext_res['warning']}"
+                                                    )
+                                                    _ext_ok = False
+                                                    break
+                                                _ext_load_acc = _ext_res["load_df"]
+                                                _ext_av = str(
+                                                    _ext_r.get("Comentario") or ""
+                                                ).strip()
+                                                _ext_movs.append({
+                                                    "tipo_accion":       "Ajuste temporal",
+                                                    "proyecto":          str(_ext_r["Proyecto"]),
+                                                    "linea_actual":      str(_ext_r["Línea"]),
+                                                    "linea_destino":     str(_ext_r["Línea"]),
+                                                    "semanas_actuales":  int(_ext_r["Semanas actuales"]),
+                                                    "semanas_simuladas": int(_ext_r["Semanas simuladas"]),
+                                                    "h_sem_antes":       _ext_res["h_sem_antes"],
+                                                    "h_sem_despues":     _ext_res["h_sem_despues"],
+                                                    "mejora_h_est":      float(
+                                                        _ext_r.get(
+                                                            "Déficit global eliminado (h)"
+                                                        ) or 0.0
+                                                    ),
+                                                    "impacto_entrega":   str(
+                                                        _ext_r.get("Impacto entrega") or ""
+                                                    ).strip(),
+                                                    "aviso":             _ext_av,
+                                                })
+                                                if _ext_av and _ext_av.lower() not in (
+                                                    "nan", "none", "null", ""
+                                                ):
+                                                    _ext_avisos.append(
+                                                        f"{_ext_r['Proyecto']}: {_ext_av}"
+                                                    )
+                                            if _ext_ok:
+                                                _ext_final = _recompute_prog_deficit_global(
+                                                    _ext_load_acc, _prog_cap_df
+                                                )
+                                                st.session_state[
+                                                    f"_prog_alt_sim_{plant_id}"
+                                                ] = {
+                                                    "movimientos":     _ext_movs,
+                                                    "load_df_sim":     _ext_load_acc,
+                                                    "cap_df_sim":      _prog_cap_df.copy(),
+                                                    "conflict_df_sim": _ext_final["conflict_df"],
+                                                    "deficit_antes":   _dat_base_res[
+                                                        "deficit_total_h"
+                                                    ],
+                                                    "deficit_despues": _ext_final[
+                                                        "deficit_total_h"
+                                                    ],
+                                                    "mejora_total_h":  round(
+                                                        _dat_base_res["deficit_total_h"]
+                                                        - _ext_final["deficit_total_h"],
+                                                        1,
+                                                    ),
+                                                    "avisos":          _ext_avisos,
+                                                }
+                                                st.session_state[
+                                                    f"prog_gantt_vista_{plant_id}"
+                                                ] = "Simulación"
+                                                st.session_state[
+                                                    f"_prog_extend_editor_ver_{plant_id}"
+                                                ] = _ext_ver + 1
+                                                st.rerun()
 
                     # ── Simulación acumulada ─────────────────────────────────────────
                     _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
@@ -10100,31 +10319,70 @@ if st.session_state.active_tab == "📋 Programación real":
                             _da_clean_v = lambda v: "" if (not v or str(v).strip().lower() in ("nan", "none", "null")) else str(v).strip()
                             _da_res_rows = []
                             for m in _da_sim["movimientos"]:
-                                _r_cdest  = _da_cap_sim_lkp.get(str(m["linea_destino"]))
-                                _r_hsem   = m.get("h_sem_prom")
-                                _r_margen = round(float(_r_cdest) - float(_r_hsem), 1) if (_r_cdest is not None and _r_hsem) else None
-                                _r_av     = _da_clean_v(m.get("aviso"))
-                                if _r_margen is not None and _r_margen < 0:
-                                    _r_com = f"Queda déficit en destino.{(' ' + _r_av) if _r_av else ''}"
-                                elif _r_av:
-                                    _r_com = _r_av
+                                _r_tipo_accion = m.get("tipo_accion", "Mover línea")
+                                if _r_tipo_accion == "Ajuste temporal":
+                                    _r_cdest_at = _da_cap_sim_lkp.get(str(m["linea_actual"]))
+                                    _r_hsem_at  = m.get("h_sem_despues")
+                                    _r_marg_at  = (
+                                        round(float(_r_cdest_at) - float(_r_hsem_at), 1)
+                                        if (_r_cdest_at is not None and _r_hsem_at)
+                                        else None
+                                    )
+                                    _r_av_at = _da_clean_v(m.get("aviso"))
+                                    _r_com_at = (
+                                        m.get("impacto_entrega") or _r_av_at or "Ajuste aplicado."
+                                    )
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Ajuste temporal",
+                                        "Proyecto":               m["proyecto"],
+                                        "Movimiento":             (
+                                            f"Ampliar semanas "
+                                            f"({m.get('semanas_actuales', '?')} → "
+                                            f"{m.get('semanas_simuladas', '?')})"
+                                        ),
+                                        "Modo":                   "Ampliar duración",
+                                        "Carga total origen (h)": "",
+                                        "% enviado":              "",
+                                        "Semanas":                m.get("semanas_simuladas", ""),
+                                        "Horas enviadas (h)":     "",
+                                        "Horas env/sem":          m.get("h_sem_despues", ""),
+                                        "Cap. destino h/sem":     (
+                                            round(float(_r_cdest_at), 1)
+                                            if _r_cdest_at is not None
+                                            else ""
+                                        ),
+                                        "Margen/déficit h/sem":   (
+                                            _r_marg_at if _r_marg_at is not None else ""
+                                        ),
+                                        "Déficit pendiente (h)":  "",
+                                        "Comentario":             _r_com_at,
+                                    })
                                 else:
-                                    _r_com = "El destino absorbe su parte."
-                                _da_res_rows.append({
-                                    "Tipo":                   "Movimiento aplicado",
-                                    "Proyecto":               m["proyecto"],
-                                    "Movimiento":             f"{m['linea_actual']} → {m['linea_destino']}",
-                                    "Modo":                   "Carga completa" if m.get("fraccion_pct", "100 %") == "100 %" else "Reparto igualitario",
-                                    "Carga total origen (h)": m.get("carga_total_origen", ""),
-                                    "% enviado":              m.get("fraccion_pct", "100 %"),
-                                    "Semanas":                m.get("sem_count", ""),
-                                    "Horas enviadas (h)":     m.get("horas_movidas", ""),
-                                    "Horas env/sem":          m.get("h_sem_prom", ""),
-                                    "Cap. destino h/sem":     round(float(_r_cdest), 1) if _r_cdest is not None else "",
-                                    "Margen/déficit h/sem":   _r_margen if _r_margen is not None else "",
-                                    "Déficit pendiente (h)":  "",
-                                    "Comentario":             _r_com,
-                                })
+                                    _r_cdest  = _da_cap_sim_lkp.get(str(m["linea_destino"]))
+                                    _r_hsem   = m.get("h_sem_prom")
+                                    _r_margen = round(float(_r_cdest) - float(_r_hsem), 1) if (_r_cdest is not None and _r_hsem) else None
+                                    _r_av     = _da_clean_v(m.get("aviso"))
+                                    if _r_margen is not None and _r_margen < 0:
+                                        _r_com = f"Queda déficit en destino.{(' ' + _r_av) if _r_av else ''}"
+                                    elif _r_av:
+                                        _r_com = _r_av
+                                    else:
+                                        _r_com = "El destino absorbe su parte."
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Movimiento aplicado",
+                                        "Proyecto":               m["proyecto"],
+                                        "Movimiento":             f"{m['linea_actual']} → {m['linea_destino']}",
+                                        "Modo":                   "Carga completa" if m.get("fraccion_pct", "100 %") == "100 %" else "Reparto igualitario",
+                                        "Carga total origen (h)": m.get("carga_total_origen", ""),
+                                        "% enviado":              m.get("fraccion_pct", "100 %"),
+                                        "Semanas":                m.get("sem_count", ""),
+                                        "Horas enviadas (h)":     m.get("horas_movidas", ""),
+                                        "Horas env/sem":          m.get("h_sem_prom", ""),
+                                        "Cap. destino h/sem":     round(float(_r_cdest), 1) if _r_cdest is not None else "",
+                                        "Margen/déficit h/sem":   _r_margen if _r_margen is not None else "",
+                                        "Déficit pendiente (h)":  "",
+                                        "Comentario":             _r_com,
+                                    })
                             _da_cfl_sim = _da_sim.get("conflict_df_sim")
                             if _da_cfl_sim is not None and not _da_cfl_sim.empty:
                                 _da_cfl_agg = (
