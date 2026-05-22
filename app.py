@@ -9585,12 +9585,25 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 hide_index=True,
                                                 use_container_width=True,
                                             )
-                                    _da_apply_multi_clicked = st.button(
-                                        t("prog_alt_apply_multi_btn"),
-                                        key=f"prog_alt_apply_multi_btn_{plant_id}",
-                                        use_container_width=True,
-                                        type="primary",
-                                    )
+                                    st.markdown(f"""<style>
+[class*="st-key-prog_alt_apply_area_{plant_id}"] button[data-testid="stBaseButton-primary"] {{
+    background-color: #C0392B !important;
+    border-color: #C0392B !important;
+    color: white !important;
+}}
+[class*="st-key-prog_alt_apply_area_{plant_id}"] button[data-testid="stBaseButton-primary"]:hover {{
+    background-color: #A93226 !important;
+    border-color: #A93226 !important;
+    color: white !important;
+}}
+</style>""", unsafe_allow_html=True)
+                                    with st.container(key=f"prog_alt_apply_area_{plant_id}"):
+                                        _da_apply_multi_clicked = st.button(
+                                            t("prog_alt_apply_multi_btn"),
+                                            key=f"prog_alt_apply_multi_btn_{plant_id}",
+                                            use_container_width=True,
+                                            type="primary",
+                                        )
                                     if _da_apply_multi_clicked:
                                         _da_sel_idx = _da_df_edited[
                                             _da_df_edited["Aplicar"] == True
@@ -10477,7 +10490,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         _gt_styled,
                         use_container_width=True,
                         hide_index=True,
-                        height=min(600, max(260, len(_gt_df) * 32 + 60)),
+                        height=min(520, max(260, len(_gt_df) * 32 + 60)),
                         column_config=_gt_col_cfg,
                     )
                 else:
@@ -10688,8 +10701,6 @@ if st.session_state.active_tab == "📋 Programación real":
                 _prog_v2_warns_ss  = st.session_state.get(f"_prog_v2_warnings_{plant_id}", [])
 
                 if _prog_v2_norm_ss is not None or _prog_v2_result_ss is not None:
-                    st.markdown("---")
-                    st.caption("Planificación V2 experimental — ocupación exclusiva de líneas")
 
                     if _prog_v2_norm_ss is not None and not _prog_v2_norm_ss["ok"]:
                         for _v2e in _prog_v2_norm_ss.get("errores", []):
@@ -10699,11 +10710,12 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_v2_result_ss is not None:
                         _v2k = _prog_v2_result_ss["kpis"]
 
-                        _v2m1, _v2m2, _v2m3, _v2m4 = st.columns(4)
-                        _v2m1.metric("Planificados",       _v2k.get("planificados", 0))
-                        _v2m2.metric("Excluidos",          _v2k.get("excluidos", 0))
-                        _v2m3.metric("Conflictos críticos", _v2k.get("conflictos_criticos", 0))
-                        _v2m4.metric("Warnings",           _v2k.get("warnings", 0))
+                        st.caption(
+                            f"Planificados: {_v2k.get('planificados', 0)} · "
+                            f"Excluidos: {_v2k.get('excluidos', 0)} · "
+                            f"Conflictos críticos: {_v2k.get('conflictos_criticos', 0)} · "
+                            f"Warnings: {_v2k.get('warnings', 0)}"
+                        )
 
                         if _prog_v2_result_ss.get("asignaciones"):
                             st.markdown("##### Asignaciones")
@@ -10723,7 +10735,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "proyecto_id", "linea_asignada", "tipo_linea",
                                 "modelo_capacidad_usado", "capacidad_origen",
                                 "sem_inicio", "sem_fin",
-                                "estado", "delta_semanas", "uso_alternativa",
+                                "estado", "delta_semanas",
                             ] if c in _v2_asg_df.columns]
                             if _v2_lineas_ss and any(
                                 v.get("tipo_linea") == "POTENCIAL_ESTIMADA"
@@ -10740,7 +10752,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 ),
                                 use_container_width=True,
                                 hide_index=True,
-                                height=min(420, max(110, len(_v2_asg_df) * 36 + 56)),
+                                height=min(280, max(110, len(_v2_asg_df) * 32 + 48)),
                             )
 
                         if _prog_v2_result_ss.get("excluidos"):
