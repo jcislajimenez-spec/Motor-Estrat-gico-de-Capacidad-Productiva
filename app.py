@@ -203,7 +203,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Las barras muestran la carga programada. La línea muestra la capacidad disponible. Si la barra supera la línea, hay déficit.",
         "prog_chart_no_load":             "No hay carga calculada para representar el gráfico.",
         "prog_chart_no_capacity":         "No hay capacidad disponible para construir el gráfico.",
-        "prog_alt_btn":           "Calcular alternativas candidatas",
+        "prog_alt_btn":           "Calcular alternativas",
         "prog_alt_header":        "Alternativas candidatas",
         "prog_alt_caption":       "Simulación individual V1: cada candidata evalúa mover un proyecto de forma aislada, sin combinar movimientos. No aplica cambios automáticamente.",
         "prog_alt_no_conflicts":  "Sin conflictos activos; no se calculan alternativas de línea.",
@@ -496,7 +496,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Bars show scheduled load. The line shows available capacity. If a bar exceeds the line, there is a deficit.",
         "prog_chart_no_load":             "No calculated load available to display the chart.",
         "prog_chart_no_capacity":         "No capacity available to build the chart.",
-        "prog_alt_btn":           "Calculate alternative candidates",
+        "prog_alt_btn":           "Calculate alternatives",
         "prog_alt_header":        "Alternative candidates",
         "prog_alt_caption":       "Individual V1 simulation: each candidate evaluates moving one project in isolation, without combining movements. Does not apply changes automatically.",
         "prog_alt_no_conflicts":  "No active conflicts; line alternatives are not calculated.",
@@ -789,7 +789,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_caption":             "Barrek programatutako karga erakusten dute. Lerroak ahalmen erabilgarria erakusten du. Barra lerroa gainditzen badu, defizita dago.",
         "prog_chart_no_load":             "Ez dago kalkulatutako kargik grafikoa bistaratzeko.",
         "prog_chart_no_capacity":         "Ez dago ahalmen erabilgarririk grafikoa eraikitzeko.",
-        "prog_alt_btn":           "Lerro-alternatiba hautagaiak kalkulatu",
+        "prog_alt_btn":           "Alternatibak kalkulatu",
         "prog_alt_header":        "Alternatiba hautagaiak",
         "prog_alt_caption":       "V1 banakako simulazioa: hautagaiak proiektu bat bakarka mugitzea ebaluatzen du, mugimenduak konbinatu gabe. Ez du aldaketak automatikoki aplikatzen.",
         "prog_alt_no_conflicts":  "Ez dago gatazka aktiborik; ez dira lerro-alternatibak kalkulatzen.",
@@ -8798,12 +8798,18 @@ if st.session_state.active_tab == "📋 Programación real":
     font-weight: 600;
 }}
 </style>""", unsafe_allow_html=True)
+                _da_act_col, _da_btn_col = st.columns([4, 1])
+                with _da_btn_col:
+                    if _da_has_conflicts and _da_has_load:
+                        _da_btn_clicked = st.button(
+                            t("prog_alt_btn"),
+                            key=f"prog_alt_btn_{plant_id}",
+                            use_container_width=True,
+                        )
                 with st.container(key=f"prog_sim_tabs_{plant_id}"):
                     _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
                 with _tab_ml:
                     if _da_has_conflicts and _da_has_load:
-                        st.markdown(f"#### {t('prog_alt_header')}")
-                        _da_btn_clicked = st.button(t("prog_alt_btn"), key=f"prog_alt_btn_{plant_id}")
                         if (
                             st.session_state.get(f"_prog_v2_stale_{plant_id}", False)
                             and st.session_state.get(f"_prog_v2_lineas_{plant_id}")
@@ -9555,7 +9561,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             disabled=[c for c in _da_edit_cols if c != "Aplicar"],
                                             hide_index=True,
                                             use_container_width=True,
-                                            height=max(140, min(len(_da_df_c), 6) * 35 + 45),
+                                            height=255,
                                             key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                         )
                                     else:
@@ -9578,6 +9584,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         t("prog_alt_apply_multi_btn"),
                                         key=f"prog_alt_apply_multi_btn_{plant_id}",
                                         use_container_width=True,
+                                        type="primary",
                                     )
                                     if _da_apply_multi_clicked:
                                         _da_sel_idx = _da_df_edited[
@@ -9993,7 +10000,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .drop(columns=["_sort_e", "_sort_d"])
                                         .reset_index(drop=True)
                                     )
-                                    _dat_h = max(140, min(len(_dat_df), 6) * 35 + 45)
+                                    _dat_h = 255
                                     st.dataframe(
                                         _dat_df,
                                         use_container_width=True,
