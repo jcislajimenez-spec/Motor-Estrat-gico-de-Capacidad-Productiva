@@ -8895,9 +8895,23 @@ if st.session_state.active_tab == "📋 Programación real":
     font-weight: 600;
 }}
 </style>""", unsafe_allow_html=True)
+                # F5A: fuente de trabajo para calcular alternativas
+                _da_alt_sim_existing = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                _da_alt_src = "Plan real"
                 _da_act_col, _da_btn_col = st.columns([4, 1])
                 with _da_act_col:
                     st.markdown("#### Acciones simulables")
+                    if _da_alt_sim_existing is not None:
+                        st.info("⚠ Simulación activa — el plan real no ha cambiado.")
+                        _da_alt_src = st.radio(
+                            "Fuente para nuevas alternativas",
+                            options=["Simulación activa", "Plan real"],
+                            key=f"_da_alt_src_radio_{plant_id}",
+                            horizontal=True,
+                            index=0,
+                        )
+                    else:
+                        st.caption("Fuente: Plan real")
                 with _da_btn_col:
                     if _da_has_conflicts and _da_has_load:
                         _da_btn_clicked = st.button(
@@ -8908,11 +8922,22 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 if _da_has_conflicts and _da_has_load:
                     if _da_btn_clicked:
-                        _da_load_base     = _prog_result["load_df"]
-                        _da_conflict_base = _prog_result["conflict_df"]
-                        _da_parsed_now    = st.session_state.get(f"_prog_parsed_{plant_id}")
-
-                        st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
+                        _da_use_sim = (
+                            _da_alt_src == "Simulación activa"
+                            and _da_alt_sim_existing is not None
+                        )
+                        if _da_use_sim:
+                            _da_load_base      = _da_alt_sim_existing["load_df_sim"]
+                            _da_conflict_sim   = _da_alt_sim_existing.get("conflict_df_sim")
+                            if _da_conflict_sim is None:
+                                _da_conflict_base = _prog_result["conflict_df"]
+                            else:
+                                _da_conflict_base = _da_conflict_sim
+                        else:
+                            _da_load_base     = _prog_result["load_df"]
+                            _da_conflict_base = _prog_result["conflict_df"]
+                            st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
+                        _da_parsed_now = st.session_state.get(f"_prog_parsed_{plant_id}")
 
                         if _da_parsed_now is None or _da_parsed_now.get("proyectos") is None:
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
@@ -9466,6 +9491,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "candidatas":  _da_candidatas,
                                 "descartadas": _da_descartadas,
                                 "cap_df_alts": _da_cap_df_alts_ext,
+                                "source":      "sim" if _da_use_sim else "real",
                             }
                             st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
                                 st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
@@ -9479,6 +9505,11 @@ if st.session_state.active_tab == "📋 Programación real":
                     st.caption("Pulsa Calcular alternativas para ver acciones simulables.")
                 if _has_alt_result and _da_has_conflicts and _da_has_load:
                     st.markdown("#### Alternativas candidatas")
+                    _da_alt_src_label = _da_alt_result.get("source", "real")
+                    if _da_alt_src_label == "sim":
+                        st.caption("⚠ Calculadas sobre: **Simulación activa** — el plan real no ha cambiado.")
+                    else:
+                        st.caption("Calculadas sobre: **Plan real**")
                     with st.container(key=f"prog_sim_tabs_{plant_id}"):
                         _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
                     _da_df_c      = pd.DataFrame()
@@ -10286,16 +10317,29 @@ if st.session_state.active_tab == "📋 Programación real":
                                     f"{', '.join(sorted(_comb_proyectos_dup))}."
                                 )
                             else:
-                                _comb_load_base = (
-                                    _prog_result.get("load_df") if _prog_result else None
-                                )
-                                if _comb_load_base is None:
-                                    st.warning("No hay plan base disponible para la simulación.")
-                                else:
-                                    _comb_load_acc = _comb_load_base.copy()
-                                    _comb_alt_res  = st.session_state.get(
-                                        f"_prog_alt_result_{plant_id}"
+                                _comb_alt_res     = st.session_state.get(f"_prog_alt_result_{plant_id}")
+                                _comb_alt_src_tag = (_comb_alt_res.get("source", "real") if _comb_alt_res else "real")
+                                _comb_sim_prev    = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                                if _comb_alt_src_tag == "sim" and _comb_sim_prev is None:
+                                    st.warning(
+                                        "Las alternativas se calcularon sobre una simulación que ya no está activa. "
+                                        "Recalcula las alternativas antes de aplicar."
                                     )
+                                    _comb_load_base     = None
+                                    _comb_prev_movs     = []
+                                    _comb_def_antes_ref = None
+                                elif _comb_alt_src_tag == "sim" and _comb_sim_prev is not None:
+                                    _comb_load_base     = _comb_sim_prev["load_df_sim"]
+                                    _comb_prev_movs     = list(_comb_sim_prev.get("movimientos", []))
+                                    _comb_def_antes_ref = float(_comb_sim_prev.get("deficit_antes", 0.0))
+                                else:
+                                    _comb_load_base     = (_prog_result.get("load_df") if _prog_result else None)
+                                    _comb_prev_movs     = []
+                                    _comb_def_antes_ref = None
+                                if _comb_load_base is None and _comb_alt_src_tag != "sim":
+                                    st.warning("No hay plan base disponible para la simulación.")
+                                elif _comb_load_base is not None:
+                                    _comb_load_acc = _comb_load_base.copy()
                                     _comb_cap_base = (
                                         _comb_alt_res.get("cap_df_alts", _prog_cap_df)
                                         if _comb_alt_res else _prog_cap_df
@@ -10468,15 +10512,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _comb_final = _recompute_prog_deficit_global(
                                             _comb_load_acc, _comb_cap_acc
                                         )
+                                        _comb_def_para_metrica = (
+                                            _comb_def_antes_ref
+                                            if _comb_def_antes_ref is not None
+                                            else _comb_def_base
+                                        )
                                         st.session_state[f"_prog_alt_sim_{plant_id}"] = {
-                                            "movimientos":     _comb_movs,
+                                            "movimientos":     _comb_prev_movs + _comb_movs,
                                             "load_df_sim":     _comb_load_acc,
                                             "cap_df_sim":      _comb_cap_acc,
                                             "conflict_df_sim": _comb_final["conflict_df"],
-                                            "deficit_antes":   _comb_def_base,
+                                            "deficit_antes":   _comb_def_para_metrica,
                                             "deficit_despues": _comb_final["deficit_total_h"],
                                             "mejora_total_h":  round(
-                                                _comb_def_base - _comb_final["deficit_total_h"],
+                                                _comb_def_para_metrica - _comb_final["deficit_total_h"],
                                                 1,
                                             ),
                                             "avisos":          _comb_avisos,
