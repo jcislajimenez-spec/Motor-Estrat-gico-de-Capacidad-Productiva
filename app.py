@@ -9956,7 +9956,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         .drop(columns=["_sort_e", "_sort_d"])
                                         .reset_index(drop=True)
                                     )
-                                    _dat_df["Aplicar"] = False
+                                    if "Aplicar" in _dat_df.columns:
+                                        _dat_df = _dat_df.drop(columns=["Aplicar"])
+                                    _dat_df.insert(0, "Aplicar", False)
                                     _dat_h   = 255
                                     _ext_ver = st.session_state.get(
                                         f"_prog_extend_editor_ver_{plant_id}", 0
@@ -10315,13 +10317,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                         st.session_state[
                                             f"prog_gantt_vista_{plant_id}"
                                         ] = "Simulación"
-                                        st.session_state[
-                                            f"_prog_extend_editor_ver_{plant_id}"
-                                        ] = (
-                                            st.session_state.get(
-                                                f"_prog_extend_editor_ver_{plant_id}", 0
-                                            ) + 1
-                                        )
                                         st.rerun()
 
                     # ── Simulación acumulada ─────────────────────────────────────────
