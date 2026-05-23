@@ -9621,6 +9621,130 @@ if st.session_state.active_tab == "📋 Programación real":
                                             return None
                                         _da_df_c["Margen si 100% h/sem"]       = _da_df_c.apply(_da_row_margen, axis=1)
                                         _da_df_c["Déficit que eliminaría (h)"] = _da_df_c["Mejora h"] if "Mejora h" in _da_df_c.columns else None
+                                        # ── F4.1 Preview: Tipo solución / Fin destino sim. / Impacto entrega / Aviso destino ──
+                                        # Simulación en memoria: usa datos ya calculados + simulación de extensión si hay conflicto en destino
+                                        _da_f41_pss = st.session_state.get(f"_prog_parsed_{plant_id}")
+                                        _da_f41_sem_ent: dict = {}
+                                        if _da_f41_pss is not None:
+                                            _da_f41_proy_df = _da_f41_pss.get("proyectos")
+                                            if _da_f41_proy_df is not None and "Semana entrega objetivo" in _da_f41_proy_df.columns:
+                                                for _, _f41r in _da_f41_proy_df.iterrows():
+                                                    _f41_pn = str(_f41r.get("Proyecto", "") or "").strip()
+                                                    try:
+                                                        _f41_sv = _f41r["Semana entrega objetivo"]
+                                                        if pd.notna(_f41_sv):
+                                                            _da_f41_sem_ent[_f41_pn] = int(_f41_sv)
+                                                    except (ValueError, TypeError):
+                                                        pass
+                                        _da_f41_info: dict = {}
+                                        if not _da_load_df_src.empty:
+                                            for (_f41p, _f41l), _f41g in _da_load_df_src.groupby(["Proyecto", "Línea"]):
+                                                try:
+                                                    _f41_sems = sorted(_f41g["Semana"].astype(int).unique().tolist())
+                                                    _da_f41_info[(str(_f41p), str(_f41l))] = {
+                                                        "sem_inicio": _f41_sems[0] if _f41_sems else None,
+                                                        "h_total":    float(_f41g["Horas proyecto semana"].sum()),
+                                                        "dur_act":    len(_f41_sems),
+                                                    }
+                                                except (ValueError, TypeError):
+                                                    pass
+                                        _f41_cap_df = _da_alt_result.get("cap_df_alts")
+                                        if _f41_cap_df is None or (hasattr(_f41_cap_df, "empty") and _f41_cap_df.empty):
+                                            _f41_cap_df = _prog_cap_df
+                                        try:
+                                            _da_f41_def_base = float(
+                                                _recompute_prog_deficit_global(_da_load_df_src, _f41_cap_df)["deficit_total_h"]
+                                            )
+                                        except Exception:
+                                            _da_f41_def_base = None
+                                        def _da_f41_row(r):
+                                            _fp  = str(r.get("Proyecto", "") or "").strip()
+                                            _fla = str(r.get("Línea actual", "") or "").strip()
+                                            _fld = str(r.get("Línea candidata", "") or "").strip()
+                                            _fi  = _da_f41_info.get((_fp, _fla), {})
+                                            _fsini = _fi.get("sem_inicio")
+                                            _fdact = int(_fi.get("dur_act") or 0)
+                                            if _fsini is None or _fdact <= 0:
+                                                return ("Sin dato", "", "Sin dato", "Sin dato")
+                                            _fsfin_act = _fsini + _fdact - 1
+                                            # Reutilizar datos del movimiento ya simulado en la fase de cálculo
+                                            try:
+                                                _f_mejora = float(r.get("Mejora h") or 0.0)
+                                            except (TypeError, ValueError):
+                                                _f_mejora = 0.0
+                                            _f_aviso_base = str(r.get("Aviso", "") or "")
+                                            _f_nuevo_conflicto = "Nuevo conflicto en línea candidata" in _f_aviso_base
+                                            _fav = ["Preview en memoria"]
+                                            # Detectar carga existente en destino durante el rango actual del proyecto
+                                            if not _da_load_df_src.empty and _fld:
+                                                try:
+                                                    _fmask_dst = (
+                                                        (_da_load_df_src["Línea"].astype(str).str.strip() == _fld) &
+                                                        (_da_load_df_src["Semana"].astype(int) >= _fsini) &
+                                                        (_da_load_df_src["Semana"].astype(int) <= _fsfin_act)
+                                                    )
+                                                    if _fmask_dst.any():
+                                                        _fav.append("Destino con carga existente")
+                                                except (ValueError, TypeError):
+                                                    pass
+                                            # Caso 1: movimiento simple mejora déficit SIN crear conflicto nuevo en destino
+                                            if _f_mejora > 0 and not _f_nuevo_conflicto:
+                                                _fsent = _da_f41_sem_ent.get(_fp)
+                                                if _fsent is not None:
+                                                    _fimp = _fsfin_act - _fsent
+                                                    _fimpstr = "Sin retraso" if _fimp <= 0 else f"+{_fimp} sem"
+                                                else:
+                                                    _fimpstr = "Sin entrega objetivo"
+                                                return ("Mover línea", f"S{_fsfin_act}", _fimpstr, " · ".join(_fav))
+                                            # Caso 2: conflicto nuevo en destino → probar extensión de duración en destino
+                                            if _f_nuevo_conflicto:
+                                                _fav.append("Requiere replanificar en destino")
+                                            _f_ext_found = False
+                                            _f_ext_sfin  = None
+                                            _f_def_ref = _da_f41_def_base if _da_f41_def_base is not None else float("inf")
+                                            try:
+                                                _f_moved = _simulate_prog_move_line(_da_load_df_src, _fp, _fla, _fld)
+                                                for _dur_try in range(_fdact + 1, 53):
+                                                    if _fsini + _dur_try - 1 > 52:
+                                                        break
+                                                    _ext_res = _simulate_prog_extend_duration(_f_moved, _fp, _fld, _dur_try)
+                                                    if not _ext_res.get("ok"):
+                                                        continue
+                                                    _ext_def = float(
+                                                        _recompute_prog_deficit_global(
+                                                            _ext_res["load_df"], _f41_cap_df
+                                                        )["deficit_total_h"]
+                                                    )
+                                                    if _ext_def < _f_def_ref:
+                                                        _f_ext_found = True
+                                                        _f_ext_sfin  = _fsini + _dur_try - 1
+                                                        break
+                                            except Exception:
+                                                pass
+                                            if _f_ext_found and _f_ext_sfin is not None:
+                                                if "Requiere replanificar en destino" not in _fav:
+                                                    _fav.append("Requiere replanificar en destino")
+                                                _fsent = _da_f41_sem_ent.get(_fp)
+                                                if _fsent is not None:
+                                                    _fimp = _f_ext_sfin - _fsent
+                                                    _fimpstr = "Sin retraso" if _fimp <= 0 else f"+{_fimp} sem"
+                                                else:
+                                                    _fimpstr = "Sin entrega objetivo"
+                                                return ("Mover + replanificar", f"S{_f_ext_sfin}", _fimpstr, " · ".join(_fav))
+                                            # Sin solución dentro del horizonte
+                                            _fav_nv = ["No resuelve déficit"] + [
+                                                a for a in _fav if a not in ("Preview en memoria", "No resuelve déficit")
+                                            ]
+                                            return ("No viable", "", "No viable en horizonte", " · ".join(_fav_nv) if _fav_nv else "No resuelve déficit")
+                                        _da_f41_res = _da_df_c.apply(_da_f41_row, axis=1).tolist()
+                                        if _da_f41_res:
+                                            _da_df_c["Tipo solución"]    = [x[0] for x in _da_f41_res]
+                                            _da_df_c["Fin destino sim."] = [x[1] for x in _da_f41_res]
+                                            _da_df_c["Impacto entrega"]  = [x[2] for x in _da_f41_res]
+                                            _da_df_c["Aviso destino"]    = [x[3] for x in _da_f41_res]
+                                        else:
+                                            for _f41c in ("Tipo solución", "Fin destino sim.", "Impacto entrega", "Aviso destino"):
+                                                _da_df_c[_f41c] = ""
                                         _da_edit_cols = [c for c in [
                                             "Aplicar", "Estado", "Proyecto",
                                             "Movimiento", "Resultado", "Origen",
@@ -9669,6 +9793,49 @@ if st.session_state.active_tab == "📋 Programación real":
                                             height=255,
                                             key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
                                         )
+                                        # ── F4.1 Preview separada: Replanificación en destino (solo lectura, sin checkbox) ──
+                                        if _da_f41_res:
+                                            _da_f41_tipo_map = {
+                                                "Mover línea":          "Movimiento simple",
+                                                "Mover + replanificar": "Replanificar destino",
+                                                "No viable":            "No viable preview",
+                                                "Sin dato":             "Sin dato",
+                                            }
+                                            _da_f41_prev_rows = []
+                                            for _f41i, _f41row_t in enumerate(_da_f41_res):
+                                                if _f41i < len(_da_df_c):
+                                                    _f41_r = _da_df_c.iloc[_f41i]
+                                                    _da_f41_prev_rows.append({
+                                                        "Proyecto":         str(_f41_r.get("Proyecto", "") or ""),
+                                                        "Línea actual":     str(_f41_r.get("Línea actual", "") or ""),
+                                                        "Línea destino":    str(_f41_r.get("Línea candidata", "") or ""),
+                                                        "Preview destino":  _da_f41_tipo_map.get(_f41row_t[0], _f41row_t[0]),
+                                                        "Fin destino sim.": _f41row_t[1],
+                                                        "Impacto entrega":  _f41row_t[2],
+                                                        "Aviso destino":    _f41row_t[3],
+                                                    })
+                                            if _da_f41_prev_rows:
+                                                _da_f41_preview_df = pd.DataFrame(_da_f41_prev_rows)
+                                                st.markdown("##### Preview no aplicable — Replanificación en destino")
+                                                st.caption(
+                                                    "Esta preview no se aplica todavía. "
+                                                    "El botón **Aplicar alternativas seleccionadas** "
+                                                    "solo ejecuta Mover línea y/o Ampliar semanas."
+                                                )
+                                                st.dataframe(
+                                                    _da_f41_preview_df,
+                                                    hide_index=True,
+                                                    use_container_width=True,
+                                                    column_config={
+                                                        "Proyecto":         st.column_config.TextColumn(label="Proyecto",         width=130),
+                                                        "Línea actual":     st.column_config.TextColumn(label="Línea actual",     width=110),
+                                                        "Línea destino":    st.column_config.TextColumn(label="Línea destino",    width=110),
+                                                        "Preview destino":  st.column_config.TextColumn(label="Preview destino",  width=170),
+                                                        "Fin destino sim.": st.column_config.TextColumn(label="Fin destino sim.", width=110),
+                                                        "Impacto entrega":  st.column_config.TextColumn(label="Impacto entrega",  width=120),
+                                                        "Aviso destino":    st.column_config.TextColumn(label="Aviso destino",    width=250),
+                                                    },
+                                                )
                                     else:
                                         st.caption(t("prog_alt_no_alts_found"))
                                         _da_df_c = pd.DataFrame(columns=["Aplicar", "Estado", "Proyecto", "Línea actual", "Línea candidata", "alt_id"])
