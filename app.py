@@ -9505,7 +9505,8 @@ if st.session_state.active_tab == "📋 Programación real":
                     st.caption("Pulsa Calcular alternativas para ver acciones simulables.")
                 if _has_alt_result and _da_has_conflicts and _da_has_load:
                     st.markdown("#### Alternativas candidatas")
-                    _da_alt_src_label = _da_alt_result.get("source", "real")
+                    _da_alt_result = st.session_state.get(f"_prog_alt_result_{plant_id}", {}) or {}
+                    _da_alt_src_label = _da_alt_result.get("source", "real") if isinstance(_da_alt_result, dict) else "real"
                     if _da_alt_src_label == "sim":
                         st.caption("⚠ Calculadas sobre: **Simulación activa** — el plan real no ha cambiado.")
                     else:
