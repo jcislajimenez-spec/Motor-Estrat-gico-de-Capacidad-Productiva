@@ -10061,13 +10061,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "Hay alternativas de Mover línea marcadas que no son aplicables. "
                                 "Desmarca las no aplicables antes de simular."
                             )
-                        elif _ml_has_sel and "Estado" in _ml_sel_full.columns and (
-                            _ml_sel_full["Estado"] == "Revisar"
-                        ).any():
-                            st.warning(
-                                "Hay alternativas de Mover línea pendientes de revisar. "
-                                "Desmárcalas antes de simular."
-                            )
                         elif _as_has_sel and "Estado" in _as_sel.columns and (
                             _as_sel["Estado"] == "No aplicable"
                         ).any():
@@ -10242,10 +10235,21 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         ] = _da_m_dh_f
                                                 except (TypeError, ValueError):
                                                     pass
-                                                _da_av = str(
+                                                _da_estado_ml = str(
+                                                    _da_sr.get("Estado") or ""
+                                                ).strip()
+                                                _da_av_base = str(
                                                     _da_sr.get("Aviso") or
                                                     _da_sr.get("Motivo") or ""
-                                                )
+                                                ).strip()
+                                                if _da_estado_ml == "Revisar":
+                                                    _da_av = "Movimiento pendiente de revisar."
+                                                    if _da_av_base and _da_av_base.lower() not in (
+                                                        "nan", "none", "null", ""
+                                                    ):
+                                                        _da_av = f"{_da_av} {_da_av_base}"
+                                                else:
+                                                    _da_av = _da_av_base
                                                 _da_dest_mask_h = (
                                                     (
                                                         _comb_load_acc["Proyecto"].astype(str)
@@ -10283,6 +10287,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     "tipo_linea":         str(
                                                         _da_sr.get("tipo_linea") or ""
                                                     ),
+                                                    "tipo_accion":        "Mover línea",
                                                     "aviso":              _da_av,
                                                     "carga_total_origen": _da_orig_total_h,
                                                 })
