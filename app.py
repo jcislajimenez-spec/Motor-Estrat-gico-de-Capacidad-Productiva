@@ -10536,122 +10536,137 @@ if st.session_state.active_tab == "📋 Programación real":
                                         ] = "Simulación"
                                         st.rerun()
 
-                    # ── Simulación activa ────────────────────────────────────────────
+                    # ── Simulación acumulada ─────────────────────────────────────────
                     _da_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
                     if _da_sim:
-                        with st.expander("SIMULACIÓN ACTIVA — no modifica el plan real", expanded=True):
-                            # ── KPIs ─────────────────────────────────────────────────
-                            _da_sim_movs   = _da_sim.get("movimientos") or []
-                            _da_sim_k1, _da_sim_k2, _da_sim_k3, _da_sim_k4 = st.columns(4)
-                            with _da_sim_k1:
-                                st.metric("Acciones aplicadas", len(_da_sim_movs))
-                            with _da_sim_k2:
+                        with st.expander(t("prog_alt_sim_title"), expanded=True):
+                            _da_n_cfl = (
+                                len(_da_sim["conflict_df_sim"])
+                                if _da_sim.get("conflict_df_sim") is not None
+                                else 0
+                            )
+                            _da_s1, _da_s2, _da_s3 = st.columns(3)
+                            with _da_s1:
                                 st.metric(
-                                    "Déficit inicial (h)",
-                                    f"{round(float(_da_sim.get('deficit_antes') or 0), 1)}",
+                                    "Déficit antes (h)",
+                                    f"{round(_da_sim['deficit_antes'], 1)}",
                                 )
-                            with _da_sim_k3:
+                            with _da_s2:
                                 st.metric(
-                                    "Déficit actual (h)",
-                                    f"{round(float(_da_sim.get('deficit_despues') or 0), 1)}",
+                                    "Déficit después (h)",
+                                    f"{round(_da_sim['deficit_despues'], 1)}",
                                 )
-                            with _da_sim_k4:
+                            with _da_s3:
                                 st.metric(
                                     "Déficit eliminado (h)",
-                                    f"+{round(float(_da_sim.get('mejora_total_h') or 0), 1)}",
+                                    f"+{round(_da_sim['mejora_total_h'], 1)}",
                                 )
-                            # ── Tabla de acciones ────────────────────────────────────
-                            st.markdown("##### Acciones aplicadas")
-                            _da_sim_clean = lambda v: (
-                                "" if (v is None or str(v).strip().lower() in ("", "nan", "none", "null"))
-                                else str(v).strip()
-                            )
-                            _da_act_rows = []
-                            for _da_si, _da_sm in enumerate(_da_sim_movs, start=1):
-                                _da_sm_tipo = _da_sim_clean(_da_sm.get("tipo_accion")) or "Mover línea"
-                                # Movimiento / ajuste
-                                if _da_sm_tipo in ("Ajuste temporal", "Ampliar semanas"):
-                                    _da_sm_sact = _da_sim_clean(_da_sm.get("semanas_actuales"))
-                                    _da_sm_ssim = _da_sim_clean(_da_sm.get("semanas_simuladas"))
-                                    if _da_sm_sact and _da_sm_ssim:
-                                        _da_sm_mov = f"{_da_sm_sact} → {_da_sm_ssim} sem"
-                                    elif _da_sm_ssim:
-                                        _da_sm_mov = f"→ {_da_sm_ssim} sem"
-                                    else:
-                                        _da_sm_mov = "—"
+                            st.markdown("##### Resultado de simulación")
+                            _da_cap_sim_lkp = {}
+                            _da_cap_sim_df = _da_sim.get("cap_df_sim")
+                            if _da_cap_sim_df is not None and not _da_cap_sim_df.empty:
+                                for _, _cs_row in _da_cap_sim_df.iterrows():
+                                    _da_cap_sim_lkp[str(_cs_row["Línea"])] = float(_cs_row["Capacidad h/sem"])
+                            _da_clean_v = lambda v: "" if (not v or str(v).strip().lower() in ("nan", "none", "null")) else str(v).strip()
+                            _da_res_rows = []
+                            for m in _da_sim["movimientos"]:
+                                _r_tipo_accion = m.get("tipo_accion", "Mover línea")
+                                if _r_tipo_accion == "Ajuste temporal":
+                                    _r_cdest_at = _da_cap_sim_lkp.get(str(m["linea_actual"]))
+                                    _r_hsem_at  = m.get("h_sem_despues")
+                                    _r_marg_at  = (
+                                        round(float(_r_cdest_at) - float(_r_hsem_at), 1)
+                                        if (_r_cdest_at is not None and _r_hsem_at)
+                                        else None
+                                    )
+                                    _r_av_at = _da_clean_v(m.get("aviso"))
+                                    _r_com_at = (
+                                        m.get("impacto_entrega") or _r_av_at or "Ajuste aplicado."
+                                    )
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Ajuste temporal",
+                                        "Proyecto":               m["proyecto"],
+                                        "Movimiento":             (
+                                            f"Ampliar semanas "
+                                            f"({m.get('semanas_actuales', '?')} → "
+                                            f"{m.get('semanas_simuladas', '?')})"
+                                        ),
+                                        "Modo":                   "Ampliar duración",
+                                        "Carga total origen (h)": "",
+                                        "% enviado":              "",
+                                        "Semanas":                m.get("semanas_simuladas", ""),
+                                        "Horas enviadas (h)":     "",
+                                        "Horas env/sem":          m.get("h_sem_despues", ""),
+                                        "Cap. destino h/sem":     (
+                                            round(float(_r_cdest_at), 1)
+                                            if _r_cdest_at is not None
+                                            else ""
+                                        ),
+                                        "Margen/déficit h/sem":   (
+                                            _r_marg_at if _r_marg_at is not None else ""
+                                        ),
+                                        "Déficit pendiente (h)":  "",
+                                        "Comentario":             _r_com_at,
+                                    })
                                 else:
-                                    _da_sm_lo = _da_sim_clean(_da_sm.get("linea_actual"))
-                                    _da_sm_ld = _da_sim_clean(_da_sm.get("linea_destino"))
-                                    if _da_sm_lo and _da_sm_ld:
-                                        _da_sm_mov = f"{_da_sm_lo} → {_da_sm_ld}"
-                                    elif _da_sm_ld:
-                                        _da_sm_mov = f"→ {_da_sm_ld}"
+                                    _r_cdest  = _da_cap_sim_lkp.get(str(m["linea_destino"]))
+                                    _r_hsem   = m.get("h_sem_prom")
+                                    _r_margen = round(float(_r_cdest) - float(_r_hsem), 1) if (_r_cdest is not None and _r_hsem) else None
+                                    _r_av     = _da_clean_v(m.get("aviso"))
+                                    if _r_margen is not None and _r_margen < 0:
+                                        _r_com = f"Queda déficit en destino.{(' ' + _r_av) if _r_av else ''}"
+                                    elif _r_av:
+                                        _r_com = _r_av
                                     else:
-                                        _da_sm_mov = "—"
-                                # Impacto: usa impacto_entrega o mejora_h_est
-                                _da_sm_imp = _da_sim_clean(_da_sm.get("impacto_entrega"))
-                                if not _da_sm_imp:
-                                    _da_sm_mej = _da_sm.get("mejora_h_est")
-                                    if _da_sm_mej not in (None, "", 0):
-                                        try:
-                                            _da_sm_imp = f"{round(float(_da_sm_mej), 1)} h"
-                                        except (TypeError, ValueError):
-                                            _da_sm_imp = "—"
-                                    else:
-                                        _da_sm_imp = "—"
-                                # Aviso
-                                _da_sm_av = _da_sim_clean(_da_sm.get("aviso")) or "—"
-                                _da_act_rows.append({
-                                    "#":                  _da_si,
-                                    "Acción":             _da_sm_tipo,
-                                    "Proyecto":           _da_sim_clean(_da_sm.get("proyecto")) or "—",
-                                    "Movimiento / ajuste": _da_sm_mov,
-                                    "Impacto":            _da_sm_imp,
-                                    "Aviso":              _da_sm_av,
-                                })
-                            if _da_act_rows:
+                                        _r_com = "El destino absorbe su parte."
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Movimiento aplicado",
+                                        "Proyecto":               m["proyecto"],
+                                        "Movimiento":             f"{m['linea_actual']} → {m['linea_destino']}",
+                                        "Modo":                   "Carga completa" if m.get("fraccion_pct", "100 %") == "100 %" else "Reparto igualitario",
+                                        "Carga total origen (h)": m.get("carga_total_origen", ""),
+                                        "% enviado":              m.get("fraccion_pct", "100 %"),
+                                        "Semanas":                m.get("sem_count", ""),
+                                        "Horas enviadas (h)":     m.get("horas_movidas", ""),
+                                        "Horas env/sem":          m.get("h_sem_prom", ""),
+                                        "Cap. destino h/sem":     round(float(_r_cdest), 1) if _r_cdest is not None else "",
+                                        "Margen/déficit h/sem":   _r_margen if _r_margen is not None else "",
+                                        "Déficit pendiente (h)":  "",
+                                        "Comentario":             _r_com,
+                                    })
+                            _da_cfl_sim = _da_sim.get("conflict_df_sim")
+                            if _da_cfl_sim is not None and not _da_cfl_sim.empty:
+                                _da_cfl_agg = (
+                                    _da_cfl_sim.groupby("Línea")
+                                    .agg(def_total=("Déficit h", "sum"), n_sem=("Semana", "nunique"), cap_mean=("Capacidad h", "mean"))
+                                    .reset_index()
+                                )
+                                for _, _cfr in _da_cfl_agg.iterrows():
+                                    _da_res_rows.append({
+                                        "Tipo":                   "Déficit pendiente",
+                                        "Proyecto":               "",
+                                        "Movimiento":             str(_cfr["Línea"]),
+                                        "Modo":                   "Consolidado",
+                                        "Carga total origen (h)": "",
+                                        "% enviado":              "",
+                                        "Semanas":                int(_cfr["n_sem"]),
+                                        "Horas enviadas (h)":     "",
+                                        "Horas env/sem":          "",
+                                        "Cap. destino h/sem":     round(float(_cfr["cap_mean"]), 1),
+                                        "Margen/déficit h/sem":   "",
+                                        "Déficit pendiente (h)":  round(float(_cfr["def_total"]), 1),
+                                        "Comentario":             "Déficit pendiente no resuelto por esta simulación.",
+                                    })
+                            _da_res_df = pd.DataFrame(_da_res_rows)
+                            if not _da_res_df.empty:
                                 st.dataframe(
-                                    pd.DataFrame(_da_act_rows),
+                                    _prog_round_display_df(_da_res_df),
                                     use_container_width=True,
                                     hide_index=True,
-                                    height=max(105, min(len(_da_act_rows), 8) * 35 + 40),
-                                    column_config={
-                                        "#":                   st.column_config.NumberColumn(label="#",                   width=40),
-                                        "Acción":              st.column_config.TextColumn(label="Acción",              width=140),
-                                        "Proyecto":            st.column_config.TextColumn(label="Proyecto",            width=120),
-                                        "Movimiento / ajuste": st.column_config.TextColumn(label="Movimiento / ajuste", width=160),
-                                        "Impacto":             st.column_config.TextColumn(label="Impacto",             width=100),
-                                        "Aviso":               st.column_config.TextColumn(label="Aviso",               width=240),
-                                    },
+                                    height=max(140, min(len(_da_res_df), 5) * 35 + 45),
                                 )
                             else:
-                                st.caption("No hay acciones registradas en esta simulación.")
-                            # ── Avisos de simulación ──────────────────────────────────
-                            _da_sim_avisos = [
-                                a for a in (_da_sim.get("avisos") or [])
-                                if a and str(a).strip()
-                            ]
-                            if _da_sim_avisos:
-                                with st.expander(f"Avisos de simulación ({len(_da_sim_avisos)})"):
-                                    for _da_sav in _da_sim_avisos:
-                                        st.caption(f"• {_da_sav}")
-                            # ── Auditoría técnica ─────────────────────────────────────
-                            with st.expander("Auditoría de simulación"):
-                                _da_cfl_sim = _da_sim.get("conflict_df_sim")
-                                if _da_cfl_sim is not None and not _da_cfl_sim.empty:
-                                    st.markdown("**Conflictos restantes**")
-                                    st.dataframe(_da_cfl_sim, use_container_width=True, hide_index=True)
-                                else:
-                                    st.success("Sin conflictos en la simulación.")
-                                _da_load_sim_aud = _da_sim.get("load_df_sim")
-                                if _da_load_sim_aud is not None and not _da_load_sim_aud.empty:
-                                    st.markdown("**Carga simulada** (primeras 100 filas)")
-                                    st.dataframe(_da_load_sim_aud.head(100), use_container_width=True, hide_index=True)
-                                _da_cap_sim_aud = _da_sim.get("cap_df_sim")
-                                if _da_cap_sim_aud is not None and not _da_cap_sim_aud.empty:
-                                    st.markdown("**Capacidad simulada**")
-                                    st.dataframe(_da_cap_sim_aud, use_container_width=True, hide_index=True)
-                            # ── Botón descartar ───────────────────────────────────────
+                                st.success("Sin conflictos y sin movimientos en la simulación.")
                             if st.button(
                                 t("prog_alt_sim_discard_btn"),
                                 key=f"prog_alt_sim_discard_btn_{plant_id}",
