@@ -9890,8 +9890,22 @@ if st.session_state.active_tab == "📋 Programación real":
                     with _tab_as:
                         # ── 3H.4B.1 Alternativas de ajuste temporal (solo lectura) ────────
                         _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
-                        _dat_load_src   = _prog_result.get("load_df") if _prog_result else None
-                        _dat_cfl_src    = _prog_result.get("conflict_df") if _prog_result else None
+                        _da_as_use_sim = (
+                            _da_alt_src == "Simulación activa"
+                            and _da_alt_sim_existing is not None
+                        )
+                        if _da_as_use_sim:
+                            _dat_load_src    = _da_alt_sim_existing["load_df_sim"]
+                            _dat_cfl_sim_raw = _da_alt_sim_existing.get("conflict_df_sim")
+                            _dat_cfl_src     = _dat_cfl_sim_raw if _dat_cfl_sim_raw is not None else (
+                                _prog_result.get("conflict_df") if _prog_result else None
+                            )
+                            _dat_cap_sim_raw = _da_alt_sim_existing.get("cap_df_sim")
+                            _dat_cap_src     = _dat_cap_sim_raw if _dat_cap_sim_raw is not None else _prog_cap_df
+                        else:
+                            _dat_load_src = _prog_result.get("load_df") if _prog_result else None
+                            _dat_cfl_src  = _prog_result.get("conflict_df") if _prog_result else None
+                            _dat_cap_src  = _prog_cap_df
                         if (
                             _dat_load_src is not None
                             and not _dat_load_src.empty
@@ -9908,7 +9922,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _dat_load_src, _dat_cfl_src
                                 )
                                 # Base deficit per line (recomputed for consistency with trials)
-                                _dat_base_res    = _recompute_prog_deficit_global(_dat_load_src, _prog_cap_df)
+                                _dat_base_res    = _recompute_prog_deficit_global(_dat_load_src, _dat_cap_src)
                                 _dat_def_linea_b: dict = {}
                                 for _, _dlcfl in _dat_base_res["conflict_df"].iterrows():
                                     _dl = str(_dlcfl["Línea"])
@@ -10017,7 +10031,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             ignore_index=True,
                                         )
                                         _trial_res = _recompute_prog_deficit_global(
-                                            _trial_df, _prog_cap_df
+                                            _trial_df, _dat_cap_src
                                         )
                                         _def_after_line   = sum(
                                             float(r["Déficit h"])
