@@ -10007,80 +10007,89 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _def_linea_b = _dat_def_linea_b.get(_dtp_linea, 0.0)
                                     _row_tmpl    = _dtp_rows.iloc[0].to_dict()
 
-                                    # Iterative search: try every duration up to the week-52 horizon
-                                    # Priority: (1) first dur that fixes line + no global harm;
-                                    # (2) else best global reduction; (3) tie → best line; (4) tie → smallest dur.
+                                    # Duración mínima = ceil(horas_totales / capacidad_linea_h_sem)
                                     _max_dur         = 52 - _sem_inicio + 1
                                     _best_dur        = None
                                     _best_red        = 0.0
                                     _best_global_red = 0.0
                                     _eliminates      = False
 
-                                    for _new_dur in range(_dur_actual + 1, _max_dur + 1):
-                                        _h_each = [round(_tot_h / _new_dur, 1)] * _new_dur
-                                        _diff_h = round(_tot_h - sum(_h_each), 1)
-                                        if _diff_h != 0:
-                                            _h_each[0] = round(_h_each[0] + _diff_h, 1)
+                                    # Capacity lookup for this line
+                                    _cap_h_sem_as = None
+                                    if (
+                                        _dat_cap_src is not None
+                                        and not _dat_cap_src.empty
+                                        and "Línea" in _dat_cap_src.columns
+                                        and "Capacidad h/sem" in _dat_cap_src.columns
+                                    ):
+                                        _cap_rows_as = _dat_cap_src[
+                                            _dat_cap_src["Línea"].astype(str)
+                                            == str(_dtp_linea)
+                                        ]
+                                        if not _cap_rows_as.empty:
+                                            try:
+                                                _cap_h_sem_as = float(
+                                                    _cap_rows_as["Capacidad h/sem"].iloc[0]
+                                                )
+                                            except (TypeError, ValueError):
+                                                _cap_h_sem_as = None
 
-                                        _new_rows = []
-                                        for _ni, _ns in enumerate(
-                                            range(_sem_inicio, _sem_inicio + _new_dur)
+                                    if _cap_h_sem_as is not None and _cap_h_sem_as > 0:
+                                        # Ceiling division without math import:
+                                        # int(-(-a // b)) == ceil(a / b) for a,b > 0
+                                        _sem_min_raw = int(-(-_tot_h // _cap_h_sem_as))
+                                        _sem_min     = max(_sem_min_raw, _dur_actual + 1)
+                                        _best_dur    = min(_sem_min, _max_dur)
+
+                                        # Simulate that specific duration
+                                        _h_each_as = [round(_tot_h / _best_dur, 1)] * _best_dur
+                                        _diff_h_as = round(_tot_h - sum(_h_each_as), 1)
+                                        if _diff_h_as != 0:
+                                            _h_each_as[0] = round(
+                                                _h_each_as[0] + _diff_h_as, 1
+                                            )
+                                        _new_rows_as = []
+                                        for _ni_as, _ns_as in enumerate(
+                                            range(_sem_inicio, _sem_inicio + _best_dur)
                                         ):
-                                            _nr = dict(_row_tmpl)
-                                            _nr["Semana"] = _ns
-                                            _nr["Horas proyecto semana"] = _h_each[_ni]
-                                            _new_rows.append(_nr)
-
-                                        _trial_df = pd.concat(
+                                            _nr_as = dict(_row_tmpl)
+                                            _nr_as["Semana"] = _ns_as
+                                            _nr_as["Horas proyecto semana"] = _h_each_as[_ni_as]
+                                            _new_rows_as.append(_nr_as)
+                                        _trial_df_as = pd.concat(
                                             [
                                                 _dat_load_src[
                                                     ~(
-                                                        (_dat_load_src["Proyecto"].astype(str) == _dtp)
-                                                        & (_dat_load_src["Línea"].astype(str) == _dtp_linea)
+                                                        (
+                                                            _dat_load_src["Proyecto"].astype(str)
+                                                            == _dtp
+                                                        )
+                                                        & (
+                                                            _dat_load_src["Línea"].astype(str)
+                                                            == _dtp_linea
+                                                        )
                                                     )
                                                 ],
-                                                pd.DataFrame(_new_rows),
+                                                pd.DataFrame(_new_rows_as),
                                             ],
                                             ignore_index=True,
                                         )
-                                        _trial_res = _recompute_prog_deficit_global(
-                                            _trial_df, _dat_cap_src
+                                        _trial_res_as  = _recompute_prog_deficit_global(
+                                            _trial_df_as, _dat_cap_src
                                         )
-                                        _def_after_line   = sum(
+                                        _def_line_as   = sum(
                                             float(r["Déficit h"])
-                                            for _, r in _trial_res["conflict_df"].iterrows()
+                                            for _, r in _trial_res_as["conflict_df"].iterrows()
                                             if str(r["Línea"]) == _dtp_linea
                                         )
-                                        _def_after_global = _trial_res["deficit_total_h"]
-                                        _reduction        = round(_def_linea_b - _def_after_line, 1)
-                                        _global_red_iter  = round(
-                                            _dat_base_res["deficit_total_h"] - _def_after_global, 1
+                                        _def_global_as = _trial_res_as["deficit_total_h"]
+                                        _best_red      = round(
+                                            _def_linea_b - _def_line_as, 1
                                         )
-                                        _line_elim = _def_after_line <= 0
-
-                                        if _line_elim:
-                                            # Priority 1: minimum duration that eliminates line deficit
-                                            _best_dur        = _new_dur
-                                            _best_red        = _reduction
-                                            _best_global_red = _global_red_iter
-                                            _eliminates      = True
-                                            break
-
-                                        # Fallback: max global, then max line, then smallest (by loop order)
-                                        _is_better = (
-                                            _best_dur is None
-                                            or _global_red_iter > _best_global_red
-                                            or (
-                                                _global_red_iter == _best_global_red
-                                                and _reduction > _best_red
-                                            )
+                                        _best_global_red = round(
+                                            _dat_base_res["deficit_total_h"] - _def_global_as, 1
                                         )
-                                        if _is_better:
-                                            _best_dur        = _new_dur
-                                            _best_red        = _reduction
-                                            _best_global_red = _global_red_iter
-                                            if _line_elim:
-                                                _eliminates = True
+                                        _eliminates = _def_line_as <= 0
 
                                     if _best_dur is None:
                                         _dat_rows.append({
@@ -10097,7 +10106,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Entrega objetivo": f"S{_dtp_ent}" if _dtp_ent else "Sin dato",
                                             "Fin simulado": "",
                                             "Impacto entrega": "",
-                                            "Comentario": "Ya en semana 52 — no es posible ampliar.",
+                                            "Comentario": "Sin datos de capacidad para esta línea.",
                                         })
                                         continue
 
