@@ -9888,32 +9888,34 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.caption("Pulsa el botón para ver alternativas candidatas.")
 
                     with _tab_as:
-                        # ── 3H.4B.1 Alternativas de ajuste temporal (solo lectura) ────────
-                        _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
-                        _da_as_use_sim = (
-                            _da_alt_src == "Simulación activa"
-                            and _da_alt_sim_existing is not None
-                        )
-                        if _da_as_use_sim:
-                            _dat_load_src    = _da_alt_sim_existing["load_df_sim"]
-                            _dat_cfl_sim_raw = _da_alt_sim_existing.get("conflict_df_sim")
-                            _dat_cfl_src     = _dat_cfl_sim_raw if _dat_cfl_sim_raw is not None else (
-                                _prog_result.get("conflict_df") if _prog_result else None
+                        # ── 3H.4B.1 Alternativas de ajuste temporal (foto estable) ────────
+                        _as_foto = st.session_state.get(f"_prog_as_foto_{plant_id}")
+
+                        if _da_btn_clicked:
+                            _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
+                            _da_as_use_sim = (
+                                _da_alt_src == "Simulación activa"
+                                and _da_alt_sim_existing is not None
                             )
-                            _dat_cap_sim_raw = _da_alt_sim_existing.get("cap_df_sim")
-                            _dat_cap_src     = _dat_cap_sim_raw if _dat_cap_sim_raw is not None else _prog_cap_df
-                        else:
-                            _dat_load_src = _prog_result.get("load_df") if _prog_result else None
-                            _dat_cfl_src  = _prog_result.get("conflict_df") if _prog_result else None
-                            _dat_cap_src  = _prog_cap_df
-                        if (
-                            _dat_load_src is not None
-                            and not _dat_load_src.empty
-                            and _dat_cfl_src is not None
-                            and not _dat_cfl_src.empty
-                        ):
-                            with st.container(border=True):
-                                st.markdown("#### Alternativas de ajuste temporal")
+                            if _da_as_use_sim:
+                                _dat_load_src    = _da_alt_sim_existing["load_df_sim"]
+                                _dat_cfl_sim_raw = _da_alt_sim_existing.get("conflict_df_sim")
+                                _dat_cfl_src     = _dat_cfl_sim_raw if _dat_cfl_sim_raw is not None else (
+                                    _prog_result.get("conflict_df") if _prog_result else None
+                                )
+                                _dat_cap_sim_raw = _da_alt_sim_existing.get("cap_df_sim")
+                                _dat_cap_src     = _dat_cap_sim_raw if _dat_cap_sim_raw is not None else _prog_cap_df
+                            else:
+                                _dat_load_src = _prog_result.get("load_df") if _prog_result else None
+                                _dat_cfl_src  = _prog_result.get("conflict_df") if _prog_result else None
+                                _dat_cap_src  = _prog_cap_df
+                            _dat_rows: list = []
+                            if (
+                                _dat_load_src is not None
+                                and not _dat_load_src.empty
+                                and _dat_cfl_src is not None
+                                and not _dat_cfl_src.empty
+                            ):
                                 _dat_df_proy = (
                                     _dat_parsed_src.get("proyectos")
                                     if _dat_parsed_src else None
@@ -9930,7 +9932,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _dat_def_linea_b.get(_dl, 0.0) + float(_dlcfl["Déficit h"])
                                     )
 
-                                _dat_rows: list = []
                                 for _dtp in _dat_implicados:
                                     _dtp_rows = _dat_load_src[
                                         _dat_load_src["Proyecto"].astype(str) == _dtp
@@ -10146,6 +10147,26 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "Comentario": _comentario,
                                     })
 
+                            # Photo: always overwrite on button press (rows=[] if no data or no candidates)
+                            st.session_state[f"_prog_as_foto_{plant_id}"] = {
+                                "rows": _dat_rows,
+                                "source_label": "sim" if _da_as_use_sim else "real",
+                            }
+                            st.session_state[f"_prog_extend_editor_ver_{plant_id}"] = (
+                                st.session_state.get(
+                                    f"_prog_extend_editor_ver_{plant_id}", 0
+                                ) + 1
+                            )
+                            _as_foto = st.session_state[f"_prog_as_foto_{plant_id}"]
+
+                        if _as_foto is not None:
+                            _dat_rows = _as_foto["rows"]
+                            with st.container(border=True):
+                                st.markdown("#### Alternativas de ajuste temporal")
+                                if _as_foto["source_label"] == "sim":
+                                    st.caption("⚠ Calculadas sobre: **Simulación activa**")
+                                else:
+                                    st.caption("Calculadas sobre: **Plan real**")
                                 if not _dat_rows:
                                     st.caption("No hay candidatos para ajuste temporal.")
                                 else:
@@ -10230,6 +10251,8 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Comentario": st.column_config.TextColumn("Comentario"),
                                         },
                                     )
+                        else:
+                            st.caption("Pulsa 'Calcular alternativas' para ver las opciones de ajuste temporal.")
 
                     with _tab_pr:
                         # ── 3H.4C Segunda ronda: pendientes vivos tras simulación ────────
@@ -10850,6 +10873,17 @@ if st.session_state.active_tab == "📋 Programación real":
                             ):
                                 st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
                                 st.session_state.pop(f"prog_gantt_vista_{plant_id}", None)
+                                st.session_state.pop(f"_prog_as_foto_{plant_id}", None)
+                                st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
+                                    st.session_state.get(
+                                        f"_prog_alt_editor_ver_{plant_id}", 0
+                                    ) + 1
+                                )
+                                st.session_state[f"_prog_extend_editor_ver_{plant_id}"] = (
+                                    st.session_state.get(
+                                        f"_prog_extend_editor_ver_{plant_id}", 0
+                                    ) + 1
+                                )
                                 st.rerun()
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
