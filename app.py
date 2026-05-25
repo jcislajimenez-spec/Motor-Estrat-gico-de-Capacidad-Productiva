@@ -10873,7 +10873,9 @@ if st.session_state.active_tab == "📋 Programación real":
                             ):
                                 st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
                                 st.session_state.pop(f"prog_gantt_vista_{plant_id}", None)
-                                st.session_state.pop(f"_prog_as_foto_{plant_id}", None)
+                                _as_foto_disc = st.session_state.get(f"_prog_as_foto_{plant_id}")
+                                if _as_foto_disc is not None and _as_foto_disc.get("source_label") == "sim":
+                                    st.session_state.pop(f"_prog_as_foto_{plant_id}", None)
                                 st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
                                     st.session_state.get(
                                         f"_prog_alt_editor_ver_{plant_id}", 0
