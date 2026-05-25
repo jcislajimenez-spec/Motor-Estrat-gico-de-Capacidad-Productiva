@@ -9512,7 +9512,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     else:
                         st.caption("Calculadas sobre: **Plan real**")
                     with st.container(key=f"prog_sim_tabs_{plant_id}"):
-                        _tab_ml, _tab_as = st.tabs(["Mover línea", "Ampliar semanas"])
+                        _tab_ml, _tab_as, _tab_pr = st.tabs(["Mover línea", "Ampliar semanas", "2ª ronda / Ajustar pendientes"])
                     _da_df_c      = pd.DataFrame()
                     _da_df_edited = pd.DataFrame({"Aplicar": pd.Series([], dtype=bool)})
                     _dat_edited   = pd.DataFrame({"Aplicar": pd.Series([], dtype=bool)})
@@ -10230,6 +10230,169 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Comentario": st.column_config.TextColumn("Comentario"),
                                         },
                                     )
+
+                    with _tab_pr:
+                        # ── 3H.4C Segunda ronda: pendientes vivos tras simulación ────────
+                        _pr_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                        if _pr_sim is None:
+                            st.info(
+                                "No hay simulación activa. "
+                                "Aplica primero una alternativa para revisar los pendientes."
+                            )
+                        else:
+                            _pr_cfl  = _pr_sim.get("conflict_df_sim")
+                            _pr_movs = _pr_sim.get("movimientos", []) or []
+                            if _pr_cfl is None:
+                                st.info(
+                                    "La simulación activa no tiene información de conflictos. "
+                                    "Recalcula las alternativas para obtener datos actualizados."
+                                )
+                            elif _pr_cfl.empty:
+                                st.success(
+                                    f"No quedan conflictos pendientes tras la simulación "
+                                    f"({len(_pr_movs)} acción"
+                                    f"{'es' if len(_pr_movs) != 1 else ''} aplicada"
+                                    f"{'s' if len(_pr_movs) != 1 else ''})."
+                                )
+                            else:
+                                # Defensive: Línea is required to group
+                                if "Línea" not in _pr_cfl.columns:
+                                    st.warning(
+                                        "No se puede agrupar la simulación porque falta la "
+                                        "columna Línea en los conflictos simulados."
+                                    )
+                                else:
+                                    _pr_has_def = "Déficit h"            in _pr_cfl.columns
+                                    _pr_has_sem = "Semana"               in _pr_cfl.columns
+                                    _pr_has_pi  = "Proyectos implicados" in _pr_cfl.columns
+
+                                    # Group conflict rows by Línea
+                                    _pr_by_linea: dict = {}
+                                    for _, _pr_row in _pr_cfl.iterrows():
+                                        _pr_by_linea.setdefault(
+                                            str(_pr_row["Línea"]), []
+                                        ).append(_pr_row)
+
+                                    # Movements indexed by the line they touched
+                                    _pr_movs_by_linea: dict = {}
+                                    for _prm in _pr_movs:
+                                        for _prk in ("linea_actual", "linea_destino"):
+                                            _prml = str(_prm.get(_prk, "")).strip()
+                                            if _prml:
+                                                _pr_movs_by_linea.setdefault(_prml, []).append(_prm)
+
+                                    _pr_n_pend = len(_pr_by_linea)
+                                    _pr_n_movs = len(_pr_movs)
+                                    st.info(
+                                        f"Base: **Simulación activa** · "
+                                        f"Acciones aplicadas: **{_pr_n_movs}** · "
+                                        f"Pendientes vivos: **{_pr_n_pend}** "
+                                        f"línea{'s' if _pr_n_pend != 1 else ''}"
+                                    )
+
+                                    for _prl, _prl_rows in sorted(_pr_by_linea.items()):
+                                        # Déficit: safe float conversion, ignore bad values
+                                        if _pr_has_def:
+                                            _prl_def_vals = []
+                                            for _prr in _prl_rows:
+                                                try:
+                                                    _prl_def_vals.append(float(_prr["Déficit h"]))
+                                                except (TypeError, ValueError):
+                                                    pass
+                                            _prl_def_str = (
+                                                str(round(sum(_prl_def_vals), 1))
+                                                if _prl_def_vals else "No disponible"
+                                            )
+                                        else:
+                                            _prl_def_str = "No disponible"
+
+                                        # Semana: safe int conversion, ignore bad values
+                                        _prl_sems: list = []
+                                        if _pr_has_sem:
+                                            for _prr in _prl_rows:
+                                                try:
+                                                    _prl_sems.append(int(_prr["Semana"]))
+                                                except (TypeError, ValueError):
+                                                    pass
+                                            _prl_sems = sorted(set(_prl_sems))
+
+                                        # Proyectos implicados: only if column exists
+                                        _prl_projs: list = []
+                                        if _pr_has_pi:
+                                            for _prr in _prl_rows:
+                                                try:
+                                                    for _prp in str(
+                                                        _prr.get("Proyectos implicados", "")
+                                                    ).split(","):
+                                                        if _prp.strip():
+                                                            _prl_projs.append(_prp.strip())
+                                                except Exception:
+                                                    pass
+                                            _prl_projs = sorted(set(_prl_projs))
+
+                                        with st.container(border=True):
+                                            _prc1, _prc2 = st.columns([3, 1])
+                                            with _prc1:
+                                                st.markdown(f"**Línea: {_prl}**")
+                                                if _prl_projs:
+                                                    st.caption(
+                                                        f"Proyectos: {', '.join(_prl_projs)}"
+                                                    )
+                                                if _prl_sems:
+                                                    if len(_prl_sems) <= 6:
+                                                        st.caption(
+                                                            "Semanas: "
+                                                            + ", ".join(
+                                                                f"S{s}" for s in _prl_sems
+                                                            )
+                                                        )
+                                                    else:
+                                                        st.caption(
+                                                            f"Semanas: S{_prl_sems[0]}–S{_prl_sems[-1]}"
+                                                            f" ({len(_prl_sems)} semanas)"
+                                                        )
+                                            with _prc2:
+                                                st.metric("Déficit (h)", _prl_def_str)
+                                            _prl_prev = _pr_movs_by_linea.get(_prl, [])
+                                            if _prl_prev:
+                                                _prl_desc = []
+                                                for _prpm in _prl_prev:
+                                                    _prt  = _prpm.get("tipo_accion", "Acción")
+                                                    _prpj = str(_prpm.get("proyecto", ""))
+                                                    if _prt == "Ajuste temporal":
+                                                        _prl_desc.append(
+                                                            f"Ampliar semanas — {_prpj}"
+                                                        )
+                                                    elif _prt == "Mover línea":
+                                                        _pr_src = str(
+                                                            _prpm.get("linea_actual", "")
+                                                        )
+                                                        _pr_dst = str(
+                                                            _prpm.get("linea_destino", "")
+                                                        )
+                                                        if _prl == _pr_src:
+                                                            _prl_desc.append(
+                                                                f"Mover línea — {_prpj}: "
+                                                                f"salió de aquí → {_pr_dst}"
+                                                            )
+                                                        else:
+                                                            _prl_desc.append(
+                                                                f"Mover línea — {_prpj}: "
+                                                                f"llegó aquí desde {_pr_src}"
+                                                            )
+                                                if _prl_desc:
+                                                    with st.expander(
+                                                        "Acción previa relacionada",
+                                                        expanded=False,
+                                                    ):
+                                                        for _prdd in _prl_desc:
+                                                            st.caption(f"• {_prdd}")
+                                            st.caption(
+                                                "Recalcula alternativas sobre "
+                                                "**Simulación activa** y usa "
+                                                "**Mover línea** o **Ampliar semanas** "
+                                                "para actuar sobre este pendiente."
+                                            )
 
                     # ── Botón combinado: Mover línea + Ampliar semanas ───────────────
                     st.markdown(f"""<style>
