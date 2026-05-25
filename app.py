@@ -8921,9 +8921,21 @@ if st.session_state.active_tab == "📋 Programación real":
                         )
 
                 if _da_has_conflicts and _da_has_load:
-                    if _da_btn_clicked:
+                    _pr_trigger = st.session_state.pop(f"_prog_pr_trigger_{plant_id}", False)
+                    if _pr_trigger and _da_alt_sim_existing is None:
+                        # Trigger fired but simulation was already discarded — safe abort
+                        st.session_state[f"_prog_alt_result_{plant_id}"] = {
+                            "candidatas": [], "descartadas": [], "source": "sim",
+                        }
+                        st.session_state[f"_prog_as_foto_{plant_id}"] = {
+                            "rows": [], "source_label": "sim",
+                        }
+                    elif _da_btn_clicked or _pr_trigger:
                         _da_use_sim = (
-                            _da_alt_src == "Simulación activa"
+                            (
+                                _da_alt_src == "Simulación activa"
+                                or _pr_trigger
+                            )
                             and _da_alt_sim_existing is not None
                         )
                         if _da_use_sim:
@@ -8933,7 +8945,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _da_conflict_base = _prog_result["conflict_df"]
                             else:
                                 _da_conflict_base = _da_conflict_sim
-                        else:
+                        elif not _pr_trigger:
                             _da_load_base     = _prog_result["load_df"]
                             _da_conflict_base = _prog_result["conflict_df"]
                             st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
@@ -10416,6 +10428,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "**Mover línea** o **Ampliar semanas** "
                                                 "para actuar sobre este pendiente."
                                             )
+                                    if st.button(
+                                        "Calcular 2ª ronda",
+                                        key=f"prog_pr_calc_btn_{plant_id}",
+                                        use_container_width=True,
+                                    ):
+                                        st.session_state[f"_da_alt_src_radio_{plant_id}"] = "Simulación activa"
+                                        st.session_state[f"_prog_pr_trigger_{plant_id}"] = True
+                                        st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
+                                            st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
+                                        )
+                                        st.session_state[f"_prog_extend_editor_ver_{plant_id}"] = (
+                                            st.session_state.get(f"_prog_extend_editor_ver_{plant_id}", 0) + 1
+                                        )
+                                        st.rerun()
 
                     # ── Botón combinado: Mover línea + Ampliar semanas ───────────────
                     st.markdown(f"""<style>
