@@ -10267,7 +10267,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             st.caption("Pulsa 'Calcular alternativas' para ver las opciones de ajuste temporal.")
 
                     with _tab_pr:
-                        # ── 3H.4C Segunda ronda: pendientes vivos tras simulación ────────
+                        # ── 3H.4C Segunda ronda: consola accionable F5A-3.1 ────────────
                         _pr_sim = st.session_state.get(f"_prog_alt_sim_{plant_id}")
                         if _pr_sim is None:
                             st.info(
@@ -10290,144 +10290,152 @@ if st.session_state.active_tab == "📋 Programación real":
                                     f"{'s' if len(_pr_movs) != 1 else ''})."
                                 )
                             else:
-                                # Defensive: Línea is required to group
-                                if "Línea" not in _pr_cfl.columns:
-                                    st.warning(
-                                        "No se puede agrupar la simulación porque falta la "
-                                        "columna Línea en los conflictos simulados."
-                                    )
-                                else:
-                                    _pr_has_def = "Déficit h"            in _pr_cfl.columns
-                                    _pr_has_sem = "Semana"               in _pr_cfl.columns
-                                    _pr_has_pi  = "Proyectos implicados" in _pr_cfl.columns
+                                _pr_has_pi  = "Proyectos implicados" in _pr_cfl.columns
+                                _pr_has_def = "Déficit h"            in _pr_cfl.columns
+                                _pr_has_sem = "Semana"               in _pr_cfl.columns
+                                _pr_has_lin = "Línea"                in _pr_cfl.columns
 
-                                    # Group conflict rows by Línea
-                                    _pr_by_linea: dict = {}
-                                    for _, _pr_row in _pr_cfl.iterrows():
-                                        _pr_by_linea.setdefault(
-                                            str(_pr_row["Línea"]), []
-                                        ).append(_pr_row)
+                                # Group by project (CSV column) or by line as fallback
+                                _pr_by_proj: dict = {}
+                                if _pr_has_pi:
+                                    for _, _prr in _pr_cfl.iterrows():
+                                        for _prp in str(
+                                            _prr.get("Proyectos implicados", "")
+                                        ).split(","):
+                                            _prp = _prp.strip()
+                                            if _prp:
+                                                _pr_by_proj.setdefault(_prp, []).append(_prr)
+                                elif _pr_has_lin:
+                                    for _, _prr in _pr_cfl.iterrows():
+                                        _pr_by_proj.setdefault(
+                                            str(_prr["Línea"]), []
+                                        ).append(_prr)
 
-                                    # Movements indexed by the line they touched
-                                    _pr_movs_by_linea: dict = {}
-                                    for _prm in _pr_movs:
-                                        for _prk in ("linea_actual", "linea_destino"):
-                                            _prml = str(_prm.get(_prk, "")).strip()
-                                            if _prml:
-                                                _pr_movs_by_linea.setdefault(_prml, []).append(_prm)
+                                _pr_n_pend = len(_pr_by_proj)
+                                _pr_n_movs = len(_pr_movs)
 
-                                    _pr_n_pend = len(_pr_by_linea)
-                                    _pr_n_movs = len(_pr_movs)
-                                    st.info(
-                                        f"Base: **Simulación activa** · "
-                                        f"Acciones aplicadas: **{_pr_n_movs}** · "
-                                        f"Pendientes vivos: **{_pr_n_pend}** "
-                                        f"línea{'s' if _pr_n_pend != 1 else ''}"
-                                    )
+                                # Check whether 2nd-round candidates exist (sim source)
+                                _pr_alt_result = st.session_state.get(
+                                    f"_prog_alt_result_{plant_id}"
+                                )
+                                _pr_has_cands = (
+                                    _pr_alt_result is not None
+                                    and _pr_alt_result.get("source") == "sim"
+                                    and bool(_pr_alt_result.get("candidatas"))
+                                )
+                                _pr_as_foto = st.session_state.get(
+                                    f"_prog_as_foto_{plant_id}"
+                                )
+                                _pr_has_as = (
+                                    _pr_as_foto is not None
+                                    and _pr_as_foto.get("source_label") == "sim"
+                                    and bool(_pr_as_foto.get("rows"))
+                                )
 
-                                    for _prl, _prl_rows in sorted(_pr_by_linea.items()):
-                                        # Déficit: safe float conversion, ignore bad values
-                                        if _pr_has_def:
-                                            _prl_def_vals = []
-                                            for _prr in _prl_rows:
-                                                try:
-                                                    _prl_def_vals.append(float(_prr["Déficit h"]))
-                                                except (TypeError, ValueError):
-                                                    pass
-                                            _prl_def_str = (
-                                                str(round(sum(_prl_def_vals), 1))
-                                                if _prl_def_vals else "No disponible"
-                                            )
-                                        else:
-                                            _prl_def_str = "No disponible"
+                                # Cabecera informativa
+                                st.info(
+                                    f"Base: **Simulación activa** · "
+                                    f"1ª ronda aplicada: **{_pr_n_movs}** "
+                                    f"acción{'es' if _pr_n_movs != 1 else ''} · "
+                                    f"Pendientes vivos: **{_pr_n_pend}**"
+                                )
+                                st.caption("Solo aparecen conflictos vivos tras la 1ª ronda.")
 
-                                        # Semana: safe int conversion, ignore bad values
-                                        _prl_sems: list = []
-                                        if _pr_has_sem:
-                                            for _prr in _prl_rows:
-                                                try:
-                                                    _prl_sems.append(int(_prr["Semana"]))
-                                                except (TypeError, ValueError):
-                                                    pass
-                                            _prl_sems = sorted(set(_prl_sems))
+                                # Index movements by project
+                                _pr_movs_by_proj: dict = {}
+                                for _prm in _pr_movs:
+                                    _prmp = str(_prm.get("proyecto", "")).strip()
+                                    if _prmp:
+                                        _pr_movs_by_proj.setdefault(_prmp, []).append(_prm)
 
-                                        # Proyectos implicados: only if column exists
-                                        _prl_projs: list = []
-                                        if _pr_has_pi:
-                                            for _prr in _prl_rows:
-                                                try:
-                                                    for _prp in str(
-                                                        _prr.get("Proyectos implicados", "")
-                                                    ).split(","):
-                                                        if _prp.strip():
-                                                            _prl_projs.append(_prp.strip())
-                                                except Exception:
-                                                    pass
-                                            _prl_projs = sorted(set(_prl_projs))
+                                def _pr_def_str(rows):
+                                    if not _pr_has_def:
+                                        return "No disponible"
+                                    vals = []
+                                    for r in rows:
+                                        try:
+                                            vals.append(float(r["Déficit h"]))
+                                        except (TypeError, ValueError):
+                                            pass
+                                    return f"{round(sum(vals), 1)} h" if vals else "No disponible"
 
-                                        with st.container(border=True):
-                                            _prc1, _prc2 = st.columns([3, 1])
-                                            with _prc1:
-                                                st.markdown(f"**Línea: {_prl}**")
-                                                if _prl_projs:
-                                                    st.caption(
-                                                        f"Proyectos: {', '.join(_prl_projs)}"
-                                                    )
-                                                if _prl_sems:
-                                                    if len(_prl_sems) <= 6:
-                                                        st.caption(
-                                                            "Semanas: "
-                                                            + ", ".join(
-                                                                f"S{s}" for s in _prl_sems
-                                                            )
-                                                        )
-                                                    else:
-                                                        st.caption(
-                                                            f"Semanas: S{_prl_sems[0]}–S{_prl_sems[-1]}"
-                                                            f" ({len(_prl_sems)} semanas)"
-                                                        )
-                                            with _prc2:
-                                                st.metric("Déficit (h)", _prl_def_str)
-                                            _prl_prev = _pr_movs_by_linea.get(_prl, [])
-                                            if _prl_prev:
-                                                _prl_desc = []
-                                                for _prpm in _prl_prev:
-                                                    _prt  = _prpm.get("tipo_accion", "Acción")
-                                                    _prpj = str(_prpm.get("proyecto", ""))
-                                                    if _prt == "Ajuste temporal":
-                                                        _prl_desc.append(
-                                                            f"Ampliar semanas — {_prpj}"
-                                                        )
-                                                    elif _prt == "Mover línea":
-                                                        _pr_src = str(
-                                                            _prpm.get("linea_actual", "")
-                                                        )
-                                                        _pr_dst = str(
-                                                            _prpm.get("linea_destino", "")
-                                                        )
-                                                        if _prl == _pr_src:
-                                                            _prl_desc.append(
-                                                                f"Mover línea — {_prpj}: "
-                                                                f"salió de aquí → {_pr_dst}"
-                                                            )
-                                                        else:
-                                                            _prl_desc.append(
-                                                                f"Mover línea — {_prpj}: "
-                                                                f"llegó aquí desde {_pr_src}"
-                                                            )
-                                                if _prl_desc:
-                                                    with st.expander(
-                                                        "Acción previa relacionada",
-                                                        expanded=False,
-                                                    ):
-                                                        for _prdd in _prl_desc:
-                                                            st.caption(f"• {_prdd}")
+                                def _pr_sem_str(rows):
+                                    if not _pr_has_sem:
+                                        return []
+                                    out = []
+                                    for r in rows:
+                                        try:
+                                            out.append(int(r["Semana"]))
+                                        except (TypeError, ValueError):
+                                            pass
+                                    return sorted(set(out))
+
+                                def _pr_lin_str(rows):
+                                    if not _pr_has_lin:
+                                        return []
+                                    return sorted({str(r["Línea"]) for r in rows})
+
+                                def _pr_render_header(idx, proj, rows):
+                                    _prc1, _prc2 = st.columns([3, 1])
+                                    with _prc1:
+                                        st.markdown(f"**Pendiente {idx} — {proj}**")
+                                        _lns = _pr_lin_str(rows)
+                                        if _lns:
                                             st.caption(
-                                                "Recalcula alternativas sobre "
-                                                "**Simulación activa** y usa "
-                                                "**Mover línea** o **Ampliar semanas** "
-                                                "para actuar sobre este pendiente."
+                                                f"Línea{'s' if len(_lns) > 1 else ''}: "
+                                                f"{', '.join(_lns)}"
                                             )
+                                        _sms = _pr_sem_str(rows)
+                                        if _sms:
+                                            if len(_sms) <= 6:
+                                                st.caption(
+                                                    "Semanas: "
+                                                    + ", ".join(f"S{s}" for s in _sms)
+                                                )
+                                            else:
+                                                st.caption(
+                                                    f"Semanas: S{_sms[0]}–S{_sms[-1]}"
+                                                    f" ({len(_sms)} semanas)"
+                                                )
+                                    with _prc2:
+                                        st.metric("Déficit (h)", _pr_def_str(rows))
+
+                                def _pr_render_antes(proj):
+                                    prev = _pr_movs_by_proj.get(proj, [])
+                                    if not prev:
+                                        return
+                                    desc = []
+                                    for m in prev:
+                                        t = m.get("tipo_accion", "")
+                                        if t == "Ajuste temporal":
+                                            desc.append(
+                                                f"Ampliado de "
+                                                f"{m.get('semanas_actuales', '?')} "
+                                                f"a {m.get('semanas_simuladas', '?')} sem"
+                                            )
+                                        elif t == "Mover línea":
+                                            desc.append(
+                                                f"Movido de "
+                                                f"{m.get('linea_actual', '?')} "
+                                                f"a {m.get('linea_destino', '?')}"
+                                            )
+                                    if desc:
+                                        st.caption(
+                                            "**Qué se hizo antes:** " + " · ".join(desc)
+                                        )
+
+                                if not _pr_has_cands and not _pr_has_as:
+                                    # ── Estado previo: mostrar conflictos + botón trigger ──
+                                    for _k_idx, (_pr_proj, _pr_rows) in enumerate(
+                                        sorted(_pr_by_proj.items()), 1
+                                    ):
+                                        with st.container(border=True):
+                                            _pr_render_header(_k_idx, _pr_proj, _pr_rows)
+                                            _pr_render_antes(_pr_proj)
+                                    st.caption(
+                                        "Pulsa **Calcular 2ª ronda** para ver las opciones "
+                                        "de ajuste disponibles sobre la simulación activa."
+                                    )
                                     if st.button(
                                         "Calcular 2ª ronda",
                                         key=f"prog_pr_calc_btn_{plant_id}",
@@ -10435,12 +10443,287 @@ if st.session_state.active_tab == "📋 Programación real":
                                     ):
                                         st.session_state[f"_prog_pr_trigger_{plant_id}"] = True
                                         st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
-                                            st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
+                                            st.session_state.get(
+                                                f"_prog_alt_editor_ver_{plant_id}", 0
+                                            ) + 1
                                         )
                                         st.session_state[f"_prog_extend_editor_ver_{plant_id}"] = (
-                                            st.session_state.get(f"_prog_extend_editor_ver_{plant_id}", 0) + 1
+                                            st.session_state.get(
+                                                f"_prog_extend_editor_ver_{plant_id}", 0
+                                            ) + 1
                                         )
                                         st.rerun()
+
+                                else:
+                                    # ── Consola accionable: candidatos disponibles ─────────
+                                    _pr_cands_by_proj: dict = {}
+                                    if _pr_alt_result:
+                                        for _prc in (_pr_alt_result.get("candidatas") or []):
+                                            _prcp = str(_prc.get("Proyecto", "")).strip()
+                                            if _prcp:
+                                                _pr_cands_by_proj.setdefault(
+                                                    _prcp, []
+                                                ).append(_prc)
+                                    _pr_as_by_proj: dict = {}
+                                    if _pr_as_foto:
+                                        for _pras in (_pr_as_foto.get("rows") or []):
+                                            _prasp = str(_pras.get("Proyecto", "")).strip()
+                                            if _prasp:
+                                                _pr_as_by_proj[_prasp] = _pras
+
+                                    _pr_any_checked = False
+                                    for _k_idx, (_pr_proj, _pr_rows) in enumerate(
+                                        sorted(_pr_by_proj.items()), 1
+                                    ):
+                                        _pr_san = "".join(
+                                            c if c.isalnum() or c == "_" else "_"
+                                            for c in str(_pr_proj)
+                                        )
+                                        _pr_proj_cands = _pr_cands_by_proj.get(_pr_proj, [])
+                                        _pr_proj_as    = _pr_as_by_proj.get(_pr_proj)
+
+                                        with st.container(border=True):
+                                            _pr_render_header(_k_idx, _pr_proj, _pr_rows)
+                                            _pr_render_antes(_pr_proj)
+                                            st.caption(
+                                                f"**Qué sigue mal:** "
+                                                f"Sigue con {_pr_def_str(_pr_rows)} de déficit."
+                                            )
+
+                                            # Radio options from available candidates
+                                            _pr_radio_opts: list = []
+                                            if (
+                                                _pr_proj_as is not None
+                                                and _pr_proj_as.get("Estado")
+                                                not in ("No aplicable", "No mejora")
+                                                and _pr_proj_as.get("Semanas simuladas")
+                                                is not None
+                                            ):
+                                                _pr_radio_opts.append(
+                                                    "Ampliar semanas en destino"
+                                                )
+                                            if _pr_proj_cands:
+                                                _pr_radio_opts.append(
+                                                    "Mover proyecto completo a otra línea"
+                                                )
+                                            _pr_radio_opts.append("No actuar")
+
+                                            _pr_action = st.radio(
+                                                "Acción a aplicar ahora:",
+                                                options=_pr_radio_opts,
+                                                key=f"_pr_action_{plant_id}_{_pr_san}",
+                                                horizontal=True,
+                                            )
+
+                                            if _pr_action == "Ampliar semanas en destino":
+                                                if (
+                                                    _pr_proj_as is not None
+                                                    and _pr_proj_as.get("Semanas actuales")
+                                                    is not None
+                                                ):
+                                                    with st.container(border=True):
+                                                        st.caption(
+                                                            f"Semanas actuales: "
+                                                            f"**{_pr_proj_as['Semanas actuales']}**"
+                                                        )
+                                                        if (
+                                                            _pr_proj_as.get("Semanas simuladas")
+                                                            is not None
+                                                        ):
+                                                            st.caption(
+                                                                f"Semanas propuestas: "
+                                                                f"**{_pr_proj_as['Semanas simuladas']}**"
+                                                            )
+                                                        try:
+                                                            _pr_mej_as = float(
+                                                                _pr_proj_as.get(
+                                                                    "Déficit global eliminado (h)",
+                                                                    0.0,
+                                                                ) or 0.0
+                                                            )
+                                                        except (TypeError, ValueError):
+                                                            _pr_mej_as = 0.0
+                                                        st.caption(
+                                                            f"Mejora estimada: "
+                                                            f"**{round(_pr_mej_as, 1)} h** déficit"
+                                                        )
+                                                        _pr_est = _pr_proj_as.get("Estado", "")
+                                                        if _pr_est == "Recomendable":
+                                                            st.markdown(
+                                                                f"Estado: :green[**{_pr_est}**]"
+                                                            )
+                                                        elif _pr_est:
+                                                            st.markdown(
+                                                                f"Estado: :orange[**{_pr_est}**]"
+                                                            )
+                                                        else:
+                                                            st.caption("Estado: No disponible")
+                                                else:
+                                                    st.caption(
+                                                        "No se encontró candidato de ampliación "
+                                                        "para este proyecto."
+                                                    )
+
+                                            elif (
+                                                _pr_action
+                                                == "Mover proyecto completo a otra línea"
+                                            ):
+                                                if _pr_proj_cands:
+                                                    with st.container(border=True):
+                                                        _pr_dest_opts = [
+                                                            c.get("Línea candidata")
+                                                            for c in _pr_proj_cands
+                                                            if c.get("Línea candidata")
+                                                        ]
+                                                        if not _pr_dest_opts:
+                                                            st.caption(
+                                                                "No se encontró candidato de "
+                                                                "movimiento para este proyecto."
+                                                            )
+                                                        else:
+                                                            _pr_dest_sel = st.multiselect(
+                                                                "Líneas destino disponibles:",
+                                                                options=_pr_dest_opts,
+                                                                default=_pr_dest_opts[:1],
+                                                                key=f"_pr_dest_{plant_id}_{_pr_san}",
+                                                            )
+                                                            _pr_n_dest = (
+                                                                len(_pr_dest_sel)
+                                                                if _pr_dest_sel else 1
+                                                            )
+                                                            if _pr_n_dest > 1:
+                                                                _pr_rep  = 100 // _pr_n_dest
+                                                                _pr_rem  = (
+                                                                    100 - _pr_rep * _pr_n_dest
+                                                                )
+                                                                _pr_parts = [
+                                                                    _pr_rep
+                                                                    + (1 if i < _pr_rem else 0)
+                                                                    for i in range(_pr_n_dest)
+                                                                ]
+                                                                st.caption(
+                                                                    "Reparto automático: "
+                                                                    + " / ".join(
+                                                                        f"{p}%"
+                                                                        for p in _pr_parts
+                                                                    )
+                                                                )
+                                                            _pr_best_c = None
+                                                            for _prc in _pr_proj_cands:
+                                                                if (
+                                                                    not _pr_dest_sel
+                                                                    or _prc.get("Línea candidata")
+                                                                    in _pr_dest_sel
+                                                                ):
+                                                                    try:
+                                                                        _pr_mej_c = float(
+                                                                            _prc.get("Mejora h", 0)
+                                                                            or 0
+                                                                        )
+                                                                    except (TypeError, ValueError):
+                                                                        _pr_mej_c = 0.0
+                                                                    try:
+                                                                        _pr_best_mej = float(
+                                                                            _pr_best_c.get(
+                                                                                "Mejora h", 0
+                                                                            ) or 0
+                                                                        ) if _pr_best_c else 0.0
+                                                                    except (TypeError, ValueError):
+                                                                        _pr_best_mej = 0.0
+                                                                    if (
+                                                                        _pr_best_c is None
+                                                                        or _pr_mej_c > _pr_best_mej
+                                                                    ):
+                                                                        _pr_best_c = _prc
+                                                            if _pr_best_c:
+                                                                try:
+                                                                    _pr_mej_mv = float(
+                                                                        _pr_best_c.get(
+                                                                            "Mejora h", 0
+                                                                        ) or 0
+                                                                    )
+                                                                except (TypeError, ValueError):
+                                                                    _pr_mej_mv = 0.0
+                                                                st.caption(
+                                                                    f"Mejora estimada: "
+                                                                    f"**{round(_pr_mej_mv, 1)} h**"
+                                                                    f" déficit"
+                                                                )
+                                                                _pr_res = _pr_best_c.get(
+                                                                    "Resultado", ""
+                                                                )
+                                                                if _pr_res == "Libera":
+                                                                    st.markdown(
+                                                                        f"Estado: "
+                                                                        f":green[**{_pr_res}**]"
+                                                                    )
+                                                                elif _pr_res:
+                                                                    st.markdown(
+                                                                        f"Estado: "
+                                                                        f":orange[**{_pr_res}**]"
+                                                                    )
+                                                                else:
+                                                                    st.caption(
+                                                                        "Estado: No disponible"
+                                                                    )
+                                                else:
+                                                    st.caption(
+                                                        "No se encontró candidato de movimiento "
+                                                        "para este proyecto."
+                                                    )
+
+                                            _pr_chk = st.checkbox(
+                                                "Aplicar este ajuste",
+                                                key=f"_pr_check_{plant_id}_{_pr_san}",
+                                            )
+                                            if _pr_chk and _pr_action != "No actuar":
+                                                _pr_any_checked = True
+
+                                    st.caption(
+                                        "La aplicación real de segunda ronda "
+                                        "se implementará en F5A-3.2."
+                                    )
+                                    st.button(
+                                        "Aplicar ajustes seleccionados de 2ª ronda",
+                                        disabled=True,
+                                        use_container_width=True,
+                                        key=f"prog_pr_apply_btn_{plant_id}",
+                                    )
+                                    with st.expander(
+                                        "Ver detalle técnico / auditoría", expanded=False
+                                    ):
+                                        if _pr_movs:
+                                            for _prmi, _prmov in enumerate(_pr_movs, 1):
+                                                _prt_a  = _prmov.get("tipo_accion", "Acción")
+                                                _prpj_a = str(_prmov.get("proyecto", ""))
+                                                if _prt_a == "Ajuste temporal":
+                                                    st.caption(
+                                                        f"{_prmi}. {_prpj_a} — "
+                                                        f"Ampliar semanas: "
+                                                        f"{_prmov.get('semanas_actuales', '?')}"
+                                                        f" → "
+                                                        f"{_prmov.get('semanas_simuladas', '?')}"
+                                                        f" sem"
+                                                    )
+                                                elif _prt_a == "Mover línea":
+                                                    _pr_fp = _prmov.get("fraccion_pct", "")
+                                                    st.caption(
+                                                        f"{_prmi}. {_prpj_a} — "
+                                                        f"Mover de "
+                                                        f"{_prmov.get('linea_actual', '?')} "
+                                                        f"a "
+                                                        f"{_prmov.get('linea_destino', '?')}"
+                                                        + (
+                                                            f" ({_pr_fp})"
+                                                            if _pr_fp else ""
+                                                        )
+                                                    )
+                                                else:
+                                                    st.caption(
+                                                        f"{_prmi}. {_prpj_a} — {_prt_a}"
+                                                    )
+                                        else:
+                                            st.caption("Sin movimientos registrados.")
 
                     # ── Botón combinado: Mover línea + Ampliar semanas ───────────────
                     st.markdown(f"""<style>
