@@ -10433,7 +10433,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                         key=f"prog_pr_calc_btn_{plant_id}",
                                         use_container_width=True,
                                     ):
-                                        st.session_state[f"_da_alt_src_radio_{plant_id}"] = "Simulación activa"
                                         st.session_state[f"_prog_pr_trigger_{plant_id}"] = True
                                         st.session_state[f"_prog_alt_editor_ver_{plant_id}"] = (
                                             st.session_state.get(f"_prog_alt_editor_ver_{plant_id}", 0) + 1
