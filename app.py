@@ -10056,11 +10056,10 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _global_red_iter  = round(
                                             _dat_base_res["deficit_total_h"] - _def_after_global, 1
                                         )
-                                        _line_elim       = _def_after_line <= 0
-                                        _no_global_harm  = _global_red_iter >= 0
+                                        _line_elim = _def_after_line <= 0
 
-                                        if _line_elim and _no_global_harm:
-                                            # Priority 1: fixes line without global harm → smallest wins
+                                        if _line_elim:
+                                            # Priority 1: minimum duration that eliminates line deficit
                                             _best_dur        = _new_dur
                                             _best_red        = _reduction
                                             _best_global_red = _global_red_iter
