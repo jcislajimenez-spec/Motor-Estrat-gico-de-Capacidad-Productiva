@@ -10014,25 +10014,48 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _best_global_red = 0.0
                                     _eliminates      = False
 
-                                    # Capacity lookup for this line
+                                    # Multi-source capacity resolver: a) _dat_cap_src,
+                                    # b) cap_df_sim, c) cap_df_alts, d) _prog_cap_df
                                     _cap_h_sem_as = None
-                                    if (
-                                        _dat_cap_src is not None
-                                        and not _dat_cap_src.empty
-                                        and "Línea" in _dat_cap_src.columns
-                                        and "Capacidad h/sem" in _dat_cap_src.columns
-                                    ):
-                                        _cap_rows_as = _dat_cap_src[
-                                            _dat_cap_src["Línea"].astype(str)
-                                            == str(_dtp_linea)
-                                        ]
-                                        if not _cap_rows_as.empty:
-                                            try:
-                                                _cap_h_sem_as = float(
-                                                    _cap_rows_as["Capacidad h/sem"].iloc[0]
-                                                )
-                                            except (TypeError, ValueError):
-                                                _cap_h_sem_as = None
+                                    for _cap_src_try in [
+                                        _dat_cap_src,
+                                        (
+                                            st.session_state.get(
+                                                f"_prog_alt_sim_{plant_id}"
+                                            ) or {}
+                                        ).get("cap_df_sim"),
+                                        (
+                                            st.session_state.get(
+                                                f"_prog_alt_result_{plant_id}"
+                                            ) or {}
+                                        ).get("cap_df_alts"),
+                                        _prog_cap_df,
+                                    ]:
+                                        if (
+                                            _cap_src_try is not None
+                                            and not (
+                                                hasattr(_cap_src_try, "empty")
+                                                and _cap_src_try.empty
+                                            )
+                                            and "Línea" in _cap_src_try.columns
+                                            and "Capacidad h/sem" in _cap_src_try.columns
+                                        ):
+                                            _cap_rows_try = _cap_src_try[
+                                                _cap_src_try["Línea"].astype(str)
+                                                == str(_dtp_linea)
+                                            ]
+                                            if not _cap_rows_try.empty:
+                                                try:
+                                                    _v_try = float(
+                                                        _cap_rows_try[
+                                                            "Capacidad h/sem"
+                                                        ].iloc[0]
+                                                    )
+                                                    if _v_try > 0:
+                                                        _cap_h_sem_as = _v_try
+                                                        break
+                                                except (TypeError, ValueError):
+                                                    pass
 
                                     if _cap_h_sem_as is not None and _cap_h_sem_as > 0:
                                         # Ceiling division without math import:
@@ -10115,8 +10138,12 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _delta_sem = _best_dur - _dur_actual
 
                                     if _best_red <= 0:
-                                        _estado     = "No mejora"
-                                        _comentario = "Ampliar duración no reduce el déficit en esta línea."
+                                        _estado     = "Revisar"
+                                        _comentario = (
+                                            "La ampliación no reduce el déficit neto de la línea "
+                                            "(puede haber carga de otros proyectos en las semanas "
+                                            "ampliadas). Verifica antes de aplicar."
+                                        )
                                     elif _best_global_red < 0:
                                         _estado     = "Revisar"
                                         _comentario = "Fija la línea pero desplaza déficit a otras semanas/líneas."
