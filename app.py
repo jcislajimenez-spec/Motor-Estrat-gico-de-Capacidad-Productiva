@@ -10498,6 +10498,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 _pr_as_by_proj[_prasp] = _pras
 
                                     _pr_any_checked = False
+                                    _pr_n_ampliar_valid = 0
                                     for _k_idx, (_pr_proj, _pr_rows) in enumerate(
                                         sorted(_pr_by_proj.items()), 1
                                     ):
@@ -10709,17 +10710,289 @@ if st.session_state.active_tab == "📋 Programación real":
                                             )
                                             if _pr_chk and _pr_action != "No actuar":
                                                 _pr_any_checked = True
+                                            if (
+                                                _pr_chk
+                                                and _pr_action == "Ampliar semanas en destino"
+                                                and _pr_proj_as is not None
+                                                and _pr_proj_as.get("Semanas simuladas")
+                                                is not None
+                                            ):
+                                                try:
+                                                    int(_pr_proj_as["Semanas simuladas"])
+                                                    _pr_n_ampliar_valid += 1
+                                                except (TypeError, ValueError):
+                                                    pass
 
-                                    st.caption(
-                                        "La aplicación real de segunda ronda "
-                                        "se implementará en F5A-3.2."
-                                    )
-                                    st.button(
+                                    if st.button(
                                         "Aplicar ajustes seleccionados de 2ª ronda",
-                                        disabled=True,
+                                        disabled=(_pr_n_ampliar_valid != 1),
                                         use_container_width=True,
                                         key=f"prog_pr_apply_btn_{plant_id}",
-                                    )
+                                    ):
+                                        # Lectura segura de la simulación base
+                                        _prb_load_base = _pr_sim.get("load_df_sim")
+                                        _prb_cap_base  = _pr_sim.get("cap_df_sim")
+                                        if _prb_load_base is None or (
+                                            hasattr(_prb_load_base, "empty")
+                                            and _prb_load_base.empty
+                                        ):
+                                            st.warning(
+                                                "No hay datos de carga en la simulación activa."
+                                            )
+                                        elif _prb_cap_base is None or (
+                                            hasattr(_prb_cap_base, "empty")
+                                            and _prb_cap_base.empty
+                                        ):
+                                            st.warning(
+                                                "No hay datos de capacidad en la simulación "
+                                                "activa. Recalcula las alternativas."
+                                            )
+                                        else:
+                                            _prb_prev_movs = list(
+                                                _pr_sim.get("movimientos", [])
+                                            )
+                                            _prb_def_antes = float(
+                                                _pr_sim.get("deficit_antes", 0.0)
+                                            )
+                                            _prb_avisos   = list(_pr_sim.get("avisos", []))
+                                            _prb_load_acc = _prb_load_base.copy()
+
+                                            # Recopilar selecciones marcadas
+                                            _prb_ampliar: list = []
+                                            _prb_mover:   list = []
+                                            for _prb_p2, _prb_r2 in sorted(
+                                                _pr_by_proj.items()
+                                            ):
+                                                _prb_s2 = "".join(
+                                                    c if c.isalnum() or c == "_" else "_"
+                                                    for c in str(_prb_p2)
+                                                )
+                                                _prb_c2 = st.session_state.get(
+                                                    f"_pr_check_{plant_id}_{_prb_s2}", False
+                                                )
+                                                _prb_a2 = st.session_state.get(
+                                                    f"_pr_action_{plant_id}_{_prb_s2}",
+                                                    "No actuar",
+                                                )
+                                                if not _prb_c2 or _prb_a2 == "No actuar":
+                                                    continue
+                                                if _prb_a2 == "Ampliar semanas en destino":
+                                                    _prb_ampliar.append(str(_prb_p2))
+                                                elif (
+                                                    _prb_a2
+                                                    == "Mover proyecto completo a otra línea"
+                                                ):
+                                                    _prb_mover.append(str(_prb_p2))
+
+                                            if _prb_ampliar and _prb_mover:
+                                                # Mezcla bloqueada
+                                                st.warning(
+                                                    "No se puede combinar 'Ampliar semanas' y "
+                                                    "'Mover proyecto completo' en el mismo paso."
+                                                    " Aplica un solo ajuste."
+                                                )
+                                            elif _prb_mover and not _prb_ampliar:
+                                                st.info(
+                                                    "Mover proyecto completo desde 2ª ronda "
+                                                    "se implementará en un hito posterior."
+                                                )
+                                            elif len(_prb_ampliar) > 1:
+                                                st.warning(
+                                                    "Solo se permite un ajuste por vez. "
+                                                    "Desmarca los proyectos extra: "
+                                                    + ", ".join(_prb_ampliar) + "."
+                                                )
+                                            elif len(_prb_ampliar) == 1:
+                                                _prb_proj = _prb_ampliar[0]
+                                                _prb_as   = _pr_as_by_proj.get(_prb_proj)
+                                                if (
+                                                    _prb_as is None
+                                                    or _prb_as.get("Semanas simuladas") is None
+                                                ):
+                                                    st.warning(
+                                                        f"{_prb_proj}: sin candidato de "
+                                                        f"ampliación. Recalcula alternativas."
+                                                    )
+                                                else:
+                                                    try:
+                                                        _prb_sem_sim = int(
+                                                            _prb_as["Semanas simuladas"]
+                                                        )
+                                                    except (TypeError, ValueError):
+                                                        _prb_sem_sim = None
+                                                    if _prb_sem_sim is None:
+                                                        st.warning(
+                                                            f"{_prb_proj}: semanas simuladas "
+                                                            f"inválidas."
+                                                        )
+                                                    else:
+                                                        # Línea actual desde load_df_sim
+                                                        _prb_lins = (
+                                                            _prb_load_acc[
+                                                                _prb_load_acc[
+                                                                    "Proyecto"
+                                                                ].astype(str) == _prb_proj
+                                                            ]["Línea"]
+                                                            .astype(str)
+                                                            .unique()
+                                                            .tolist()
+                                                        )
+                                                        if not _prb_lins:
+                                                            st.warning(
+                                                                f"{_prb_proj}: no encontrado "
+                                                                f"en la simulación activa."
+                                                            )
+                                                        elif len(_prb_lins) > 1:
+                                                            st.warning(
+                                                                f"{_prb_proj}: está en varias "
+                                                                f"líneas "
+                                                                f"({', '.join(_prb_lins)}). "
+                                                                f"Usa la 2ª solapa."
+                                                            )
+                                                        else:
+                                                            _prb_linea = _prb_lins[0]
+                                                            # Guard doble aplicación:
+                                                            # tipo + proyecto + linea_actual
+                                                            if any(
+                                                                m.get("tipo_accion")
+                                                                == "Ajuste temporal 2ª ronda"
+                                                                and str(
+                                                                    m.get("proyecto", "")
+                                                                ).strip() == _prb_proj
+                                                                and str(
+                                                                    m.get("linea_actual", "")
+                                                                ).strip() == _prb_linea
+                                                                for m in _prb_prev_movs
+                                                            ):
+                                                                st.warning(
+                                                                    f"{_prb_proj}: ya tiene "
+                                                                    f"ampliación de 2ª ronda "
+                                                                    f"en {_prb_linea}. No se "
+                                                                    f"aplica dos veces."
+                                                                )
+                                                            else:
+                                                                _prb_ext = (
+                                                                    _simulate_prog_extend_duration(
+                                                                        _prb_load_acc,
+                                                                        _prb_proj,
+                                                                        _prb_linea,
+                                                                        _prb_sem_sim,
+                                                                    )
+                                                                )
+                                                                if not _prb_ext["ok"]:
+                                                                    st.warning(
+                                                                        f"{_prb_proj}: "
+                                                                        f"{_prb_ext['warning']}"
+                                                                    )
+                                                                else:
+                                                                    _prb_load_acc = (
+                                                                        _prb_ext["load_df"]
+                                                                    )
+                                                                    try:
+                                                                        _prb_sem_act = int(
+                                                                            _prb_as.get(
+                                                                                "Semanas actuales",
+                                                                                0,
+                                                                            )
+                                                                        )
+                                                                    except (TypeError, ValueError):
+                                                                        _prb_sem_act = 0
+                                                                    try:
+                                                                        _prb_mej = float(
+                                                                            _prb_as.get(
+                                                                                "Déficit global eliminado (h)",
+                                                                                0.0,
+                                                                            ) or 0.0
+                                                                        )
+                                                                    except (TypeError, ValueError):
+                                                                        _prb_mej = 0.0
+                                                                    _prb_av = str(
+                                                                        _prb_as.get(
+                                                                            "Comentario"
+                                                                        ) or ""
+                                                                    ).strip()
+                                                                    _prb_new_mov = {
+                                                                        "tipo_accion":       "Ajuste temporal 2ª ronda",
+                                                                        "origen":            "segunda_ronda",
+                                                                        "proyecto":          _prb_proj,
+                                                                        "linea_actual":      _prb_linea,
+                                                                        "linea_destino":     _prb_linea,
+                                                                        "semanas_actuales":  _prb_sem_act,
+                                                                        "semanas_simuladas": _prb_sem_sim,
+                                                                        "h_sem_antes":       _prb_ext["h_sem_antes"],
+                                                                        "h_sem_despues":     _prb_ext["h_sem_despues"],
+                                                                        "mejora_h_est":      _prb_mej,
+                                                                        "aviso":             _prb_av,
+                                                                    }
+                                                                    if _prb_av and _prb_av.lower() not in (
+                                                                        "nan", "none", "null", ""
+                                                                    ):
+                                                                        _prb_avisos.append(
+                                                                            f"{_prb_proj} "
+                                                                            f"(2ª ronda): "
+                                                                            f"{_prb_av}"
+                                                                        )
+                                                                    _prb_final = (
+                                                                        _recompute_prog_deficit_global(
+                                                                            _prb_load_acc,
+                                                                            _prb_cap_base,
+                                                                        )
+                                                                    )
+                                                                    _prb_def_des = (
+                                                                        _prb_final[
+                                                                            "deficit_total_h"
+                                                                        ]
+                                                                    )
+                                                                    # Preservar claves previas
+                                                                    st.session_state[
+                                                                        f"_prog_alt_sim_{plant_id}"
+                                                                    ] = {
+                                                                        **_pr_sim,
+                                                                        "movimientos": (
+                                                                            _prb_prev_movs
+                                                                            + [_prb_new_mov]
+                                                                        ),
+                                                                        "load_df_sim":     _prb_load_acc,
+                                                                        "conflict_df_sim": _prb_final["conflict_df"],
+                                                                        "deficit_despues": _prb_def_des,
+                                                                        "mejora_total_h":  max(
+                                                                            0.0,
+                                                                            _prb_def_antes
+                                                                            - _prb_def_des,
+                                                                        ),
+                                                                        "avisos":          _prb_avisos,
+                                                                    }
+                                                                    st.session_state[
+                                                                        f"prog_gantt_vista_{plant_id}"
+                                                                    ] = "Simulación"
+                                                                    for _prb_pk in list(
+                                                                        _pr_by_proj.keys()
+                                                                    ):
+                                                                        _prb_ps = "".join(
+                                                                            c if c.isalnum() or c == "_" else "_"
+                                                                            for c in str(_prb_pk)
+                                                                        )
+                                                                        st.session_state.pop(
+                                                                            f"_pr_check_{plant_id}_{_prb_ps}",
+                                                                            None,
+                                                                        )
+                                                                        st.session_state.pop(
+                                                                            f"_pr_action_{plant_id}_{_prb_ps}",
+                                                                            None,
+                                                                        )
+                                                                    st.session_state.pop(
+                                                                        f"_prog_as_foto_{plant_id}",
+                                                                        None,
+                                                                    )
+                                                                    st.session_state.pop(
+                                                                        f"_prog_alt_result_{plant_id}",
+                                                                        None,
+                                                                    )
+                                                                    st.rerun()
+                                            else:
+                                                st.info(
+                                                    "No hay ajustes válidos seleccionados."
+                                                )
                                     with st.expander(
                                         "Ver detalle técnico / auditoría", expanded=False
                                     ):
