@@ -10295,8 +10295,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _pr_has_sem = "Semana"               in _pr_cfl.columns
                                 _pr_has_lin = "Línea"                in _pr_cfl.columns
 
-                                # Group by project (CSV column) or by line as fallback
+                                # Group by project:
+                                #   1) "Proyectos implicados" CSV column if present
+                                #   2) infer from movements via linea_destino
+                                #   3) fallback by line (with warning flag)
                                 _pr_by_proj: dict = {}
+                                _pr_fallback_keys: set = set()
+
                                 if _pr_has_pi:
                                     for _, _prr in _pr_cfl.iterrows():
                                         for _prp in str(
@@ -10305,11 +10310,27 @@ if st.session_state.active_tab == "📋 Programación real":
                                             _prp = _prp.strip()
                                             if _prp:
                                                 _pr_by_proj.setdefault(_prp, []).append(_prr)
-                                elif _pr_has_lin:
+
+                                if not _pr_by_proj and _pr_has_lin:
+                                    # Build linea_destino → [projects] from simulation movements
+                                    _pr_dest_to_projs: dict = {}
+                                    for _prm in _pr_movs:
+                                        _prm_d = str(_prm.get("linea_destino", "")).strip()
+                                        _prm_p = str(_prm.get("proyecto", "")).strip()
+                                        if _prm_d and _prm_p:
+                                            _pr_dest_to_projs.setdefault(_prm_d, [])
+                                            if _prm_p not in _pr_dest_to_projs[_prm_d]:
+                                                _pr_dest_to_projs[_prm_d].append(_prm_p)
+
                                     for _, _prr in _pr_cfl.iterrows():
-                                        _pr_by_proj.setdefault(
-                                            str(_prr["Línea"]), []
-                                        ).append(_prr)
+                                        _pr_lin = str(_prr.get("Línea", "")).strip()
+                                        _pr_inferred = _pr_dest_to_projs.get(_pr_lin, [])
+                                        if _pr_inferred:
+                                            for _prp in _pr_inferred:
+                                                _pr_by_proj.setdefault(_prp, []).append(_prr)
+                                        elif _pr_lin:
+                                            _pr_by_proj.setdefault(_pr_lin, []).append(_prr)
+                                            _pr_fallback_keys.add(_pr_lin)
 
                                 _pr_n_pend = len(_pr_by_proj)
                                 _pr_n_movs = len(_pr_movs)
@@ -10432,6 +10453,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                         with st.container(border=True):
                                             _pr_render_header(_k_idx, _pr_proj, _pr_rows)
                                             _pr_render_antes(_pr_proj)
+                                            if _pr_proj in _pr_fallback_keys:
+                                                st.caption(
+                                                    "No se pudo asociar este pendiente "
+                                                    "a un proyecto concreto."
+                                                )
                                     st.caption(
                                         "Pulsa **Calcular 2ª ronda** para ver las opciones "
                                         "de ajuste disponibles sobre la simulación activa."
@@ -10485,6 +10511,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                         with st.container(border=True):
                                             _pr_render_header(_k_idx, _pr_proj, _pr_rows)
                                             _pr_render_antes(_pr_proj)
+                                            if _pr_proj in _pr_fallback_keys:
+                                                st.caption(
+                                                    "No se pudo asociar este pendiente "
+                                                    "a un proyecto concreto."
+                                                )
                                             st.caption(
                                                 f"**Qué sigue mal:** "
                                                 f"Sigue con {_pr_def_str(_pr_rows)} de déficit."
