@@ -10014,23 +10014,59 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _best_global_red = 0.0
                                     _eliminates      = False
 
-                                    # Multi-source capacity resolver: a) _dat_cap_src,
-                                    # b) cap_df_sim, c) cap_df_alts, d) _prog_cap_df
-                                    _cap_h_sem_as = None
-                                    for _cap_src_try in [
-                                        _dat_cap_src,
-                                        (
-                                            st.session_state.get(
-                                                f"_prog_alt_sim_{plant_id}"
-                                            ) or {}
-                                        ).get("cap_df_sim"),
-                                        (
-                                            st.session_state.get(
-                                                f"_prog_alt_result_{plant_id}"
-                                            ) or {}
-                                        ).get("cap_df_alts"),
-                                        _prog_cap_df,
-                                    ]:
+                                    # Multi-source capacity resolver.
+                                    # Step 0: in simulation mode, confirm project's effective
+                                    # line from load_df_sim (handles moves applied in prior rounds).
+                                    # Only when _da_as_use_sim=True; Plan real path is unaffected.
+                                    _cap_eff_linea = _dtp_linea
+                                    if _da_as_use_sim:
+                                        _sld_load = (_da_alt_sim_existing or {}).get("load_df_sim")
+                                        if (
+                                            _sld_load is not None
+                                            and not (
+                                                hasattr(_sld_load, "empty")
+                                                and _sld_load.empty
+                                            )
+                                            and "Proyecto" in _sld_load.columns
+                                            and "Línea" in _sld_load.columns
+                                        ):
+                                            _sld_prows = _sld_load[
+                                                _sld_load["Proyecto"]
+                                                .astype(str)
+                                                .str.strip()
+                                                == str(_dtp).strip()
+                                            ]
+                                            if not _sld_prows.empty:
+                                                _sld_lins = (
+                                                    _sld_prows["Línea"]
+                                                    .astype(str)
+                                                    .str.strip()
+                                                    .unique()
+                                                    .tolist()
+                                                )
+                                                if len(_sld_lins) == 1:
+                                                    _cap_eff_linea = _sld_lins[0]
+
+                                    _cap_h_sem_as  = None
+                                    _cap_lin_norm  = str(_cap_eff_linea).strip().upper()
+                                    if _da_as_use_sim:
+                                        _cap_src_list = [
+                                            (
+                                                st.session_state.get(
+                                                    f"_prog_alt_result_{plant_id}"
+                                                ) or {}
+                                            ).get("cap_df_alts"),
+                                            (
+                                                st.session_state.get(
+                                                    f"_prog_alt_sim_{plant_id}"
+                                                ) or {}
+                                            ).get("cap_df_sim"),
+                                            _dat_cap_src,
+                                            _prog_cap_df,
+                                        ]
+                                    else:
+                                        _cap_src_list = [_dat_cap_src, _prog_cap_df]
+                                    for _cap_src_try in _cap_src_list:
                                         if (
                                             _cap_src_try is not None
                                             and not (
@@ -10041,8 +10077,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                             and "Capacidad h/sem" in _cap_src_try.columns
                                         ):
                                             _cap_rows_try = _cap_src_try[
-                                                _cap_src_try["Línea"].astype(str)
-                                                == str(_dtp_linea)
+                                                _cap_src_try["Línea"]
+                                                .astype(str)
+                                                .str.strip()
+                                                .str.upper()
+                                                == _cap_lin_norm
                                             ]
                                             if not _cap_rows_try.empty:
                                                 try:
