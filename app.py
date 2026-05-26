@@ -10581,6 +10581,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                     _pr_any_checked = False
                                     _pr_n_ampliar_valid = 0
+                                    _pr_n_mover_valid   = 0
                                     for _k_idx, (_pr_proj, _pr_rows) in enumerate(
                                         sorted(_pr_by_proj.items()), 1
                                     ):
@@ -10804,10 +10805,42 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     _pr_n_ampliar_valid += 1
                                                 except (TypeError, ValueError):
                                                     pass
+                                            if (
+                                                _pr_chk
+                                                and _pr_action
+                                                    == "Mover proyecto completo a otra línea"
+                                                and _pr_proj_cands
+                                            ):
+                                                _prm_dest_ss = st.session_state.get(
+                                                    f"_pr_dest_{plant_id}_{_pr_san}", []
+                                                )
+                                                if _prm_dest_ss:
+                                                    _prm_ok = 0
+                                                    for _prm_d in _prm_dest_ss:
+                                                        for _prm_c in _pr_proj_cands:
+                                                            if (
+                                                                _prm_c.get("Línea candidata")
+                                                                == _prm_d
+                                                            ):
+                                                                try:
+                                                                    _prm_dh = float(
+                                                                        _prm_c.get(
+                                                                            "capacidad_destino_h"
+                                                                        ) or 0
+                                                                    )
+                                                                    if _prm_dh > 0:
+                                                                        _prm_ok += 1
+                                                                        break
+                                                                except (TypeError, ValueError):
+                                                                    pass
+                                                    if _prm_ok == len(_prm_dest_ss):
+                                                        _pr_n_mover_valid += 1
 
                                     if st.button(
                                         "Aplicar ajustes seleccionados de 2ª ronda",
-                                        disabled=(_pr_n_ampliar_valid != 1),
+                                        disabled=not (
+                                            (_pr_n_ampliar_valid + _pr_n_mover_valid) == 1
+                                        ),
                                         use_container_width=True,
                                         key=f"prog_pr_apply_btn_{plant_id}",
                                     ):
@@ -10838,6 +10871,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             )
                                             _prb_avisos   = list(_pr_sim.get("avisos", []))
                                             _prb_load_acc = _prb_load_base.copy()
+                                            _prb_cap_acc  = _prb_cap_base.copy()
 
                                             # Recopilar selecciones marcadas
                                             _prb_ampliar: list = []
@@ -10874,10 +10908,418 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     " Aplica un solo ajuste."
                                                 )
                                             elif _prb_mover and not _prb_ampliar:
-                                                st.info(
-                                                    "Mover proyecto completo desde 2ª ronda "
-                                                    "se implementará en un hito posterior."
-                                                )
+                                                if len(_prb_mover) > 1:
+                                                    st.warning(
+                                                        "Solo se permite mover un proyecto "
+                                                        "por vez. Desmarca los proyectos "
+                                                        "extra: "
+                                                        + ", ".join(_prb_mover) + "."
+                                                    )
+                                                elif len(_prb_mover) == 1:
+                                                    _prb_proj = _prb_mover[0]
+                                                    _prb_san_m = "".join(
+                                                        c if c.isalnum() or c == "_"
+                                                        else "_"
+                                                        for c in str(_prb_proj)
+                                                    )
+                                                    _prb_dest_sel = list(
+                                                        st.session_state.get(
+                                                            f"_pr_dest_"
+                                                            f"{plant_id}_{_prb_san_m}",
+                                                            [],
+                                                        )
+                                                    )
+                                                    if not _prb_dest_sel:
+                                                        st.warning(
+                                                            f"{_prb_proj}: no hay líneas "
+                                                            f"destino seleccionadas."
+                                                        )
+                                                    else:
+                                                        # Validar que cada destino tiene
+                                                        # candidata + cap válida antes de operar
+                                                        _prb_cands_m = (
+                                                            _pr_cands_by_proj.get(
+                                                                _prb_proj
+                                                            ) or []
+                                                        )
+                                                        _prb_dest_caps: dict = {}
+                                                        _prb_cap_ok = True
+                                                        for _prbd in _prb_dest_sel:
+                                                            _prbd_c = next(
+                                                                (
+                                                                    c for c in _prb_cands_m
+                                                                    if c.get(
+                                                                        "Línea candidata"
+                                                                    ) == _prbd
+                                                                ),
+                                                                None,
+                                                            )
+                                                            if _prbd_c is None:
+                                                                st.warning(
+                                                                    f"{_prb_proj}: "
+                                                                    f"'{_prbd}' no es "
+                                                                    f"candidata válida. "
+                                                                    f"Recalcula "
+                                                                    f"alternativas."
+                                                                )
+                                                                _prb_cap_ok = False
+                                                                break
+                                                            try:
+                                                                _prbd_dh = float(
+                                                                    _prbd_c.get(
+                                                                        "capacidad_destino_h"
+                                                                    ) or 0
+                                                                )
+                                                                if _prbd_dh <= 0:
+                                                                    raise ValueError
+                                                            except (TypeError, ValueError):
+                                                                st.warning(
+                                                                    f"{_prb_proj}: "
+                                                                    f"'{_prbd}' sin "
+                                                                    f"capacidad válida. "
+                                                                    f"Recalcula "
+                                                                    f"alternativas."
+                                                                )
+                                                                _prb_cap_ok = False
+                                                                break
+                                                            _prb_dest_caps[_prbd] = (
+                                                                _prbd_dh
+                                                            )
+                                                        if _prb_cap_ok:
+                                                            # Línea actual desde
+                                                            # load_df_sim — nunca Plan real
+                                                            _prb_lins_m = (
+                                                                _prb_load_acc[
+                                                                    _prb_load_acc["Proyecto"]
+                                                                    .astype(str)
+                                                                    .str.strip()
+                                                                    == str(
+                                                                        _prb_proj
+                                                                    ).strip()
+                                                                ]["Línea"]
+                                                                .astype(str)
+                                                                .str.strip()
+                                                                .unique()
+                                                                .tolist()
+                                                            )
+                                                            if not _prb_lins_m:
+                                                                st.warning(
+                                                                    f"{_prb_proj}: no "
+                                                                    f"encontrado en la "
+                                                                    f"simulación activa."
+                                                                )
+                                                            elif len(_prb_lins_m) > 1:
+                                                                st.warning(
+                                                                    f"{_prb_proj}: está "
+                                                                    f"en varias líneas "
+                                                                    f"({', '.join(_prb_lins_m)}"
+                                                                    f"). Usa la 2ª solapa."
+                                                                )
+                                                            else:
+                                                                _prb_linea_m = (
+                                                                    _prb_lins_m[0]
+                                                                )
+                                                                # Guard: cualquier "Mover
+                                                                # línea 2ª ronda" para
+                                                                # este proyecto bloquea
+                                                                if any(
+                                                                    str(
+                                                                        m.get(
+                                                                            "tipo_accion",
+                                                                            "",
+                                                                        )
+                                                                    )
+                                                                    == "Mover línea 2ª ronda"
+                                                                    and str(
+                                                                        m.get(
+                                                                            "proyecto", ""
+                                                                        )
+                                                                    ).strip()
+                                                                    == str(
+                                                                        _prb_proj
+                                                                    ).strip()
+                                                                    for m in _prb_prev_movs
+                                                                ):
+                                                                    st.warning(
+                                                                        f"{_prb_proj}: ya "
+                                                                        f"tiene un "
+                                                                        f"movimiento de "
+                                                                        f"2ª ronda. No se "
+                                                                        f"aplica dos veces."
+                                                                    )
+                                                                else:
+                                                                    # Guard: validate _prb_cap_acc
+                                                                    # columns and normalized
+                                                                    # destination existence
+                                                                    # before split
+                                                                    _prb_cap_guard_ok = True
+                                                                    if (
+                                                                        "Línea"
+                                                                        not in _prb_cap_acc.columns
+                                                                        or "Capacidad h/sem"
+                                                                        not in _prb_cap_acc.columns
+                                                                    ):
+                                                                        st.warning(
+                                                                            f"{_prb_proj}: "
+                                                                            f"_prb_cap_acc "
+                                                                            f"no tiene las "
+                                                                            f"columnas "
+                                                                            f"requeridas. "
+                                                                            f"No se aplica."
+                                                                        )
+                                                                        _prb_cap_guard_ok = False
+                                                                    else:
+                                                                        _prb_cap_norms = (
+                                                                            _prb_cap_acc[
+                                                                                "Línea"
+                                                                            ]
+                                                                            .astype(str)
+                                                                            .str.strip()
+                                                                            .str.upper()
+                                                                        )
+                                                                        for _prbd_g in _prb_dest_sel:
+                                                                            if (
+                                                                                str(_prbd_g)
+                                                                                .strip()
+                                                                                .upper()
+                                                                                not in _prb_cap_norms.values
+                                                                            ):
+                                                                                st.warning(
+                                                                                    f"{_prb_proj}: "
+                                                                                    f"línea destino "
+                                                                                    f"'{_prbd_g}' "
+                                                                                    f"no encontrada "
+                                                                                    f"en capacidad. "
+                                                                                    f"No se aplica."
+                                                                                )
+                                                                                _prb_cap_guard_ok = False
+                                                                                break
+                                                                    if _prb_cap_guard_ok:
+                                                                      _prb_split = (
+                                                                        _simulate_prog_split_line(
+                                                                            _prb_load_acc,
+                                                                            _prb_proj,
+                                                                            _prb_linea_m,
+                                                                            _prb_dest_sel,
+                                                                        )
+                                                                      )
+                                                                      if not _prb_split[
+                                                                        "moved_ok"
+                                                                      ]:
+                                                                        st.warning(
+                                                                            f"{_prb_proj}: "
+                                                                            f"{_prb_split['warning']}"
+                                                                        )
+                                                                      else:
+                                                                        _prb_load_acc = (
+                                                                            _prb_split[
+                                                                                "load_df"
+                                                                            ]
+                                                                        )
+                                                                        # Actualizar cap
+                                                                        # de cada destino
+                                                                        # usando match
+                                                                        # normalizado
+                                                                        for (
+                                                                            _prbd,
+                                                                            _prbd_dh,
+                                                                        ) in (
+                                                                            _prb_dest_caps.items()
+                                                                        ):
+                                                                            _prb_cap_acc.loc[
+                                                                                _prb_cap_acc[
+                                                                                    "Línea"
+                                                                                ]
+                                                                                .astype(str)
+                                                                                .str.strip()
+                                                                                .str.upper()
+                                                                                == str(
+                                                                                    _prbd
+                                                                                )
+                                                                                .strip()
+                                                                                .upper(),
+                                                                                "Capacidad h/sem",
+                                                                            ] = _prbd_dh
+                                                                        # Un movimiento
+                                                                        # por destino
+                                                                        _prb_new_movs: list = []
+                                                                        _prb_fracs = (
+                                                                            _prb_split[
+                                                                                "fracciones"
+                                                                            ]
+                                                                        )
+                                                                        for (
+                                                                            _prbd_i,
+                                                                            _prbd,
+                                                                        ) in enumerate(
+                                                                            _prb_dest_sel
+                                                                        ):
+                                                                            _prbd_frac = (
+                                                                                _prb_fracs[
+                                                                                    _prbd_i
+                                                                                ]
+                                                                                if _prbd_i
+                                                                                < len(
+                                                                                    _prb_fracs
+                                                                                )
+                                                                                else (
+                                                                                    1.0
+                                                                                    / len(
+                                                                                        _prb_dest_sel
+                                                                                    )
+                                                                                )
+                                                                            )
+                                                                            _prbd_rows = (
+                                                                                _prb_load_acc[
+                                                                                    (
+                                                                                        _prb_load_acc[
+                                                                                            "Proyecto"
+                                                                                        ]
+                                                                                        .astype(str)
+                                                                                        == _prb_proj
+                                                                                    )
+                                                                                    & (
+                                                                                        _prb_load_acc[
+                                                                                            "Línea"
+                                                                                        ]
+                                                                                        .astype(str)
+                                                                                        == _prbd
+                                                                                    )
+                                                                                ]
+                                                                            )
+                                                                            _prbd_h = round(
+                                                                                float(
+                                                                                    _prbd_rows[
+                                                                                        "Horas proyecto semana"
+                                                                                    ].sum()
+                                                                                ),
+                                                                                1,
+                                                                            )
+                                                                            _prbd_nsem = int(
+                                                                                _prbd_rows[
+                                                                                    "Semana"
+                                                                                ].nunique()
+                                                                            )
+                                                                            _prbd_hsem = (
+                                                                                round(
+                                                                                    _prbd_h
+                                                                                    / _prbd_nsem,
+                                                                                    1,
+                                                                                )
+                                                                                if _prbd_nsem
+                                                                                > 0
+                                                                                else 0.0
+                                                                            )
+                                                                            _prbd_mej = float(
+                                                                                next(
+                                                                                    (
+                                                                                        c.get(
+                                                                                            "Mejora h",
+                                                                                            0,
+                                                                                        )
+                                                                                        for c in _prb_cands_m
+                                                                                        if c.get(
+                                                                                            "Línea candidata"
+                                                                                        )
+                                                                                        == _prbd
+                                                                                    ),
+                                                                                    0,
+                                                                                )
+                                                                                or 0
+                                                                            )
+                                                                            _prb_new_movs.append(
+                                                                                {
+                                                                                    "tipo_accion":  "Mover línea 2ª ronda",
+                                                                                    "origen":       "segunda_ronda",
+                                                                                    "proyecto":     _prb_proj,
+                                                                                    "linea_actual": _prb_linea_m,
+                                                                                    "linea_destino": _prbd,
+                                                                                    "fraccion":     round(
+                                                                                        _prbd_frac,
+                                                                                        4,
+                                                                                    ),
+                                                                                    "fraccion_pct": (
+                                                                                        f"{round(_prbd_frac * 100, 1)} %"
+                                                                                    ),
+                                                                                    "horas_movidas": _prbd_h,
+                                                                                    "sem_count":    _prbd_nsem,
+                                                                                    "h_sem_prom":   _prbd_hsem,
+                                                                                    "mejora_h_est": _prbd_mej,
+                                                                                    "aviso":        "",
+                                                                                }
+                                                                            )
+                                                                        _prb_final_m = (
+                                                                            _recompute_prog_deficit_global(
+                                                                                _prb_load_acc,
+                                                                                _prb_cap_acc,
+                                                                            )
+                                                                        )
+                                                                        _prb_def_des = (
+                                                                            _prb_final_m[
+                                                                                "deficit_total_h"
+                                                                            ]
+                                                                        )
+                                                                        st.session_state[
+                                                                            f"_prog_alt_sim_{plant_id}"
+                                                                        ] = {
+                                                                            **_pr_sim,
+                                                                            "movimientos": (
+                                                                                _prb_prev_movs
+                                                                                + _prb_new_movs
+                                                                            ),
+                                                                            "load_df_sim":     _prb_load_acc,
+                                                                            "cap_df_sim":      _prb_cap_acc,
+                                                                            "conflict_df_sim": _prb_final_m[
+                                                                                "conflict_df"
+                                                                            ],
+                                                                            "deficit_despues": _prb_def_des,
+                                                                            "mejora_total_h":  max(
+                                                                                0.0,
+                                                                                _prb_def_antes
+                                                                                - _prb_def_des,
+                                                                            ),
+                                                                            "avisos": _prb_avisos,
+                                                                        }
+                                                                        st.session_state[
+                                                                            f"prog_gantt_vista_{plant_id}"
+                                                                        ] = "Simulación"
+                                                                        # Limpiar estado
+                                                                        # visual (mismo
+                                                                        # patrón que
+                                                                        # Ampliar semanas)
+                                                                        for _prb_pk in list(
+                                                                            _pr_by_proj.keys()
+                                                                        ):
+                                                                            _prb_ps = "".join(
+                                                                                c
+                                                                                if c.isalnum()
+                                                                                or c == "_"
+                                                                                else "_"
+                                                                                for c in str(
+                                                                                    _prb_pk
+                                                                                )
+                                                                            )
+                                                                            st.session_state.pop(
+                                                                                f"_pr_check_{plant_id}_{_prb_ps}",
+                                                                                None,
+                                                                            )
+                                                                            st.session_state.pop(
+                                                                                f"_pr_action_{plant_id}_{_prb_ps}",
+                                                                                None,
+                                                                            )
+                                                                            st.session_state.pop(
+                                                                                f"_pr_dest_{plant_id}_{_prb_ps}",
+                                                                                None,
+                                                                            )
+                                                                        st.session_state.pop(
+                                                                            f"_prog_as_foto_{plant_id}",
+                                                                            None,
+                                                                        )
+                                                                        st.session_state.pop(
+                                                                            f"_prog_alt_result_{plant_id}",
+                                                                            None,
+                                                                        )
+                                                                        st.rerun()
                                             elif len(_prb_ampliar) > 1:
                                                 st.warning(
                                                     "Solo se permite un ajuste por vez. "
@@ -11102,6 +11544,19 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         + (
                                                             f" ({_pr_fp})"
                                                             if _pr_fp else ""
+                                                        )
+                                                    )
+                                                elif _prt_a == "Mover línea 2ª ronda":
+                                                    _pr_fp_2 = _prmov.get("fraccion_pct", "")
+                                                    st.caption(
+                                                        f"{_prmi}. {_prpj_a} — "
+                                                        f"Mover [2ª ronda] de "
+                                                        f"{_prmov.get('linea_actual', '?')} "
+                                                        f"a "
+                                                        f"{_prmov.get('linea_destino', '?')}"
+                                                        + (
+                                                            f" ({_pr_fp_2})"
+                                                            if _pr_fp_2 else ""
                                                         )
                                                     )
                                                 else:
