@@ -8922,6 +8922,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 if _da_has_conflicts and _da_has_load:
                     _pr_trigger = st.session_state.pop(f"_prog_pr_trigger_{plant_id}", False)
+                    _pr_trigger_valid = _pr_trigger and _da_alt_sim_existing is not None
                     if _pr_trigger and _da_alt_sim_existing is None:
                         # Trigger fired but simulation was already discarded — safe abort
                         st.session_state[f"_prog_alt_result_{plant_id}"] = {
@@ -9903,10 +9904,10 @@ if st.session_state.active_tab == "📋 Programación real":
                         # ── 3H.4B.1 Alternativas de ajuste temporal (foto estable) ────────
                         _as_foto = st.session_state.get(f"_prog_as_foto_{plant_id}")
 
-                        if _da_btn_clicked:
+                        if _da_btn_clicked or _pr_trigger_valid:
                             _dat_parsed_src = st.session_state.get(f"_prog_parsed_{plant_id}")
                             _da_as_use_sim = (
-                                _da_alt_src == "Simulación activa"
+                                (_da_alt_src == "Simulación activa" or _pr_trigger_valid)
                                 and _da_alt_sim_existing is not None
                             )
                             if _da_as_use_sim:
@@ -10234,9 +10235,15 @@ if st.session_state.active_tab == "📋 Programación real":
                                     })
 
                             # Photo: always overwrite on button press (rows=[] if no data or no candidates)
+                            _as_mov_count = (
+                                len((_da_alt_sim_existing or {}).get("movimientos", []))
+                                if _da_as_use_sim
+                                else 0
+                            )
                             st.session_state[f"_prog_as_foto_{plant_id}"] = {
                                 "rows": _dat_rows,
                                 "source_label": "sim" if _da_as_use_sim else "real",
+                                "mov_count": _as_mov_count,
                             }
                             st.session_state[f"_prog_extend_editor_ver_{plant_id}"] = (
                                 st.session_state.get(
@@ -10425,6 +10432,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _pr_as_foto is not None
                                     and _pr_as_foto.get("source_label") == "sim"
                                     and bool(_pr_as_foto.get("rows"))
+                                    and _pr_as_foto.get("mov_count", -1) == len(_pr_movs)
                                 )
 
                                 # Cabecera informativa
