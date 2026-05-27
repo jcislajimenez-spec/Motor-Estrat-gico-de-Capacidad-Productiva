@@ -8305,11 +8305,13 @@ def _simulate_prog_move_excess(
     linea_origen: str,
     lineas_destino: list,
     cap_origen_h: float,
+    cap_destinos: dict,
     fracciones=None,
 ) -> dict:
     """
     Mueve solo el exceso de carga del proyecto de linea_origen a lineas_destino.
-    exceso_sem = min(h_proyecto_sem, max(0, total_linea_sem - cap_origen_h))
+    Origen:  exceso_sem = min(h_proyecto_sem, max(0, total_linea_sem - cap_origen_h))
+    Destino: compacta exceso_destino_h usando cap_destino_h sem a sem desde sem_inicio.
     Semanas sin exceso quedan intactas. Conserva total de horas (tol. 0.1 h).
     """
     _empty: dict = {
@@ -8321,6 +8323,9 @@ def _simulate_prog_move_excess(
         "exceso_h_sem_prom": 0.0,
         "exceso_por_semana": {},
         "fracciones":        [],
+        "semanas_destino":   {},
+        "exceso_destino_h":  {},
+        "cap_destinos":      {},
     }
     for _col in ("Proyecto", "Línea", "Semana", "Horas proyecto semana"):
         if load_df is None or _col not in load_df.columns:
@@ -8335,6 +8340,9 @@ def _simulate_prog_move_excess(
     if not lineas_destino:
         _empty["warning"] = "Sin líneas destino."
         return _empty
+    if not cap_destinos:
+        _empty["warning"] = "cap_destinos vacío."
+        return _empty
     try:
         cap_origen_h = float(cap_origen_h)
         if cap_origen_h <= 0:
@@ -8343,13 +8351,29 @@ def _simulate_prog_move_excess(
         _empty["warning"] = f"cap_origen_h no válida: {cap_origen_h}."
         return _empty
 
+    # Validar y normalizar cap_destinos
+    _cap_destinos_norm: dict = {}
+    for _dv in lineas_destino:
+        _dv_s = str(_dv).strip()
+        _cdh  = cap_destinos.get(_dv_s)
+        if _cdh is None:
+            _cdh = cap_destinos.get(_dv)
+        try:
+            _cdh = float(_cdh)
+            if _cdh <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            _empty["warning"] = f"cap_destino_h inválida para '{_dv}': {_cdh}."
+            return _empty
+        _cap_destinos_norm[_dv_s] = _cdh
+
     n = len(lineas_destino)
     if fracciones is None or len(fracciones) != n:
         fracciones = [1.0 / n] * n
     _tf = sum(fracciones)
     fracciones = [f / _tf for f in fracciones] if _tf > 0 else [1.0 / n] * n
 
-    _sim = load_df.copy()
+    _sim    = load_df.copy()
     _proj_s  = str(proyecto).strip()
     _linea_s = str(linea_origen).strip()
 
@@ -8371,10 +8395,13 @@ def _simulate_prog_move_excess(
         _empty["warning"] = "No se puede convertir Semana a entero."
         return _empty
 
+    # Plantilla para filas destino (capturar ANTES de modificar origen)
+    _fila_tmpl = _sim.loc[_mask_pl].iloc[0].to_dict()
+
+    # ── Fase 1: retirar exceso del origen semana a semana ────────────────────
     _semanas_afectadas: list = []
     _exceso_acumulado   = 0.0
     _exceso_por_semana: dict = {}
-    _filas_nuevas: list = []
 
     for _s in _semanas:
         _mask_s_proj = (
@@ -8404,26 +8431,6 @@ def _simulate_prog_move_excess(
             _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _factor_keep
         ).round(4)
 
-        # Crear filas destino usando primera fila como plantilla
-        _fila_base   = _sim.loc[_mask_s_proj].iloc[0].to_dict()
-        _exceso_parts: list = []
-        for _di, _dest in enumerate(lineas_destino):
-            _exc_d = round(_exceso_sem * fracciones[_di], 4)
-            _exceso_parts.append(_exc_d)
-            _nueva = dict(_fila_base)
-            _nueva["Línea"]                 = str(_dest)
-            _nueva["Horas proyecto semana"] = _exc_d
-            _filas_nuevas.append(_nueva)
-
-        # Ajuste de redondeo por semana
-        _keep_real  = round(float(_sim.loc[_mask_s_proj, "Horas proyecto semana"].sum()), 4)
-        _sum_nuevas = sum(_exceso_parts)
-        _diff       = round(_h_proj_sem - _keep_real - _sum_nuevas, 4)
-        if abs(_diff) > 0.001 and _filas_nuevas:
-            _filas_nuevas[-1]["Horas proyecto semana"] = round(
-                float(_filas_nuevas[-1]["Horas proyecto semana"]) + _diff, 4
-            )
-
     if not _semanas_afectadas:
         _empty["warning"] = (
             f"Proyecto '{proyecto}' en '{linea_origen}': "
@@ -8431,9 +8438,50 @@ def _simulate_prog_move_excess(
         )
         return _empty
 
+    _exc_tot    = round(_exceso_acumulado, 1)
+    _sem_inicio = min(_semanas_afectadas)
+
+    # ── Fase 2: compactar exceso total en cada destino ───────────────────────
+    _filas_nuevas:         list = []
+    _semanas_destino:      dict = {}
+    _exceso_destino_h_map: dict = {}
+
+    for _di, _dest in enumerate(lineas_destino):
+        _dest_s      = str(_dest).strip()
+        _cap_d       = _cap_destinos_norm[_dest_s]
+        _exc_d_total = round(_exc_tot * fracciones[_di], 4)
+        _exceso_destino_h_map[_dest_s] = round(_exc_d_total, 1)
+
+        _sems_dest:       list = []
+        _dest_rows_start = len(_filas_nuevas)
+        _pendiente       = _exc_d_total
+        _sem_act         = _sem_inicio
+
+        while _pendiente > 0.001:
+            _h_sem   = round(min(_pendiente, _cap_d), 4)
+            _nueva   = dict(_fila_tmpl)
+            _nueva["Línea"]                 = _dest_s
+            _nueva["Semana"]                = _sem_act
+            _nueva["Horas proyecto semana"] = _h_sem
+            _filas_nuevas.append(_nueva)
+            _sems_dest.append(_sem_act)
+            _pendiente = round(_pendiente - _h_sem, 4)
+            _sem_act  += 1
+
+        # Ajuste de redondeo para este destino
+        _dest_rows = _filas_nuevas[_dest_rows_start:]
+        if _dest_rows:
+            _sum_dest  = round(sum(r["Horas proyecto semana"] for r in _dest_rows), 4)
+            _diff_dest = round(_exc_d_total - _sum_dest, 4)
+            if abs(_diff_dest) > 0.001:
+                _dest_rows[-1]["Horas proyecto semana"] = round(
+                    float(_dest_rows[-1]["Horas proyecto semana"]) + _diff_dest, 4
+                )
+
+        _semanas_destino[_dest_s] = _sems_dest
+
     if _filas_nuevas:
-        import pandas as _pd_loc
-        _sim = _pd_loc.concat([_sim, _pd_loc.DataFrame(_filas_nuevas)], ignore_index=True)
+        _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas)], ignore_index=True)
 
     _tot_despues = round(
         float(_sim.loc[
@@ -8448,8 +8496,7 @@ def _simulate_prog_move_excess(
         )
         return _empty
 
-    _exc_tot = round(_exceso_acumulado, 1)
-    _n_sems  = len(_semanas_afectadas)
+    _n_sems = len(_semanas_afectadas)
     return {
         "load_df":           _sim,
         "moved_ok":          True,
@@ -8459,6 +8506,9 @@ def _simulate_prog_move_excess(
         "exceso_h_sem_prom": round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
         "exceso_por_semana": _exceso_por_semana,
         "fracciones":        fracciones,
+        "semanas_destino":   _semanas_destino,
+        "exceso_destino_h":  _exceso_destino_h_map,
+        "cap_destinos":      _cap_destinos_norm,
     }
 
 
@@ -11205,6 +11255,27 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                 _prb_cap_guard_ok = False
                                                                                 break
                                                                     if _prb_cap_guard_ok:
+                                                                        # Construir _prb_cap_destinos desde _prb_cap_acc
+                                                                        _prb_cap_destinos: dict = {}
+                                                                        for _prbd_cd in _prb_dest_sel:
+                                                                            _prbd_cd_n = str(_prbd_cd).strip().upper()
+                                                                            _prbd_cd_mask = (
+                                                                                _prb_cap_acc["Línea"]
+                                                                                .astype(str)
+                                                                                .str.strip()
+                                                                                .str.upper()
+                                                                                == _prbd_cd_n
+                                                                            )
+                                                                            try:
+                                                                                _prbd_cd_h = float(
+                                                                                    _prb_cap_acc.loc[
+                                                                                        _prbd_cd_mask,
+                                                                                        "Capacidad h/sem",
+                                                                                    ].iloc[0]
+                                                                                )
+                                                                            except (IndexError, TypeError, ValueError):
+                                                                                _prbd_cd_h = 0.0
+                                                                            _prb_cap_destinos[str(_prbd_cd).strip()] = _prbd_cd_h
                                                                         _prb_orig_n = (
                                                                             str(_prb_linea_m)
                                                                             .strip()
@@ -11251,6 +11322,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                         _prb_linea_m,
                                                                                         _prb_dest_sel,
                                                                                         _cap_orig_h,
+                                                                                        _prb_cap_destinos,
                                                                                     )
                                                                                 )
                                                                                 if not _prb_excess["moved_ok"]:
@@ -11284,7 +11356,18 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                                 "fraccion":          round(_prbd_frac, 4),
                                                                                                 "fraccion_pct":      f"{round(_prbd_frac * 100, 1)} %",
                                                                                                 "exceso_total_h":    round(_prb_exc_tot, 1),
-                                                                                                "exceso_destino_h":  round(_prb_exc_tot * _prbd_frac, 1),
+                                                                                                "exceso_destino_h":  round(
+                                                                                                    (_prb_excess.get("exceso_destino_h") or {}).get(
+                                                                                                        str(_prbd).strip(), 0.0
+                                                                                                    ),
+                                                                                                    1,
+                                                                                                ),
+                                                                                                "cap_destino_h":     _prb_cap_destinos.get(
+                                                                                                    str(_prbd).strip(), 0.0
+                                                                                                ),
+                                                                                                "semanas_destino":   (
+                                                                                                    _prb_excess.get("semanas_destino") or {}
+                                                                                                ).get(str(_prbd).strip(), []),
                                                                                                 "exceso_h_sem_prom": round(_prb_exc_prom, 1),
                                                                                                 "semanas_afectadas": _prb_exc_sems,
                                                                                                 "aviso":             "",
