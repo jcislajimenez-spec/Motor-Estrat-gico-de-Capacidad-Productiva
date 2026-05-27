@@ -8438,10 +8438,19 @@ def _simulate_prog_move_excess(
         )
         return _empty
 
-    _exc_tot    = round(_exceso_acumulado, 1)
-    _sem_inicio = min(_semanas_afectadas)
+    _exc_tot = round(_exceso_acumulado, 1)
 
-    # ── Fase 2: compactar exceso total en cada destino ───────────────────────
+    # Sem inicio destino: después de la última semana del proyecto en origen
+    _semanas_origen = sorted(
+        _sim.loc[_mask_pl, "Semana"].astype(int).unique().tolist()
+    )
+    _sem_cursor = (
+        (max(_semanas_origen) + 1)
+        if _semanas_origen
+        else (max(_semanas_afectadas) + 1)
+    )
+
+    # ── Fase 2: compactar exceso total en cada destino (cascada) ────────────
     _filas_nuevas:         list = []
     _semanas_destino:      dict = {}
     _exceso_destino_h_map: dict = {}
@@ -8455,7 +8464,7 @@ def _simulate_prog_move_excess(
         _sems_dest:       list = []
         _dest_rows_start = len(_filas_nuevas)
         _pendiente       = _exc_d_total
-        _sem_act         = _sem_inicio
+        _sem_act         = _sem_cursor
 
         while _pendiente > 0.001:
             _h_sem   = round(min(_pendiente, _cap_d), 4)
@@ -8479,6 +8488,7 @@ def _simulate_prog_move_excess(
                 )
 
         _semanas_destino[_dest_s] = _sems_dest
+        _sem_cursor = _sem_act  # destino siguiente empieza después de este
 
     if _filas_nuevas:
         _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas)], ignore_index=True)
