@@ -8298,6 +8298,170 @@ def _simulate_prog_split_line(
     }
 
 
+
+def _simulate_prog_move_excess(
+    load_df,
+    proyecto: str,
+    linea_origen: str,
+    lineas_destino: list,
+    cap_origen_h: float,
+    fracciones=None,
+) -> dict:
+    """
+    Mueve solo el exceso de carga del proyecto de linea_origen a lineas_destino.
+    exceso_sem = min(h_proyecto_sem, max(0, total_linea_sem - cap_origen_h))
+    Semanas sin exceso quedan intactas. Conserva total de horas (tol. 0.1 h).
+    """
+    _empty: dict = {
+        "load_df":           pd.DataFrame() if load_df is None else load_df.copy(),
+        "moved_ok":          False,
+        "warning":           "",
+        "exceso_total_h":    0.0,
+        "semanas_afectadas": [],
+        "exceso_h_sem_prom": 0.0,
+        "exceso_por_semana": {},
+        "fracciones":        [],
+    }
+    for _col in ("Proyecto", "Línea", "Semana", "Horas proyecto semana"):
+        if load_df is None or _col not in load_df.columns:
+            _empty["warning"] = f"Columna requerida '{_col}' no encontrada."
+            return _empty
+    if not str(proyecto).strip():
+        _empty["warning"] = "Proyecto vacío."
+        return _empty
+    if not str(linea_origen).strip():
+        _empty["warning"] = "Línea origen vacía."
+        return _empty
+    if not lineas_destino:
+        _empty["warning"] = "Sin líneas destino."
+        return _empty
+    try:
+        cap_origen_h = float(cap_origen_h)
+        if cap_origen_h <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        _empty["warning"] = f"cap_origen_h no válida: {cap_origen_h}."
+        return _empty
+
+    n = len(lineas_destino)
+    if fracciones is None or len(fracciones) != n:
+        fracciones = [1.0 / n] * n
+    _tf = sum(fracciones)
+    fracciones = [f / _tf for f in fracciones] if _tf > 0 else [1.0 / n] * n
+
+    _sim = load_df.copy()
+    _proj_s  = str(proyecto).strip()
+    _linea_s = str(linea_origen).strip()
+
+    _mask_pl = (
+        (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+        (_sim["Línea"].astype(str).str.strip()    == _linea_s)
+    )
+    if not _mask_pl.any():
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}' no tiene filas en línea '{linea_origen}'."
+        )
+        return _empty
+
+    _tot_antes = round(float(_sim.loc[_mask_pl, "Horas proyecto semana"].sum()), 4)
+
+    try:
+        _semanas = sorted(_sim.loc[_mask_pl, "Semana"].astype(int).unique().tolist())
+    except (ValueError, TypeError):
+        _empty["warning"] = "No se puede convertir Semana a entero."
+        return _empty
+
+    _semanas_afectadas: list = []
+    _exceso_acumulado   = 0.0
+    _exceso_por_semana: dict = {}
+    _filas_nuevas: list = []
+
+    for _s in _semanas:
+        _mask_s_proj = (
+            (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+            (_sim["Línea"].astype(str).str.strip()    == _linea_s) &
+            (_sim["Semana"].astype(int)               == _s)
+        )
+        _mask_s_linea = (
+            (_sim["Línea"].astype(str).str.strip() == _linea_s) &
+            (_sim["Semana"].astype(int)            == _s)
+        )
+        _h_proj_sem  = float(_sim.loc[_mask_s_proj,  "Horas proyecto semana"].sum())
+        _h_linea_sem = float(_sim.loc[_mask_s_linea, "Horas proyecto semana"].sum())
+        _deficit_sem = max(0.0, _h_linea_sem - cap_origen_h)
+        _exceso_sem  = min(_h_proj_sem, _deficit_sem)
+
+        if _exceso_sem <= 0:
+            continue
+
+        _semanas_afectadas.append(_s)
+        _exceso_acumulado += _exceso_sem
+        _exceso_por_semana[_s] = round(_exceso_sem, 4)
+
+        # Reducir filas origen proporcionalmente
+        _factor_keep = (_h_proj_sem - _exceso_sem) / _h_proj_sem if _h_proj_sem > 0 else 1.0
+        _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
+            _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _factor_keep
+        ).round(4)
+
+        # Crear filas destino usando primera fila como plantilla
+        _fila_base   = _sim.loc[_mask_s_proj].iloc[0].to_dict()
+        _exceso_parts: list = []
+        for _di, _dest in enumerate(lineas_destino):
+            _exc_d = round(_exceso_sem * fracciones[_di], 4)
+            _exceso_parts.append(_exc_d)
+            _nueva = dict(_fila_base)
+            _nueva["Línea"]                 = str(_dest)
+            _nueva["Horas proyecto semana"] = _exc_d
+            _filas_nuevas.append(_nueva)
+
+        # Ajuste de redondeo por semana
+        _keep_real  = round(float(_sim.loc[_mask_s_proj, "Horas proyecto semana"].sum()), 4)
+        _sum_nuevas = sum(_exceso_parts)
+        _diff       = round(_h_proj_sem - _keep_real - _sum_nuevas, 4)
+        if abs(_diff) > 0.001 and _filas_nuevas:
+            _filas_nuevas[-1]["Horas proyecto semana"] = round(
+                float(_filas_nuevas[-1]["Horas proyecto semana"]) + _diff, 4
+            )
+
+    if not _semanas_afectadas:
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}' en '{linea_origen}': "
+            f"ninguna semana tiene exceso respecto a {cap_origen_h} h/sem."
+        )
+        return _empty
+
+    if _filas_nuevas:
+        import pandas as _pd_loc
+        _sim = _pd_loc.concat([_sim, _pd_loc.DataFrame(_filas_nuevas)], ignore_index=True)
+
+    _tot_despues = round(
+        float(_sim.loc[
+            _sim["Proyecto"].astype(str).str.strip() == _proj_s,
+            "Horas proyecto semana",
+        ].sum()), 4
+    )
+
+    if abs(_tot_antes - _tot_despues) > 0.1:
+        _empty["warning"] = (
+            f"Conservación de horas fallida: antes={_tot_antes}, después={_tot_despues}."
+        )
+        return _empty
+
+    _exc_tot = round(_exceso_acumulado, 1)
+    _n_sems  = len(_semanas_afectadas)
+    return {
+        "load_df":           _sim,
+        "moved_ok":          True,
+        "warning":           "",
+        "exceso_total_h":    _exc_tot,
+        "semanas_afectadas": _semanas_afectadas,
+        "exceso_h_sem_prom": round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
+        "exceso_por_semana": _exceso_por_semana,
+        "fracciones":        fracciones,
+    }
+
+
 def _simulate_prog_extend_duration(
     load_df,
     proyecto: str,
@@ -10619,7 +10783,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 )
                                             if _pr_proj_cands:
                                                 _pr_radio_opts.append(
-                                                    "Mover proyecto completo a otra línea"
+                                                    "Mover exceso a otra línea"
                                                 )
                                             _pr_radio_opts.append("No actuar")
 
@@ -10681,7 +10845,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                             elif (
                                                 _pr_action
-                                                == "Mover proyecto completo a otra línea"
+                                                == "Mover exceso a otra línea"
                                             ):
                                                 if _pr_proj_cands:
                                                     with st.container(border=True):
@@ -10723,64 +10887,10 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                         for p in _pr_parts
                                                                     )
                                                                 )
-                                                            _pr_best_c = None
-                                                            for _prc in _pr_proj_cands:
-                                                                if (
-                                                                    not _pr_dest_sel
-                                                                    or _prc.get("Línea candidata")
-                                                                    in _pr_dest_sel
-                                                                ):
-                                                                    try:
-                                                                        _pr_mej_c = float(
-                                                                            _prc.get("Mejora h", 0)
-                                                                            or 0
-                                                                        )
-                                                                    except (TypeError, ValueError):
-                                                                        _pr_mej_c = 0.0
-                                                                    try:
-                                                                        _pr_best_mej = float(
-                                                                            _pr_best_c.get(
-                                                                                "Mejora h", 0
-                                                                            ) or 0
-                                                                        ) if _pr_best_c else 0.0
-                                                                    except (TypeError, ValueError):
-                                                                        _pr_best_mej = 0.0
-                                                                    if (
-                                                                        _pr_best_c is None
-                                                                        or _pr_mej_c > _pr_best_mej
-                                                                    ):
-                                                                        _pr_best_c = _prc
-                                                            if _pr_best_c:
-                                                                try:
-                                                                    _pr_mej_mv = float(
-                                                                        _pr_best_c.get(
-                                                                            "Mejora h", 0
-                                                                        ) or 0
-                                                                    )
-                                                                except (TypeError, ValueError):
-                                                                    _pr_mej_mv = 0.0
-                                                                st.caption(
-                                                                    f"Mejora estimada: "
-                                                                    f"**{round(_pr_mej_mv, 1)} h**"
-                                                                    f" déficit"
-                                                                )
-                                                                _pr_res = _pr_best_c.get(
-                                                                    "Resultado", ""
-                                                                )
-                                                                if _pr_res == "Libera":
-                                                                    st.markdown(
-                                                                        f"Estado: "
-                                                                        f":green[**{_pr_res}**]"
-                                                                    )
-                                                                elif _pr_res:
-                                                                    st.markdown(
-                                                                        f"Estado: "
-                                                                        f":orange[**{_pr_res}**]"
-                                                                    )
-                                                                else:
-                                                                    st.caption(
-                                                                        "Estado: No disponible"
-                                                                    )
+                                                            st.caption(
+                                                                "La mejora real se recalcula "
+                                                                "al aplicar la simulación."
+                                                            )
                                                 else:
                                                     st.caption(
                                                         "No se encontró candidato de movimiento "
@@ -10808,7 +10918,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             if (
                                                 _pr_chk
                                                 and _pr_action
-                                                    == "Mover proyecto completo a otra línea"
+                                                    == "Mover exceso a otra línea"
                                                 and _pr_proj_cands
                                             ):
                                                 _prm_dest_ss = st.session_state.get(
@@ -10896,7 +11006,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     _prb_ampliar.append(str(_prb_p2))
                                                 elif (
                                                     _prb_a2
-                                                    == "Mover proyecto completo a otra línea"
+                                                    == "Mover exceso a otra línea"
                                                 ):
                                                     _prb_mover.append(str(_prb_p2))
 
@@ -10904,7 +11014,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 # Mezcla bloqueada
                                                 st.warning(
                                                     "No se puede combinar 'Ampliar semanas' y "
-                                                    "'Mover proyecto completo' en el mismo paso."
+                                                    "'Mover exceso' en el mismo paso."
                                                     " Aplica un solo ajuste."
                                                 )
                                             elif _prb_mover and not _prb_ampliar:
@@ -11029,7 +11139,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                             "",
                                                                         )
                                                                     )
-                                                                    == "Mover línea 2ª ronda"
+                                                                    == "Mover exceso 2ª ronda"
                                                                     and str(
                                                                         m.get(
                                                                             "proyecto", ""
@@ -11095,231 +11205,146 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                 _prb_cap_guard_ok = False
                                                                                 break
                                                                     if _prb_cap_guard_ok:
-                                                                      _prb_split = (
-                                                                        _simulate_prog_split_line(
-                                                                            _prb_load_acc,
-                                                                            _prb_proj,
-                                                                            _prb_linea_m,
-                                                                            _prb_dest_sel,
+                                                                        _prb_orig_n = (
+                                                                            str(_prb_linea_m)
+                                                                            .strip()
+                                                                            .upper()
                                                                         )
-                                                                      )
-                                                                      if not _prb_split[
-                                                                        "moved_ok"
-                                                                      ]:
-                                                                        st.warning(
-                                                                            f"{_prb_proj}: "
-                                                                            f"{_prb_split['warning']}"
+                                                                        _prb_orig_mc = (
+                                                                            _prb_cap_acc["Línea"]
+                                                                            .astype(str)
+                                                                            .str.strip()
+                                                                            .str.upper()
+                                                                            == _prb_orig_n
                                                                         )
-                                                                      else:
-                                                                        _prb_load_acc = (
-                                                                            _prb_split[
-                                                                                "load_df"
-                                                                            ]
-                                                                        )
-                                                                        # Actualizar cap
-                                                                        # de cada destino
-                                                                        # usando match
-                                                                        # normalizado
-                                                                        for (
-                                                                            _prbd,
-                                                                            _prbd_dh,
-                                                                        ) in (
-                                                                            _prb_dest_caps.items()
-                                                                        ):
-                                                                            _prb_cap_acc.loc[
-                                                                                _prb_cap_acc[
-                                                                                    "Línea"
-                                                                                ]
-                                                                                .astype(str)
-                                                                                .str.strip()
-                                                                                .str.upper()
-                                                                                == str(
-                                                                                    _prbd
+                                                                        if not _prb_orig_mc.any():
+                                                                            st.warning(
+                                                                                f"{_prb_proj}: línea origen "
+                                                                                f"'{_prb_linea_m}' no encontrada "
+                                                                                f"en capacidad. No se aplica."
+                                                                            )
+                                                                        else:
+                                                                            try:
+                                                                                _cap_orig_h = float(
+                                                                                    _prb_cap_acc.loc[
+                                                                                        _prb_orig_mc,
+                                                                                        "Capacidad h/sem",
+                                                                                    ].iloc[0]
                                                                                 )
-                                                                                .strip()
-                                                                                .upper(),
-                                                                                "Capacidad h/sem",
-                                                                            ] = _prbd_dh
-                                                                        # Un movimiento
-                                                                        # por destino
-                                                                        _prb_new_movs: list = []
-                                                                        _prb_fracs = (
-                                                                            _prb_split[
-                                                                                "fracciones"
-                                                                            ]
-                                                                        )
-                                                                        for (
-                                                                            _prbd_i,
-                                                                            _prbd,
-                                                                        ) in enumerate(
-                                                                            _prb_dest_sel
-                                                                        ):
-                                                                            _prbd_frac = (
-                                                                                _prb_fracs[
-                                                                                    _prbd_i
-                                                                                ]
-                                                                                if _prbd_i
-                                                                                < len(
-                                                                                    _prb_fracs
+                                                                            except (
+                                                                                IndexError,
+                                                                                TypeError,
+                                                                                ValueError,
+                                                                            ):
+                                                                                _cap_orig_h = 0.0
+                                                                            if _cap_orig_h <= 0:
+                                                                                st.warning(
+                                                                                    f"{_prb_proj}: cap. origen "
+                                                                                    f"'{_prb_linea_m}' = {_cap_orig_h}. "
+                                                                                    f"No se aplica."
                                                                                 )
-                                                                                else (
-                                                                                    1.0
-                                                                                    / len(
-                                                                                        _prb_dest_sel
+                                                                            else:
+                                                                                _prb_excess = (
+                                                                                    _simulate_prog_move_excess(
+                                                                                        _prb_load_acc,
+                                                                                        _prb_proj,
+                                                                                        _prb_linea_m,
+                                                                                        _prb_dest_sel,
+                                                                                        _cap_orig_h,
                                                                                     )
                                                                                 )
-                                                                            )
-                                                                            _prbd_rows = (
-                                                                                _prb_load_acc[
-                                                                                    (
-                                                                                        _prb_load_acc[
-                                                                                            "Proyecto"
-                                                                                        ]
-                                                                                        .astype(str)
-                                                                                        == _prb_proj
+                                                                                if not _prb_excess["moved_ok"]:
+                                                                                    st.warning(
+                                                                                        f"{_prb_proj}: "
+                                                                                        f"{_prb_excess['warning']}"
                                                                                     )
-                                                                                    & (
-                                                                                        _prb_load_acc[
-                                                                                            "Línea"
-                                                                                        ]
-                                                                                        .astype(str)
-                                                                                        == _prbd
-                                                                                    )
-                                                                                ]
-                                                                            )
-                                                                            _prbd_h = round(
-                                                                                float(
-                                                                                    _prbd_rows[
-                                                                                        "Horas proyecto semana"
-                                                                                    ].sum()
-                                                                                ),
-                                                                                1,
-                                                                            )
-                                                                            _prbd_nsem = int(
-                                                                                _prbd_rows[
-                                                                                    "Semana"
-                                                                                ].nunique()
-                                                                            )
-                                                                            _prbd_hsem = (
-                                                                                round(
-                                                                                    _prbd_h
-                                                                                    / _prbd_nsem,
-                                                                                    1,
-                                                                                )
-                                                                                if _prbd_nsem
-                                                                                > 0
-                                                                                else 0.0
-                                                                            )
-                                                                            _prbd_mej = float(
-                                                                                next(
-                                                                                    (
-                                                                                        c.get(
-                                                                                            "Mejora h",
-                                                                                            0,
+                                                                                else:
+                                                                                    _prb_load_acc = _prb_excess["load_df"]
+                                                                                    _prb_new_movs: list = []
+                                                                                    _prb_fracs_e  = _prb_excess["fracciones"]
+                                                                                    _prb_exc_tot  = _prb_excess["exceso_total_h"]
+                                                                                    _prb_exc_prom = _prb_excess["exceso_h_sem_prom"]
+                                                                                    _prb_exc_sems = _prb_excess["semanas_afectadas"]
+                                                                                    for (
+                                                                                        _prbd_i,
+                                                                                        _prbd,
+                                                                                    ) in enumerate(_prb_dest_sel):
+                                                                                        _prbd_frac = (
+                                                                                            _prb_fracs_e[_prbd_i]
+                                                                                            if _prbd_i < len(_prb_fracs_e)
+                                                                                            else 1.0 / len(_prb_dest_sel)
                                                                                         )
-                                                                                        for c in _prb_cands_m
-                                                                                        if c.get(
-                                                                                            "Línea candidata"
+                                                                                        _prb_new_movs.append(
+                                                                                            {
+                                                                                                "tipo_accion":       "Mover exceso 2ª ronda",
+                                                                                                "origen":            "segunda_ronda",
+                                                                                                "proyecto":          _prb_proj,
+                                                                                                "linea_origen":      _prb_linea_m,
+                                                                                                "linea_destino":     _prbd,
+                                                                                                "fraccion":          round(_prbd_frac, 4),
+                                                                                                "fraccion_pct":      f"{round(_prbd_frac * 100, 1)} %",
+                                                                                                "exceso_total_h":    round(_prb_exc_tot, 1),
+                                                                                                "exceso_destino_h":  round(_prb_exc_tot * _prbd_frac, 1),
+                                                                                                "exceso_h_sem_prom": round(_prb_exc_prom, 1),
+                                                                                                "semanas_afectadas": _prb_exc_sems,
+                                                                                                "aviso":             "",
+                                                                                            }
                                                                                         )
-                                                                                        == _prbd
-                                                                                    ),
-                                                                                    0,
-                                                                                )
-                                                                                or 0
-                                                                            )
-                                                                            _prb_new_movs.append(
-                                                                                {
-                                                                                    "tipo_accion":  "Mover línea 2ª ronda",
-                                                                                    "origen":       "segunda_ronda",
-                                                                                    "proyecto":     _prb_proj,
-                                                                                    "linea_actual": _prb_linea_m,
-                                                                                    "linea_destino": _prbd,
-                                                                                    "fraccion":     round(
-                                                                                        _prbd_frac,
-                                                                                        4,
-                                                                                    ),
-                                                                                    "fraccion_pct": (
-                                                                                        f"{round(_prbd_frac * 100, 1)} %"
-                                                                                    ),
-                                                                                    "horas_movidas": _prbd_h,
-                                                                                    "sem_count":    _prbd_nsem,
-                                                                                    "h_sem_prom":   _prbd_hsem,
-                                                                                    "mejora_h_est": _prbd_mej,
-                                                                                    "aviso":        "",
-                                                                                }
-                                                                            )
-                                                                        _prb_final_m = (
-                                                                            _recompute_prog_deficit_global(
-                                                                                _prb_load_acc,
-                                                                                _prb_cap_acc,
-                                                                            )
-                                                                        )
-                                                                        _prb_def_des = (
-                                                                            _prb_final_m[
-                                                                                "deficit_total_h"
-                                                                            ]
-                                                                        )
-                                                                        st.session_state[
-                                                                            f"_prog_alt_sim_{plant_id}"
-                                                                        ] = {
-                                                                            **_pr_sim,
-                                                                            "movimientos": (
-                                                                                _prb_prev_movs
-                                                                                + _prb_new_movs
-                                                                            ),
-                                                                            "load_df_sim":     _prb_load_acc,
-                                                                            "cap_df_sim":      _prb_cap_acc,
-                                                                            "conflict_df_sim": _prb_final_m[
-                                                                                "conflict_df"
-                                                                            ],
-                                                                            "deficit_despues": _prb_def_des,
-                                                                            "mejora_total_h":  max(
-                                                                                0.0,
-                                                                                _prb_def_antes
-                                                                                - _prb_def_des,
-                                                                            ),
-                                                                            "avisos": _prb_avisos,
-                                                                        }
-                                                                        st.session_state[
-                                                                            f"prog_gantt_vista_{plant_id}"
-                                                                        ] = "Simulación"
-                                                                        # Limpiar estado
-                                                                        # visual (mismo
-                                                                        # patrón que
-                                                                        # Ampliar semanas)
-                                                                        for _prb_pk in list(
-                                                                            _pr_by_proj.keys()
-                                                                        ):
-                                                                            _prb_ps = "".join(
-                                                                                c
-                                                                                if c.isalnum()
-                                                                                or c == "_"
-                                                                                else "_"
-                                                                                for c in str(
-                                                                                    _prb_pk
-                                                                                )
-                                                                            )
-                                                                            st.session_state.pop(
-                                                                                f"_pr_check_{plant_id}_{_prb_ps}",
-                                                                                None,
-                                                                            )
-                                                                            st.session_state.pop(
-                                                                                f"_pr_action_{plant_id}_{_prb_ps}",
-                                                                                None,
-                                                                            )
-                                                                            st.session_state.pop(
-                                                                                f"_pr_dest_{plant_id}_{_prb_ps}",
-                                                                                None,
-                                                                            )
-                                                                        st.session_state.pop(
-                                                                            f"_prog_as_foto_{plant_id}",
-                                                                            None,
-                                                                        )
-                                                                        st.session_state.pop(
-                                                                            f"_prog_alt_result_{plant_id}",
-                                                                            None,
-                                                                        )
-                                                                        st.rerun()
+                                                                                    _prb_final_m = (
+                                                                                        _recompute_prog_deficit_global(
+                                                                                            _prb_load_acc,
+                                                                                            _prb_cap_acc,
+                                                                                        )
+                                                                                    )
+                                                                                    _prb_def_des = (
+                                                                                        _prb_final_m["deficit_total_h"]
+                                                                                    )
+                                                                                    st.session_state[
+                                                                                        f"_prog_alt_sim_{plant_id}"
+                                                                                    ] = {
+                                                                                        **_pr_sim,
+                                                                                        "movimientos": (
+                                                                                            _prb_prev_movs + _prb_new_movs
+                                                                                        ),
+                                                                                        "load_df_sim":     _prb_load_acc,
+                                                                                        "cap_df_sim":      _prb_cap_acc,
+                                                                                        "conflict_df_sim": _prb_final_m["conflict_df"],
+                                                                                        "deficit_despues": _prb_def_des,
+                                                                                        "mejora_total_h":  max(
+                                                                                            0.0,
+                                                                                            _prb_def_antes - _prb_def_des,
+                                                                                        ),
+                                                                                        "avisos":          _prb_avisos,
+                                                                                    }
+                                                                                    st.session_state[
+                                                                                        f"prog_gantt_vista_{plant_id}"
+                                                                                    ] = "Simulación"
+                                                                                    for _prb_pk in list(_pr_by_proj.keys()):
+                                                                                        _prb_ps = "".join(
+                                                                                            c if c.isalnum() or c == "_" else "_"
+                                                                                            for c in str(_prb_pk)
+                                                                                        )
+                                                                                        st.session_state.pop(
+                                                                                            f"_pr_check_{plant_id}_{_prb_ps}",
+                                                                                            None,
+                                                                                        )
+                                                                                        st.session_state.pop(
+                                                                                            f"_pr_action_{plant_id}_{_prb_ps}",
+                                                                                            None,
+                                                                                        )
+                                                                                        st.session_state.pop(
+                                                                                            f"_pr_dest_{plant_id}_{_prb_ps}",
+                                                                                            None,
+                                                                                        )
+                                                                                    st.session_state.pop(
+                                                                                        f"_prog_as_foto_{plant_id}",
+                                                                                        None,
+                                                                                    )
+                                                                                    st.session_state.pop(
+                                                                                        f"_prog_alt_result_{plant_id}",
+                                                                                        None,
+                                                                                    )
+                                                                                    st.rerun()
                                             elif len(_prb_ampliar) > 1:
                                                 st.warning(
                                                     "Solo se permite un ajuste por vez. "
@@ -11544,6 +11569,19 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         + (
                                                             f" ({_pr_fp})"
                                                             if _pr_fp else ""
+                                                        )
+                                                    )
+                                                elif _prt_a == "Mover exceso 2ª ronda":
+                                                    _pr_fp_ex = _prmov.get("fraccion_pct", "")
+                                                    st.caption(
+                                                        f"{_prmi}. {_prpj_a} — "
+                                                        f"Exceso [2ª ronda] de "
+                                                        f"{_prmov.get('linea_origen', '?')} "
+                                                        f"a "
+                                                        f"{_prmov.get('linea_destino', '?')}"
+                                                        + (
+                                                            f" ({_pr_fp_ex})"
+                                                            if _pr_fp_ex else ""
                                                         )
                                                     )
                                                 elif _prt_a == "Mover línea 2ª ronda":
