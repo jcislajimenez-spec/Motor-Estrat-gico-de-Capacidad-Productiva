@@ -10843,7 +10843,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 )
                                             if _pr_proj_cands:
                                                 _pr_radio_opts.append(
-                                                    "Mover exceso a otra línea"
+                                                    "Reprogramar residual"
                                                 )
                                             _pr_radio_opts.append("No actuar")
 
@@ -10903,10 +10903,10 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         "para este proyecto."
                                                     )
 
-                                            elif (
-                                                _pr_action
-                                                == "Mover exceso a otra línea"
-                                            ):
+                                            elif _pr_action in {
+                                                "Reprogramar residual",
+                                                "Mover exceso a otra línea",
+                                            }:
                                                 if _pr_proj_cands:
                                                     with st.container(border=True):
                                                         _pr_dest_opts = [
@@ -10977,8 +10977,10 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     pass
                                             if (
                                                 _pr_chk
-                                                and _pr_action
-                                                    == "Mover exceso a otra línea"
+                                                and _pr_action in {
+                                                    "Reprogramar residual",
+                                                    "Mover exceso a otra línea",
+                                                }
                                                 and _pr_proj_cands
                                             ):
                                                 _prm_dest_ss = st.session_state.get(
@@ -11064,17 +11066,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     continue
                                                 if _prb_a2 == "Ampliar semanas en destino":
                                                     _prb_ampliar.append(str(_prb_p2))
-                                                elif (
-                                                    _prb_a2
-                                                    == "Mover exceso a otra línea"
-                                                ):
+                                                elif _prb_a2 in {
+                                                    "Reprogramar residual",
+                                                    "Mover exceso a otra línea",
+                                                }:
                                                     _prb_mover.append(str(_prb_p2))
 
                                             if _prb_ampliar and _prb_mover:
                                                 # Mezcla bloqueada
                                                 st.warning(
                                                     "No se puede combinar 'Ampliar semanas' y "
-                                                    "'Mover exceso' en el mismo paso."
+                                                    "'Reprogramar residual' en el mismo paso."
                                                     " Aplica un solo ajuste."
                                                 )
                                             elif _prb_mover and not _prb_ampliar:
@@ -11668,7 +11670,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     _pr_fp_ex = _prmov.get("fraccion_pct", "")
                                                     st.caption(
                                                         f"{_prmi}. {_prpj_a} — "
-                                                        f"Exceso [2ª ronda] de "
+                                                        f"Reprogramar residual [2ª ronda] de "
                                                         f"{_prmov.get('linea_origen', '?')} "
                                                         f"a "
                                                         f"{_prmov.get('linea_destino', '?')}"
