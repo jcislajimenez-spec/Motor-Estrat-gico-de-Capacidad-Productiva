@@ -11440,6 +11440,48 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                     _prb_exc_tot  = _prb_excess["exceso_total_h"]
                                                                                     _prb_exc_prom = _prb_excess["exceso_h_sem_prom"]
                                                                                     _prb_exc_sems = _prb_excess["semanas_afectadas"]
+                                                                                    # ── Extraer tipo_proyecto / n_unidades para trazabilidad ─────────
+                                                                                    _prb_tipo_proyecto = "desconocido"
+                                                                                    _prb_n_unidades    = None
+                                                                                    _prb_parsed_ss = st.session_state.get(
+                                                                                        f"_prog_parsed_{plant_id}"
+                                                                                    )
+                                                                                    if _prb_parsed_ss is not None:
+                                                                                        _prb_proy_df = _prb_parsed_ss.get("proyectos")
+                                                                                        if (
+                                                                                            _prb_proy_df is not None
+                                                                                            and "Proyecto" in _prb_proy_df.columns
+                                                                                        ):
+                                                                                            _prb_mask_tp = (
+                                                                                                _prb_proy_df["Proyecto"]
+                                                                                                .astype(str)
+                                                                                                .str.strip()
+                                                                                                == str(_prb_proj).strip()
+                                                                                            )
+                                                                                            if _prb_mask_tp.any():
+                                                                                                if "Tipo de proyecto" in _prb_proy_df.columns:
+                                                                                                    _tp_val = _prb_proy_df.loc[
+                                                                                                        _prb_mask_tp,
+                                                                                                        "Tipo de proyecto",
+                                                                                                    ].iloc[0]
+                                                                                                    _prb_tipo_proyecto = (
+                                                                                                        str(_tp_val).strip()
+                                                                                                        if pd.notna(_tp_val) and str(_tp_val).strip()
+                                                                                                        else "desconocido"
+                                                                                                    )
+                                                                                                if "Nº unidades" in _prb_proy_df.columns:
+                                                                                                    try:
+                                                                                                        _nu_val = _prb_proy_df.loc[
+                                                                                                            _prb_mask_tp,
+                                                                                                            "Nº unidades",
+                                                                                                        ].iloc[0]
+                                                                                                        _prb_n_unidades = (
+                                                                                                            None
+                                                                                                            if pd.isna(_nu_val)
+                                                                                                            else float(_nu_val)
+                                                                                                        )
+                                                                                                    except (TypeError, ValueError, IndexError):
+                                                                                                        _prb_n_unidades = None
                                                                                     for (
                                                                                         _prbd_i,
                                                                                         _prbd,
@@ -11473,6 +11515,8 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                                 ).get(str(_prbd).strip(), []),
                                                                                                 "exceso_h_sem_prom": round(_prb_exc_prom, 1),
                                                                                                 "semanas_afectadas": _prb_exc_sems,
+                                                                                                "tipo_proyecto":     _prb_tipo_proyecto,
+                                                                                                "n_unidades":        _prb_n_unidades,
                                                                                                 "aviso":             "",
                                                                                             }
                                                                                         )
