@@ -7025,7 +7025,9 @@ def _build_prog_template_xlsx() -> bytes:
             "Cliente / referencia":      "Cliente A",
             "Modelo / familia":          "SL",
             "Equipo / modelo":           "Inversor SL-100",
-            "Cantidad":                  10,
+            "Cantidad":                  1,
+            "Nº unidades":               1,
+            "Tipo de proyecto":          "equipo_unico",
             "Semana inicio mínima":      5,
             "Semana entrega objetivo":   12,
             "Duración semanas":          8,
@@ -7036,7 +7038,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado materiales":         "OK",
             "Prioridad":                 1,
             "Firme/Flexible":            "Firme",
-            "Comentarios":               "Ejemplo con todos los campos",
+            "Comentarios":               "Equipo único — no divisible",
         },
         {
             "Proyecto":                  "PRY-002",
@@ -7045,6 +7047,8 @@ def _build_prog_template_xlsx() -> bytes:
             "Modelo / familia":          "SL",
             "Equipo / modelo":           "Inversor SL-200",
             "Cantidad":                  5,
+            "Nº unidades":               5,
+            "Tipo de proyecto":          "lote_divisible",
             "Semana inicio mínima":      8,
             "Semana entrega objetivo":   15,
             "Duración semanas":          8,
@@ -7055,7 +7059,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado materiales":         "Pendiente",
             "Prioridad":                 2,
             "Firme/Flexible":            "Flexible",
-            "Comentarios":               "Materiales pendientes",
+            "Comentarios":               "Lote divisible — varias unidades separables",
         },
         {
             "Proyecto":                  "PRY-003",
@@ -7064,6 +7068,8 @@ def _build_prog_template_xlsx() -> bytes:
             "Modelo / familia":          "SL",
             "Equipo / modelo":           "",
             "Cantidad":                  3,
+            "Nº unidades":               "",
+            "Tipo de proyecto":          "desconocido",
             "Semana inicio mínima":      20,
             "Semana entrega objetivo":   26,
             "Duración semanas":          7,
@@ -7074,7 +7080,7 @@ def _build_prog_template_xlsx() -> bytes:
             "Estado materiales":         "OK",
             "Prioridad":                 3,
             "Firme/Flexible":            "Flexible",
-            "Comentarios":               "Sin línea preferente — se usarán alternativas",
+            "Comentarios":               "Tipo no clasificado — rellenar antes de simular",
         },
     ])
     with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
@@ -7101,6 +7107,8 @@ _PROG_COLS_OPCIONALES_DEFAULTS = {
     "Código proyecto/equipo":  "",
     "Equipo / modelo":         "",
     "Comentarios":             "",
+    "Tipo de proyecto":        "desconocido",
+    "Nº unidades":             None,
 }
 
 # Alias de columnas industriales → nombre canónico.
@@ -7117,7 +7125,67 @@ _PROG_ALIAS_MAP = {
     "TOTAL":           "Horas totales",
     "ESTADO EQUIPO":   "Estado proyecto",
     "COMENTARIOS":     "Comentarios",
+    # Aliases Tipo de proyecto
+    "Tipo proyecto":        "Tipo de proyecto",
+    "Tipo Proyecto":        "Tipo de proyecto",
+    "Tipo de Proyecto":     "Tipo de proyecto",
+    "tipo_proyecto":        "Tipo de proyecto",
+    "Tipo_proyecto":        "Tipo de proyecto",
+    "Project type":         "Tipo de proyecto",
+    "Project Type":         "Tipo de proyecto",
+    "TIPO DE PROYECTO":     "Tipo de proyecto",
+    "TIPO PROYECTO":        "Tipo de proyecto",
+    # Aliases Nº unidades
+    "N unidades":           "Nº unidades",
+    "N° unidades":          "Nº unidades",
+    "Nº de unidades":       "Nº unidades",
+    "Num unidades":         "Nº unidades",
+    "Número unidades":      "Nº unidades",
+    "Número de unidades":   "Nº unidades",
+    "Numero unidades":      "Nº unidades",
+    "Numero de unidades":   "Nº unidades",
+    "Unidades":             "Nº unidades",
+    "Cantidad unidades":    "Nº unidades",
+    "Cantidad de unidades": "Nº unidades",
+    "n_unidades":           "Nº unidades",
+    "Nro unidades":         "Nº unidades",
+    "N UNIDADES":           "Nº unidades",
+    "NUM UNIDADES":         "Nº unidades",
 }
+
+
+_TIPO_PROYECTO_VARIANTES: dict = {
+    "equipo_unico": {
+        "equipo único", "equipo unico", "equipo_unico",
+        "unidad única", "unidad unica", "unitario", "una unidad",
+    },
+    "lote_divisible": {
+        "lote divisible", "lote_divisible", "lote", "varias unidades",
+    },
+    "fase_transferible": {
+        "fase transferible", "fase_transferible", "fase", "transferible",
+    },
+}
+_TIPO_PROYECTO_DESCONOCIDO = {
+    "", "nan", "none", "<na>", "desconocido",
+    "no informado", "sin definir", "vacío", "vacio", "null",
+}
+
+
+def _normalizar_tipo_proyecto(valor) -> str:
+    """Normaliza el campo Tipo de proyecto al valor canónico interno."""
+    try:
+        if pd.isna(valor):
+            return "desconocido"
+    except (TypeError, ValueError):
+        pass
+    _v = str(valor).strip().lower()
+    if _v in _TIPO_PROYECTO_DESCONOCIDO:
+        return "desconocido"
+    for _canonical, _variants in _TIPO_PROYECTO_VARIANTES.items():
+        if _v == _canonical or _v in _variants:
+            return _canonical
+    return "desconocido"
 
 
 def _parse_prog_excel(file) -> dict:
@@ -7185,9 +7253,32 @@ def _parse_prog_excel(file) -> dict:
                 f"valor por defecto aplicado: '{_default_lbl}'."
             )
 
+    # ── Normalizar Tipo de proyecto a valores canónicos ─────────────────────
+    _df_p["Tipo de proyecto"] = _df_p["Tipo de proyecto"].apply(
+        _normalizar_tipo_proyecto
+    )
+
     for _ncol in ("Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
                   "Horas totales", "Prioridad", "Duración semanas"):
         _df_p[_ncol] = pd.to_numeric(_df_p[_ncol], errors="coerce")
+
+    # ── Nº unidades: conversión numérica con warning si hay errores ──────────
+    _nu_raw_str = _df_p["Nº unidades"].fillna("").astype(str).str.strip()
+    _df_p["Nº unidades"] = pd.to_numeric(
+        _df_p["Nº unidades"]
+        .astype(str)
+        .str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+    _nu_invalidas = (
+        ~_nu_raw_str.str.lower().isin({"", "nan", "none", "<na>", "nat"})
+        & _df_p["Nº unidades"].isna()
+    )
+    if _nu_invalidas.any():
+        _result["warnings"].append(
+            f"'Nº unidades': {int(_nu_invalidas.sum())} valor(es) no numérico(s) "
+            "— se ignoran. Usa un número entero positivo."
+        )
 
     _bad_ini = _df_p["Semana inicio mínima"].notna() & (
         (_df_p["Semana inicio mínima"] < 1) | (_df_p["Semana inicio mínima"] > 52)
