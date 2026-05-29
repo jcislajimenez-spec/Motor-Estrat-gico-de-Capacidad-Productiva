@@ -10842,6 +10842,51 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "**Qué se hizo antes:** " + " · ".join(desc)
                                         )
 
+                                def _pr_aviso_tipo_proyecto(proj):
+                                    _parsed_ss = st.session_state.get(f"_prog_parsed_{plant_id}")
+                                    _tipo = "desconocido"
+                                    if _parsed_ss is not None:
+                                        _proy_df = _parsed_ss.get("proyectos")
+                                        if (
+                                            _proy_df is not None
+                                            and "Proyecto" in _proy_df.columns
+                                            and "Tipo de proyecto" in _proy_df.columns
+                                        ):
+                                            _mask = (
+                                                _proy_df["Proyecto"].astype(str).str.strip()
+                                                == str(proj).strip()
+                                            )
+                                            if _mask.any():
+                                                _v = _proy_df.loc[_mask, "Tipo de proyecto"].iloc[0]
+                                                if pd.notna(_v) and str(_v).strip():
+                                                    _tipo = str(_v).strip()
+                                    if _tipo == "equipo_unico":
+                                        st.warning(
+                                            "Equipo único: reprogramar residual no es la opción normal. "
+                                            "Solo usar si se valida operativamente que el equipo puede "
+                                            "trasladarse o terminarse en otra línea. Si no, normalmente "
+                                            "conviene ampliar semanas o replantear el movimiento completo."
+                                        )
+                                    elif _tipo == "lote_divisible":
+                                        st.info(
+                                            "Lote divisible: reprogramar residual puede tener sentido si "
+                                            "el proyecto representa varias unidades separables. En esta "
+                                            "versión la simulación sigue usando la lógica conservadora "
+                                            "actual; no se activa reparto paralelo."
+                                        )
+                                    elif _tipo == "fase_transferible":
+                                        st.info(
+                                            "Fase transferible: reprogramar residual puede tener sentido "
+                                            "solo si esa fase puede ejecutarse físicamente en otra línea."
+                                        )
+                                    else:
+                                        st.warning(
+                                            "Tipo de proyecto desconocido: acción avanzada. La app no "
+                                            "puede saber si el proyecto es una unidad única, un lote "
+                                            "divisible o una fase transferible. Usa Reprogramar residual "
+                                            "solo con validación operativa."
+                                        )
+
                                 if not _pr_has_cands and not _pr_has_as:
                                     # ── Estado previo: mostrar conflictos + botón trigger ──
                                     for _k_idx, (_pr_proj, _pr_rows) in enumerate(
@@ -10998,6 +11043,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Reprogramar residual",
                                                 "Mover exceso a otra línea",
                                             }:
+                                                _pr_aviso_tipo_proyecto(_pr_proj)
                                                 if _pr_proj_cands:
                                                     with st.container(border=True):
                                                         _pr_dest_opts = [
