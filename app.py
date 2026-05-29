@@ -7088,6 +7088,198 @@ def _build_prog_template_xlsx() -> bytes:
     return _buf.getvalue()
 
 
+def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) -> bytes:
+    """Exporta la simulación activa a Excel. Solo lectura; sin efectos secundarios."""
+    from openpyxl.styles import Font as _OxFont
+
+    def _fmt_list(v):
+        if isinstance(v, list):
+            return ", ".join(str(x) for x in v)
+        return str(v) if v is not None else ""
+
+    def _safe(v, default=""):
+        if v is None:
+            return default
+        try:
+            if pd.isna(v):
+                return default
+        except (TypeError, ValueError):
+            pass
+        return v
+
+    # Lookup tipo_proyecto / n_unidades desde plan original
+    _proy_tp_lkp: dict = {}
+    if prog_parsed and prog_parsed.get("proyectos") is not None:
+        _pp_df = prog_parsed["proyectos"]
+        if "Proyecto" in _pp_df.columns:
+            for _, _pr in _pp_df.iterrows():
+                _pk = str(_pr["Proyecto"]).strip()
+                _tp_v = str(_pr.get("Tipo de proyecto", "") or "").strip()
+                _nu_raw = _pr.get("Nº unidades")
+                try:
+                    _nu_v = None if pd.isna(_nu_raw) else float(_nu_raw)
+                except (TypeError, ValueError):
+                    _nu_v = None
+                _proy_tp_lkp[_pk] = {"tipo_proyecto": _tp_v, "n_unidades": _nu_v}
+
+    _buf = io.BytesIO()
+    with pd.ExcelWriter(_buf, engine="openpyxl") as _writer:
+
+        # ── Hoja 1: RESUMEN ──────────────────────────────────────────────────
+        _cfl_sim = da_sim.get("conflict_df_sim")
+        _n_cfl = (
+            len(_cfl_sim)
+            if _cfl_sim is not None and not (hasattr(_cfl_sim, "empty") and _cfl_sim.empty)
+            else 0
+        )
+        _avisos_raw = da_sim.get("avisos") or []
+        _avisos_str = "; ".join(str(a) for a in _avisos_raw) if _avisos_raw else "—"
+        _n_proj_orig = (prog_parsed.get("n_proyectos") or 0) if prog_parsed else 0
+        _n_acc = len(da_sim.get("movimientos") or [])
+
+        _df_res = pd.DataFrame([
+            {"Parámetro": "Planta",                                    "Valor": plant_name},
+            {"Parámetro": "Fecha/hora exportación",                    "Valor": datetime.now().strftime("%Y-%m-%d %H:%M")},
+            {"Parámetro": "Tipo de exportación",                       "Valor": "Simulación activa — no modifica Plan real"},
+            {"Parámetro": "Nº proyectos originales",                   "Valor": _n_proj_orig},
+            {"Parámetro": "Nº acciones aplicadas",                     "Valor": _n_acc},
+            {"Parámetro": "Nº conflictos restantes (semanas-línea)",   "Valor": _n_cfl},
+            {"Parámetro": "Déficit antes de la simulación activa (h)", "Valor": round(float(da_sim.get("deficit_antes") or 0.0), 1)},
+            {"Parámetro": "Déficit tras acciones aplicadas (h)",       "Valor": round(float(da_sim.get("deficit_despues") or 0.0), 1)},
+            {"Parámetro": "Mejora acumulada de la simulación (h)",     "Valor": round(float(da_sim.get("mejora_total_h") or 0.0), 1)},
+            {"Parámetro": "Avisos operativos",                         "Valor": _avisos_str},
+        ])
+        _df_res.to_excel(_writer, sheet_name="RESUMEN", index=False)
+
+        # ── Hoja 2: ACCIONES_APLICADAS ───────────────────────────────────────
+        _movs = da_sim.get("movimientos") or []
+        _acc_rows = []
+        for _i, _m in enumerate(_movs, 1):
+            _tipo = str(_m.get("tipo_accion", "")).strip()
+            _ronda = (
+                "2ª ronda"
+                if (_m.get("origen") == "segunda_ronda" or "2ª ronda" in _tipo)
+                else "1ª ronda"
+            )
+            if _tipo == "Mover línea":
+                _l_orig = _m.get("linea_actual", "")
+                _l_dest = _m.get("linea_destino", "")
+            elif _tipo in ("Ajuste temporal", "Ajuste temporal 2ª ronda"):
+                _l_orig = _m.get("linea_actual", "")
+                _l_dest = _m.get("linea_actual", "")
+            elif _tipo in ("Mover exceso 2ª ronda", "Mover exceso a otra línea"):
+                _l_orig = _m.get("linea_origen", _m.get("linea_actual", ""))
+                _l_dest = _m.get("linea_destino", "")
+            else:
+                _l_orig = _m.get("linea_actual", _m.get("linea_origen", ""))
+                _l_dest = _m.get("linea_destino", "")
+
+            _proy_key = str(_m.get("proyecto", "")).strip()
+            _tp = _safe(_m.get("tipo_proyecto"), "")
+            _nu = _m.get("n_unidades")
+            if not _tp and _proy_key in _proy_tp_lkp:
+                _tp = _proy_tp_lkp[_proy_key].get("tipo_proyecto", "")
+            if _nu is None and _proy_key in _proy_tp_lkp:
+                _nu = _proy_tp_lkp[_proy_key].get("n_unidades")
+
+            if _tipo == "Mover línea":
+                _h_mov = _safe(_m.get("horas_movidas"), "")
+            elif _tipo in ("Mover exceso 2ª ronda", "Mover exceso a otra línea"):
+                _h_mov = _safe(_m.get("exceso_total_h"), "")
+            else:
+                _h_mov = ""
+
+            _h_sem_ant = _safe(_m.get("h_sem_antes"), "")
+            _h_sem_des = _safe(
+                _m.get("h_sem_despues", _m.get("h_sem_prom", _m.get("exceso_h_sem_prom"))), ""
+            )
+            _sems_raw = _m.get("semanas_afectadas") or _m.get("semanas_destino") or ""
+            _sems_str = _fmt_list(_sems_raw) if isinstance(_sems_raw, list) else _safe(_sems_raw, "")
+
+            _acc_rows.append({
+                "Nº":                 _i,
+                "Tipo acción":        _tipo,
+                "Ronda":              _ronda,
+                "Proyecto":           _proy_key,
+                "Línea origen":       _safe(_l_orig),
+                "Línea destino":      _safe(_l_dest),
+                "% carga":            _safe(_m.get("fraccion_pct"), ""),
+                "Semanas antes":      _safe(_m.get("semanas_actuales"), ""),
+                "Semanas después":    _safe(_m.get("semanas_simuladas"), ""),
+                "Horas movidas (h)":  _h_mov,
+                "h/sem antes":        _h_sem_ant,
+                "h/sem desp/prom":    _h_sem_des,
+                "Semanas afectadas":  _sems_str,
+                "Tipo de proyecto":   _safe(_tp),
+                "Nº unidades":        _safe(_nu),
+                "Aviso":              _safe(_m.get("aviso"), ""),
+                "Comentario":         _safe(_m.get("impacto_entrega", _m.get("comentario")), ""),
+            })
+
+        if _acc_rows:
+            _df_acc = pd.DataFrame(_acc_rows)
+        else:
+            _df_acc = pd.DataFrame([{
+                "Nº": "—",
+                "Tipo acción": "Sin acciones aplicadas en esta simulación.",
+                "Ronda": "", "Proyecto": "", "Línea origen": "",
+                "Línea destino": "", "% carga": "", "Semanas antes": "",
+                "Semanas después": "", "Horas movidas (h)": "",
+                "h/sem antes": "", "h/sem desp/prom": "", "Semanas afectadas": "",
+                "Tipo de proyecto": "", "Nº unidades": "", "Aviso": "", "Comentario": "",
+            }])
+        _df_acc.to_excel(_writer, sheet_name="ACCIONES_APLICADAS", index=False)
+
+        # ── Hoja 3: CONFLICTOS_RESTANTES ─────────────────────────────────────
+        _cfl = da_sim.get("conflict_df_sim")
+        if _cfl is not None and not (hasattr(_cfl, "empty") and _cfl.empty):
+            _cfl.to_excel(_writer, sheet_name="CONFLICTOS_RESTANTES", index=False)
+        else:
+            pd.DataFrame([{
+                "Estado": "Sin conflictos restantes en la simulación activa.",
+            }]).to_excel(_writer, sheet_name="CONFLICTOS_RESTANTES", index=False)
+
+        # ── Hoja 4: CARGA_SIMULADA_SEMANAL ───────────────────────────────────
+        _load = da_sim.get("load_df_sim")
+        if _load is not None and not (hasattr(_load, "empty") and _load.empty):
+            _load.to_excel(_writer, sheet_name="CARGA_SIMULADA_SEMANAL", index=False)
+        else:
+            pd.DataFrame([{
+                "Estado": "Sin datos de carga simulada disponibles.",
+            }]).to_excel(_writer, sheet_name="CARGA_SIMULADA_SEMANAL", index=False)
+
+        # ── Hoja 5: PLAN_ORIGINAL ─────────────────────────────────────────────
+        _plan_df = (
+            prog_parsed.get("proyectos") if prog_parsed else None
+        )
+        if _plan_df is not None and not (hasattr(_plan_df, "empty") and _plan_df.empty):
+            _plan_df.to_excel(_writer, sheet_name="PLAN_ORIGINAL", index=False)
+        else:
+            pd.DataFrame([{
+                "Estado": "Plan original no disponible.",
+            }]).to_excel(_writer, sheet_name="PLAN_ORIGINAL", index=False)
+
+        # ── Formato: cabeceras bold + auto-ancho + congelar fila 1 ───────────
+        for _sh_name in _writer.sheets:
+            _ws = _writer.sheets[_sh_name]
+            _ws.freeze_panes = "A2"
+            for _hcell in _ws[1]:
+                _hcell.font = _OxFont(bold=True)
+            for _col_cells in _ws.columns:
+                _col_letter = _col_cells[0].column_letter
+                _max_len = 0
+                for _cell in _col_cells:
+                    try:
+                        _cv = str(_cell.value) if _cell.value is not None else ""
+                        if len(_cv) > _max_len:
+                            _max_len = len(_cv)
+                    except Exception:
+                        pass
+                _ws.column_dimensions[_col_letter].width = min(max(_max_len + 2, 10), 55)
+
+    return _buf.getvalue()
+
+
 _PROG_COLS_OBLIGATORIAS = {
     "Proyecto",
     "Modelo / familia",
@@ -8763,10 +8955,11 @@ if st.session_state.active_tab == "📋 Programación real":
         st.markdown(
             "1️⃣&nbsp;**Cargar Excel**&nbsp;→&nbsp;"
             "2️⃣&nbsp;**Validar datos**&nbsp;→&nbsp;"
-            "3️⃣&nbsp;**Repartir carga**&nbsp;→&nbsp;"
-            "4️⃣&nbsp;**Cruzar capacidad**&nbsp;→&nbsp;"
-            "5️⃣&nbsp;**Detectar conflictos**&nbsp;→&nbsp;"
-            "6️⃣&nbsp;**Proponer alternativas**",
+            "3️⃣&nbsp;**Cruzar capacidad**&nbsp;→&nbsp;"
+            "4️⃣&nbsp;**Detectar conflictos**&nbsp;→&nbsp;"
+            "5️⃣&nbsp;**Aplicar alternativas**&nbsp;→&nbsp;"
+            "6️⃣&nbsp;**Analizar mejora**&nbsp;→&nbsp;"
+            "7️⃣&nbsp;**Descargar Excel**",
             unsafe_allow_html=True,
         )
 
@@ -12303,6 +12496,25 @@ if st.session_state.active_tab == "📋 Programación real":
                                 )
                             else:
                                 st.success("Sin conflictos y sin movimientos en la simulación.")
+                            _prog_sim_xlsx_bytes = _build_prog_sim_export_xlsx(
+                                _da_sim,
+                                st.session_state.get(f"_prog_parsed_{plant_id}"),
+                                st.session_state.get(f"_prog_result_{plant_id}"),
+                                selected_plant_name,
+                            )
+                            st.download_button(
+                                label="⬇ Descargar simulación activa en Excel",
+                                data=_prog_sim_xlsx_bytes,
+                                file_name=(
+                                    f"programacion_real_simulacion_activa_{plant_id}.xlsx"
+                                ),
+                                mime=(
+                                    "application/vnd.openxmlformats-officedocument"
+                                    ".spreadsheetml.sheet"
+                                ),
+                                key=f"prog_sim_download_btn_{plant_id}",
+                                use_container_width=True,
+                            )
                             if st.button(
                                 t("prog_alt_sim_discard_btn"),
                                 key=f"prog_alt_sim_discard_btn_{plant_id}",
