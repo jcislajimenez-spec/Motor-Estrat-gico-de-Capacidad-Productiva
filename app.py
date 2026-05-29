@@ -12496,25 +12496,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                 )
                             else:
                                 st.success("Sin conflictos y sin movimientos en la simulación.")
-                            _prog_sim_xlsx_bytes = _build_prog_sim_export_xlsx(
-                                _da_sim,
-                                st.session_state.get(f"_prog_parsed_{plant_id}"),
-                                st.session_state.get(f"_prog_result_{plant_id}"),
-                                selected_plant_name,
-                            )
-                            st.download_button(
-                                label="⬇ Descargar simulación activa en Excel",
-                                data=_prog_sim_xlsx_bytes,
-                                file_name=(
-                                    f"programacion_real_simulacion_activa_{plant_id}.xlsx"
-                                ),
-                                mime=(
-                                    "application/vnd.openxmlformats-officedocument"
-                                    ".spreadsheetml.sheet"
-                                ),
-                                key=f"prog_sim_download_btn_{plant_id}",
-                                use_container_width=True,
-                            )
                             if st.button(
                                 t("prog_alt_sim_discard_btn"),
                                 key=f"prog_alt_sim_discard_btn_{plant_id}",
@@ -12535,6 +12516,29 @@ if st.session_state.active_tab == "📋 Programación real":
                                     ) + 1
                                 )
                                 st.rerun()
+
+                # ── Descarga simulación activa ─────────────────────────────────────────
+                _da_sim_dl = st.session_state.get(f"_prog_alt_sim_{plant_id}")
+                if _da_sim_dl:
+                    _prog_sim_xlsx_bytes = _build_prog_sim_export_xlsx(
+                        _da_sim_dl,
+                        st.session_state.get(f"_prog_parsed_{plant_id}"),
+                        st.session_state.get(f"_prog_result_{plant_id}"),
+                        selected_plant_name,
+                    )
+                    st.download_button(
+                        label="⬇ Descargar simulación activa en Excel",
+                        data=_prog_sim_xlsx_bytes,
+                        file_name=(
+                            f"programacion_real_simulacion_activa_{plant_id}.xlsx"
+                        ),
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument"
+                            ".spreadsheetml.sheet"
+                        ),
+                        key=f"prog_sim_download_btn_{plant_id}",
+                        use_container_width=True,
+                    )
 
                 # ── 14C.2B Vista temporal útil por proyecto ───────────────────────────
                 _gt_styled   = None
