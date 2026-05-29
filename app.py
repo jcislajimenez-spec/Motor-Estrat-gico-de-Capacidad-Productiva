@@ -10144,58 +10144,26 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 label="Comentario", width=260,
                                             ),
                                         }
-                                        _da_df_edited = st.data_editor(
-                                            _da_df_c[_da_edit_cols],
-                                            column_config=_da_edit_cfg,
-                                            disabled=[c for c in _da_edit_cols if c != "Aplicar"],
-                                            hide_index=True,
-                                            use_container_width=True,
-                                            height=255,
-                                            key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
-                                        )
-                                        # ── F4.1 Preview separada: Replanificación en destino (solo lectura, sin checkbox) ──
-                                        if _da_f41_res:
-                                            _da_f41_tipo_map = {
-                                                "Mover línea":          "Movimiento simple",
-                                                "Mover + replanificar": "Replanificar destino",
-                                                "No viable":            "No viable preview",
-                                                "Sin dato":             "Sin dato",
-                                            }
-                                            _da_f41_prev_rows = []
-                                            for _f41i, _f41row_t in enumerate(_da_f41_res):
-                                                if _f41i < len(_da_df_c):
-                                                    _f41_r = _da_df_c.iloc[_f41i]
-                                                    _da_f41_prev_rows.append({
-                                                        "Proyecto":         str(_f41_r.get("Proyecto", "") or ""),
-                                                        "Línea actual":     str(_f41_r.get("Línea actual", "") or ""),
-                                                        "Línea destino":    str(_f41_r.get("Línea candidata", "") or ""),
-                                                        "Preview destino":  _da_f41_tipo_map.get(_f41row_t[0], _f41row_t[0]),
-                                                        "Fin destino sim.": _f41row_t[1],
-                                                        "Impacto entrega":  _f41row_t[2],
-                                                        "Aviso destino":    _f41row_t[3],
-                                                    })
-                                            if _da_f41_prev_rows:
-                                                _da_f41_preview_df = pd.DataFrame(_da_f41_prev_rows)
-                                                st.markdown("##### Preview no aplicable — Replanificación en destino")
-                                                st.caption(
-                                                    "Esta preview no se aplica todavía. "
-                                                    "El botón **Aplicar alternativas seleccionadas** "
-                                                    "solo ejecuta Mover línea y/o Ampliar semanas."
-                                                )
-                                                st.dataframe(
-                                                    _da_f41_preview_df,
-                                                    hide_index=True,
-                                                    use_container_width=True,
-                                                    column_config={
-                                                        "Proyecto":         st.column_config.TextColumn(label="Proyecto",         width=130),
-                                                        "Línea actual":     st.column_config.TextColumn(label="Línea actual",     width=110),
-                                                        "Línea destino":    st.column_config.TextColumn(label="Línea destino",    width=110),
-                                                        "Preview destino":  st.column_config.TextColumn(label="Preview destino",  width=170),
-                                                        "Fin destino sim.": st.column_config.TextColumn(label="Fin destino sim.", width=110),
-                                                        "Impacto entrega":  st.column_config.TextColumn(label="Impacto entrega",  width=120),
-                                                        "Aviso destino":    st.column_config.TextColumn(label="Aviso destino",    width=250),
-                                                    },
-                                                )
+                                        with st.container(border=True):
+                                            st.markdown("#### Alternativas de movimiento de línea")
+                                            if _da_alt_src_label == "sim":
+                                                st.caption("⚠ Calculadas sobre: **Simulación activa**")
+                                            else:
+                                                st.caption("Calculadas sobre: **Plan real**")
+                                            st.caption(
+                                                "Mover línea cambia el proyecto completo a otra línea "
+                                                "compatible. Útil cuando el destino absorbe mejor la "
+                                                "carga sin alargar el proyecto."
+                                            )
+                                            _da_df_edited = st.data_editor(
+                                                _da_df_c[_da_edit_cols],
+                                                column_config=_da_edit_cfg,
+                                                disabled=[c for c in _da_edit_cols if c != "Aplicar"],
+                                                hide_index=True,
+                                                use_container_width=True,
+                                                height=255,
+                                                key=f"prog_alt_editor_{plant_id}_{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}",
+                                            )
                                     else:
                                         st.caption(t("prog_alt_no_alts_found"))
                                         _da_df_c = pd.DataFrame(columns=["Aplicar", "Estado", "Proyecto", "Línea actual", "Línea candidata", "alt_id"])
@@ -10575,6 +10543,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                     st.caption("⚠ Calculadas sobre: **Simulación activa**")
                                 else:
                                     st.caption("Calculadas sobre: **Plan real**")
+                                st.caption(
+                                    "Ampliar semanas mantiene el proyecto en la misma línea, "
+                                    "pero reparte la carga en más semanas. Puede reducir el "
+                                    "déficit, aunque puede retrasar la entrega."
+                                )
                                 if not _dat_rows:
                                     st.caption("No hay candidatos para ajuste temporal.")
                                 else:
