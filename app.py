@@ -8906,9 +8906,11 @@ def _simulate_prog_move_excess(
         "no_absorbido_h":           0.0,
         "semanas_afectadas":        [],
         "exceso_h_sem_prom":        0.0,
-        "exceso_por_semana":        {},
-        "colocado_por_semana":      {},
-        "no_absorbido_por_semana":  {},
+        "exceso_por_semana":                {},
+        "reduccion_origen_por_semana":      {},
+        "colocado_destino_por_semana":      {},
+        "colocado_por_semana":              {},
+        "no_absorbido_por_semana":          {},
         "fracciones":               [],
         "semanas_destino":          {},
         "exceso_destino_h":         {},
@@ -8991,17 +8993,20 @@ def _simulate_prog_move_excess(
         return _empty
 
     if modo_residual == "paralelo":
-        # ── Modo paralelo: exceso en las mismas semanas del conflicto ─────────
-        _semanas_afectadas_p:       list = []
-        _exceso_por_semana_p:       dict = {}
-        _colocado_por_semana_p:     dict = {}
-        _no_absorbido_por_semana_p: dict = {}
+        # ── Modo paralelo saturado (bolsa total): suma todo el exceso en una
+        #    bolsa, coloca en destino sin restricción por semana de origen,
+        #    luego reduce origen de forma diferida desde las semanas más tempranas.
+        _semanas_afectadas_p:           list = []
+        _exceso_por_semana_p:           dict = {}
+        _reduccion_origen_por_semana_p: dict = {}
+        _colocado_destino_por_semana_p: dict = {}
+        _no_absorbido_por_semana_p:     dict = {}
         _colocado_destino_h_p: dict = {str(_d).strip(): 0.0 for _d in lineas_destino}
         _semanas_destino_p:    dict = {str(_d).strip(): [] for _d in lineas_destino}
         _filas_nuevas_p:       list = []
         _colocado_total        = 0.0
-        _no_absorbido_total    = 0.0
 
+        # ── Fase P1: calcular exceso por semana → bolsa total ─────────────────
         for _s in _semanas:
             _mask_s_proj = (
                 (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
@@ -9021,61 +9026,7 @@ def _simulate_prog_move_excess(
                 continue
 
             _exceso_por_semana_p[_s] = round(_exceso_s, 4)
-
-            # Capacidad libre real en cada destino para la semana _s
-            _disp: dict = {}
-            for _d_p in lineas_destino:
-                _d_ps = str(_d_p).strip()
-                _mask_d_s = (
-                    (_sim["Línea"].astype(str).str.strip() == _d_ps) &
-                    (_sim["Semana"].astype(int)            == _s)
-                )
-                _carga_d_s = float(_sim.loc[_mask_d_s, "Horas proyecto semana"].sum())
-                _disp[_d_ps] = max(0.0, _cap_destinos_norm[_d_ps] - _carga_d_s)
-
-            _total_disp_s = sum(_disp.values())
-            _colocable_s  = round(min(_exceso_s, _total_disp_s), 4)
-
-            if _colocable_s <= 0.001:
-                _no_absorbido_por_semana_p[_s] = round(_exceso_s, 4)
-                _no_absorbido_total += _exceso_s
-                _semanas_afectadas_p.append(_s)
-                continue
-
-            # Distribuir colocable_s entre destinos (proporcional, limitado por disponible)
-            _h_col_s = 0.0
-            for _di_p, _d_p in enumerate(lineas_destino):
-                _d_ps   = str(_d_p).strip()
-                _h_asig = round(_colocable_s * fracciones[_di_p], 4)
-                _h_col  = min(_h_asig, _disp[_d_ps])
-                if _h_col > 0.001:
-                    _nv = dict(_fila_tmpl)
-                    _nv["Línea"]                 = _d_ps
-                    _nv["Semana"]                = _s
-                    _nv["Horas proyecto semana"] = round(_h_col, 4)
-                    _filas_nuevas_p.append(_nv)
-                    if _s not in _semanas_destino_p[_d_ps]:
-                        _semanas_destino_p[_d_ps].append(_s)
-                    _colocado_destino_h_p[_d_ps] = round(
-                        _colocado_destino_h_p[_d_ps] + _h_col, 4
-                    )
-                    _h_col_s += _h_col
-
-            _h_col_s = round(_h_col_s, 4)
-
-            # Reducir origen por exactamente lo colocado en destino
-            if _h_col_s > 0.001 and _h_proj_sem > 0:
-                _fk_p = (_h_proj_sem - _h_col_s) / _h_proj_sem
-                _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
-                    _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _fk_p
-                ).round(4)
-
-            _no_abs_s = max(0.0, round(_exceso_s - _h_col_s, 4))
             _semanas_afectadas_p.append(_s)
-            _colocado_por_semana_p[_s]     = _h_col_s
-            _no_absorbido_por_semana_p[_s] = _no_abs_s
-            _colocado_total     += _h_col_s
-            _no_absorbido_total += _no_abs_s
 
         if not _exceso_por_semana_p:
             _empty["warning"] = (
@@ -9084,15 +9035,93 @@ def _simulate_prog_move_excess(
             )
             return _empty
 
+        _exc_tot_p        = round(sum(_exceso_por_semana_p.values()), 4)
+        _semanas_conflicto = sorted(_exceso_por_semana_p.keys())
+
+        # ── Fase P2: colocar en cada destino sin restricción de semana origen ──
+        # Cada destino recibe su porción de la bolsa total; satura semanas
+        # tempranas hasta agotar su cupo. Sin límite por exceso de esa semana.
+        for _di_p, _d_p in enumerate(lineas_destino):
+            _d_ps        = str(_d_p).strip()
+            _porcion_d   = round(_exc_tot_p * fracciones[_di_p], 4)
+            _pendiente_d = _porcion_d
+
+            for _s in _semanas_conflicto:
+                if _pendiente_d <= 0.001:
+                    break
+
+                _mask_d_s = (
+                    (_sim["Línea"].astype(str).str.strip() == _d_ps) &
+                    (_sim["Semana"].astype(int)            == _s)
+                )
+                _carga_d_s     = float(_sim.loc[_mask_d_s, "Horas proyecto semana"].sum())
+                _cap_libre_d_s = max(0.0, _cap_destinos_norm[_d_ps] - _carga_d_s)
+
+                _colocar = round(min(_pendiente_d, _cap_libre_d_s), 4)
+                if _colocar <= 0.001:
+                    continue
+
+                _nv = dict(_fila_tmpl)
+                _nv["Línea"]                 = _d_ps
+                _nv["Semana"]                = _s
+                _nv["Horas proyecto semana"] = _colocar
+                _filas_nuevas_p.append(_nv)
+
+                if _s not in _semanas_destino_p[_d_ps]:
+                    _semanas_destino_p[_d_ps].append(_s)
+
+                _colocado_destino_h_p[_d_ps] = round(
+                    _colocado_destino_h_p[_d_ps] + _colocar, 4
+                )
+                _colocado_destino_por_semana_p[_s] = round(
+                    _colocado_destino_por_semana_p.get(_s, 0.0) + _colocar, 4
+                )
+                _colocado_total = round(_colocado_total + _colocar, 4)
+                _pendiente_d    = round(_pendiente_d - _colocar, 4)
+
         if _colocado_total < 0.001:
-            _exc_tot_chk = round(sum(_exceso_por_semana_p.values()), 1)
             _empty["warning"] = (
                 f"Proyecto '{proyecto}': ninguna línea destino tiene capacidad "
-                f"libre en las semanas conflictivas. El exceso ({_exc_tot_chk} h) "
+                f"libre en las semanas conflictivas. El exceso ({round(_exc_tot_p, 1)} h) "
                 f"permanece en origen."
             )
             return _empty
 
+        # ── Fase P3: reducir origen de forma diferida (semanas más tempranas) ──
+        # Retira colocado_total del origen empezando por la semana conflictiva
+        # más antigua; preserva la conservación total de horas.
+        _reduccion_restante = _colocado_total
+        for _s in _semanas_conflicto:
+            if _reduccion_restante <= 0.001:
+                break
+            _reducir_s = round(min(_reduccion_restante, _exceso_por_semana_p[_s]), 4)
+            if _reducir_s <= 0.001:
+                _reduccion_origen_por_semana_p[_s] = 0.0
+                continue
+
+            _mask_s_proj = (
+                (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+                (_sim["Línea"].astype(str).str.strip()    == _linea_s) &
+                (_sim["Semana"].astype(int)               == _s)
+            )
+            _h_proj_sem = float(_sim.loc[_mask_s_proj, "Horas proyecto semana"].sum())
+            if _h_proj_sem > 0.001:
+                _fk_p = (_h_proj_sem - _reducir_s) / _h_proj_sem
+                _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
+                    _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _fk_p
+                ).round(4)
+
+            _reduccion_origen_por_semana_p[_s] = _reducir_s
+            _reduccion_restante = round(_reduccion_restante - _reducir_s, 4)
+
+        # ── Fase P4: no_absorbido por semana de origen ────────────────────────
+        for _s in _semanas_afectadas_p:
+            _no_absorbido_por_semana_p[_s] = round(
+                _exceso_por_semana_p[_s] - _reduccion_origen_por_semana_p.get(_s, 0.0), 4
+            )
+        _no_absorbido_total = round(sum(_no_absorbido_por_semana_p.values()), 1)
+
+        # ── Fase P5: concat nuevas filas + check conservación ─────────────────
         if _filas_nuevas_p:
             _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas_p)], ignore_index=True)
 
@@ -9110,29 +9139,29 @@ def _simulate_prog_move_excess(
             )
             return _empty
 
-        _exc_tot_p    = round(sum(_exceso_por_semana_p.values()), 1)
-        _col_tot_r    = round(_colocado_total, 1)
-        _no_abs_tot_r = round(_no_absorbido_total, 1)
-        _n_sems_p     = len(_semanas_afectadas_p)
-        _col_dest_r   = {k: round(v, 1) for k, v in _colocado_destino_h_p.items()}
+        _col_tot_r   = round(_colocado_total, 1)
+        _n_sems_p    = len(_semanas_afectadas_p)
+        _col_dest_r  = {k: round(v, 1) for k, v in _colocado_destino_h_p.items()}
         return {
-            "load_df":                  _sim,
-            "moved_ok":                 True,
-            "warning":                  "",
-            "modo_residual":            "paralelo",
-            "exceso_total_h":           _exc_tot_p,
-            "colocado_h":               _col_tot_r,
-            "no_absorbido_h":           _no_abs_tot_r,
-            "semanas_afectadas":        _semanas_afectadas_p,
-            "exceso_h_sem_prom":        round(_exc_tot_p / _n_sems_p, 1) if _n_sems_p > 0 else 0.0,
-            "exceso_por_semana":        _exceso_por_semana_p,
-            "colocado_por_semana":      _colocado_por_semana_p,
-            "no_absorbido_por_semana":  _no_absorbido_por_semana_p,
-            "fracciones":               fracciones,
-            "semanas_destino":          _semanas_destino_p,
-            "exceso_destino_h":         _col_dest_r,
-            "colocado_destino_h":       _col_dest_r,
-            "cap_destinos":             _cap_destinos_norm,
+            "load_df":                      _sim,
+            "moved_ok":                     True,
+            "warning":                      "",
+            "modo_residual":                "paralelo",
+            "exceso_total_h":               round(_exc_tot_p, 1),
+            "colocado_h":                   _col_tot_r,
+            "no_absorbido_h":               _no_absorbido_total,
+            "semanas_afectadas":            _semanas_afectadas_p,
+            "exceso_h_sem_prom":            round(_exc_tot_p / _n_sems_p, 1) if _n_sems_p > 0 else 0.0,
+            "exceso_por_semana":            _exceso_por_semana_p,
+            "reduccion_origen_por_semana":  _reduccion_origen_por_semana_p,
+            "colocado_destino_por_semana":  _colocado_destino_por_semana_p,
+            "no_absorbido_por_semana":      _no_absorbido_por_semana_p,
+            "colocado_por_semana":          _colocado_destino_por_semana_p,
+            "fracciones":                   fracciones,
+            "semanas_destino":              _semanas_destino_p,
+            "exceso_destino_h":             _col_dest_r,
+            "colocado_destino_h":           _col_dest_r,
+            "cap_destinos":                 _cap_destinos_norm,
         }
 
     # ── Fase 1: retirar exceso del origen semana a semana ────────────────────
