@@ -11495,6 +11495,28 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 horizontal=True,
                                             )
 
+                                            # Caption de jerarquía por tipo — Fase 2
+                                            if _pr_proj_cands:
+                                                if _prpre_tipo == "lote_divisible":
+                                                    st.caption(
+                                                        "✅ Reprogramar residual puede tener "
+                                                        "sentido si el proyecto representa "
+                                                        "unidades separables."
+                                                    )
+                                                elif _prpre_tipo == "fase_transferible":
+                                                    st.caption(
+                                                        "⚠ Verificar antes: usar Reprogramar "
+                                                        "residual solo si la fase pendiente "
+                                                        "puede trasladarse físicamente a "
+                                                        "otra línea."
+                                                    )
+                                                elif _prpre_tipo == "desconocido":
+                                                    st.caption(
+                                                        "⚠ Validar tipo de proyecto antes de "
+                                                        "reprogramar residual; no se debe "
+                                                        "asumir divisibilidad."
+                                                    )
+
                                             if _pr_action == "Ampliar semanas en destino":
                                                 if (
                                                     _pr_proj_as is not None
