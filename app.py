@@ -7291,7 +7291,7 @@ def _build_prog_reloadable_df(da_sim, prog_parsed) -> "pd.DataFrame":
 
 def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) -> bytes:
     """Exporta la simulación activa a Excel. Solo lectura; sin efectos secundarios."""
-    from openpyxl.styles import Font as _OxFont, PatternFill as _OxFill
+    from openpyxl.styles import Font as _OxFont, PatternFill as _OxFill, Alignment as _OxAlign
 
     def _fmt_list(v):
         if isinstance(v, list):
@@ -7468,11 +7468,17 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
         def _fill(hex6):
             return _OxFill(fill_type="solid", fgColor=hex6)
 
-        _WHITE_FONT    = _OxFont(bold=True, color="FFFFFFFF")
-        _FILL_RED_LT   = _fill("FFE0E0")
-        _FILL_GREEN_LT = _fill("E2EFDA")
-        _FILL_YELLOW   = _fill("FFF2CC")
-        _FILL_GREY_LT  = _fill("F2F2F2")
+        _WHITE_FONT      = _OxFont(bold=True, color="FFFFFFFF")
+        _FILL_RED_LT     = _fill("FFE0E0")
+        _FILL_GREEN_LT   = _fill("E2EFDA")
+        _FILL_YELLOW     = _fill("FFF2CC")
+        _FILL_GREY_LT    = _fill("F2F2F2")
+        _FILL_GREEN_VLT  = _fill("E8F5E2")
+        _FILL_BLUE_LT    = _fill("DDEEFF")
+        _FILL_ORANGE_LT  = _fill("FFF0E0")
+        _ALIGN_L = _OxAlign(horizontal="left")
+        _ALIGN_R = _OxAlign(horizontal="right")
+        _ALIGN_C = _OxAlign(horizontal="center")
 
         _cfl_color = "C00000" if _n_cfl > 0 else "375623"
         _SH_CFG = {
@@ -7492,15 +7498,22 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
             _ws.freeze_panes = "A2"
             _ws.auto_filter.ref = _ws.dimensions
 
-            # Header: bold + colored background + white text
+            # Header: bold + colored background + white text + center
             _hdr_fill = _fill(_cfg["hdr"])
             for _hcell in _ws[1]:
                 _hcell.font = _WHITE_FONT
                 _hcell.fill = _hdr_fill
+                _hcell.alignment = _ALIGN_C
 
-            # Auto-width (unchanged logic)
+            # Auto-width + data alignment by column header keyword
+            _NUM_KW_ALN = {
+                "horas", "h/sem", "semana", "cantidad", "nº",
+                "déficit", "mejora", "duración", "inicio", "entrega", "%",
+            }
             for _col_cells in _ws.columns:
                 _col_letter = _col_cells[0].column_letter
+                _hv_aln = str(_col_cells[0].value or "").strip().lower()
+                _data_aln = _ALIGN_R if any(_kw in _hv_aln for _kw in _NUM_KW_ALN) else _ALIGN_L
                 _max_len = 0
                 for _cell in _col_cells:
                     try:
@@ -7509,6 +7522,8 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
                             _max_len = len(_cv)
                     except Exception:
                         pass
+                    if _cell.row > 1:
+                        _cell.alignment = _data_aln
                 _ws.column_dimensions[_col_letter].width = min(max(_max_len + 2, 10), 55)
 
         # ── RESUMEN: semáforo por fila ────────────────────────────────────────
@@ -7524,17 +7539,21 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
                 except (TypeError, ValueError):
                     _vnum = None
                 _vstr = str(_vcell.value or "").strip()
+                _rfill_res = None
                 if "Déficit antes" in _param:
-                    _vcell.fill = _FILL_GREY_LT
+                    _rfill_res = _FILL_GREY_LT
                 elif "Déficit tras" in _param:
-                    _vcell.fill = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
+                    _rfill_res = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
                 elif "Mejora acumulada" in _param:
-                    _vcell.fill = _FILL_GREEN_LT if (_vnum or 0) > 0 else _FILL_GREY_LT
+                    _rfill_res = _FILL_GREEN_LT if (_vnum or 0) > 0 else _FILL_GREY_LT
                 elif "conflictos restantes" in _param:
-                    _vcell.fill = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
+                    _rfill_res = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
                 elif "Avisos operativos" in _param:
                     if _vstr not in ("—", "", "None"):
-                        _vcell.fill = _FILL_YELLOW
+                        _rfill_res = _FILL_YELLOW
+                if _rfill_res is not None:
+                    _vcell.fill  = _rfill_res
+                    _row[0].fill = _rfill_res
 
         # ── CONFLICTOS_RESTANTES: color por fila ─────────────────────────────
         _ws_cfl2 = _writer.sheets.get("CONFLICTOS_RESTANTES")
@@ -7573,6 +7592,76 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
                         _av = str(_row[_aviso_idx].value or "").strip()
                         if _av and _av.lower() not in ("nan", "none", "null"):
                             _row[_aviso_idx].fill = _FILL_YELLOW
+
+        # ── Formato numérico por columna ─────────────────────────────────────
+        _NUM_H = "#,##0.0"
+        _NUM_W = "0"
+        for _nsh, _ncols, _nfmt in [
+            ("ACCIONES_APLICADAS",
+             ["Horas movidas (h)", "h/sem antes", "h/sem desp/prom"],
+             _NUM_H),
+            ("CONFLICTOS_RESTANTES", ["Déficit h"], _NUM_H),
+            ("PROGRAMACION_REAL",    ["Horas totales"], _NUM_H),
+            ("PROGRAMACION_REAL",
+             ["Duración semanas", "Semana inicio mínima",
+              "Semana entrega objetivo", "Cantidad", "Nº unidades"],
+             _NUM_W),
+        ]:
+            _ws_nf = _writer.sheets.get(_nsh)
+            if not _ws_nf or _ws_nf.max_row < 2:
+                continue
+            _ci_map_nf = {
+                str(_ws_nf.cell(1, _c).value or "").strip(): _c
+                for _c in range(1, _ws_nf.max_column + 1)
+            }
+            for _nc in _ncols:
+                _ci = _ci_map_nf.get(_nc)
+                if not _ci:
+                    continue
+                for _ri in range(2, _ws_nf.max_row + 1):
+                    _ws_nf.cell(_ri, _ci).number_format = _nfmt
+
+        # ── ACCIONES_APLICADAS: color de fila por tipo de acción ──────────────
+        _ws_acc2 = _writer.sheets.get("ACCIONES_APLICADAS")
+        if _ws_acc2 and _ws_acc2.max_row > 1:
+            _hmap_acc = {
+                str(_ws_acc2.cell(1, _c).value or "").strip(): _c
+                for _c in range(1, _ws_acc2.max_column + 1)
+            }
+            _tipo_ci  = _hmap_acc.get("Tipo acción")
+            _aviso_ci = _hmap_acc.get("Aviso")
+            if _tipo_ci:
+                for _row in _ws_acc2.iter_rows(min_row=2):
+                    _ta = str(_row[_tipo_ci - 1].value or "").strip().lower()
+                    if "mover línea" in _ta:
+                        _rfill_ta = _FILL_GREEN_VLT
+                    elif "ajuste temporal" in _ta:
+                        _rfill_ta = _FILL_BLUE_LT
+                    elif "exceso" in _ta or "residual" in _ta:
+                        _rfill_ta = _FILL_ORANGE_LT
+                    else:
+                        continue
+                    for _c in _row:
+                        if _aviso_ci and _c.column == _aviso_ci:
+                            if str(_c.value or "").strip():
+                                continue
+                        _c.fill = _rfill_ta
+
+        # ── PROGRAMACION_REAL: verde en filas con [Sim] en Comentarios ────────
+        _ws_prr = _writer.sheets.get("PROGRAMACION_REAL")
+        if _ws_prr and _ws_prr.max_row > 1:
+            _hmap_prr = {
+                str(_ws_prr.cell(1, _c).value or "").strip(): _c
+                for _c in range(1, _ws_prr.max_column + 1)
+            }
+            _coment_ci = _hmap_prr.get("Comentarios")
+            if _coment_ci:
+                for _row in _ws_prr.iter_rows(min_row=2):
+                    if "_EXC_" in str(_row[0].value or ""):
+                        continue
+                    if "[Sim]" in str(_row[_coment_ci - 1].value or ""):
+                        for _c in _row:
+                            _c.fill = _FILL_GREEN_LT
 
     return _buf.getvalue()
 
