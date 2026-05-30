@@ -10497,6 +10497,149 @@ if st.session_state.active_tab == "📋 Programación real":
                                         "Tipo":              "Sin alternativas",
                                     })
 
+                            # ── 2ª ronda: candidatas residuales para proyectos sin candidatas ──
+                            # Los filtros _sl_mej≤0 y _sl_nv del análisis principal evalúan un
+                            # movimiento total del proyecto, demasiado estricto para Reprogramar
+                            # residual (que solo mueve el exceso). Si un proyecto pendiente quedó
+                            # sin candidatas, buscar líneas compatibles con cap>0 directamente.
+                            if _pr_trigger_valid:
+                                _da_projs_con_cands = {
+                                    c["Proyecto"] for c in _da_candidatas
+                                }
+                                for _da_proj_r in _da_implicados:
+                                    if _da_proj_r in _da_projs_con_cands:
+                                        continue
+                                    _da_rows_r = _da_load_base[
+                                        _da_load_base["Proyecto"]
+                                        .astype(str).str.strip()
+                                        == str(_da_proj_r).strip()
+                                    ]
+                                    if _da_rows_r.empty:
+                                        continue
+                                    _da_lins_r = (
+                                        _da_rows_r["Línea"]
+                                        .astype(str).str.strip()
+                                        .unique().tolist()
+                                    )
+                                    if len(_da_lins_r) != 1:
+                                        continue
+                                    _da_lin_r    = _da_lins_r[0]
+                                    _da_lin_r_up = _da_lin_r.upper()
+                                    _da_mask_pr  = (
+                                        _da_df_proy["Proyecto"]
+                                        .astype(str).str.strip()
+                                        == str(_da_proj_r).strip()
+                                    )
+                                    if not _da_mask_pr.any():
+                                        continue
+                                    _da_mdl_r = (
+                                        str(
+                                            _da_df_proy.loc[
+                                                _da_mask_pr,
+                                                "Modelo / familia",
+                                            ].iloc[0]
+                                        )
+                                        if "Modelo / familia" in _da_df_proy.columns
+                                        else ""
+                                    )
+                                    _da_mdl_r_up = (
+                                        _da_mdl_r.strip().upper()
+                                        if _da_mdl_r not in ("", "nan", "None")
+                                        else ""
+                                    )
+                                    _da_r_cands: list = []
+                                    for _sl_r_id in _da_line_ids_plant:
+                                        _sl_r_up = str(_sl_r_id).strip().upper()
+                                        if _sl_r_up == _da_lin_r_up:
+                                            continue
+                                        if _da_mdl_r_up:
+                                            _sl_r_mods = _da_compat_by_line.get(
+                                                _sl_r_up, set()
+                                            )
+                                            if not any(
+                                                _da_mdl_r_up == _cm
+                                                or _cm.startswith(_da_mdl_r_up + "-")
+                                                or _da_mdl_r_up.startswith(_cm + "-")
+                                                for _cm in _sl_r_mods
+                                            ):
+                                                continue
+                                        _sl_r_in_act = _sl_r_up in _da_lineas_en_prog_cap
+                                        if _sl_r_in_act:
+                                            _sl_r_row = _prog_cap_df[
+                                                _prog_cap_df["Línea"]
+                                                .astype(str)
+                                                .str.strip()
+                                                .str.upper()
+                                                == _sl_r_up
+                                            ]
+                                            _sl_r_cap = (
+                                                float(
+                                                    _sl_r_row["Capacidad h/sem"].iloc[0]
+                                                )
+                                                if not _sl_r_row.empty else 0.0
+                                            )
+                                        else:
+                                            _sl_r_cap = (
+                                                _da_compute_cap_ext(_sl_r_id, _da_mdl_r)
+                                                if _da_mdl_r_up else 0.0
+                                            )
+                                        if _sl_r_cap <= 0:
+                                            continue
+                                        _da_r_cands.append(
+                                            (_sl_r_cap, str(_sl_r_id), _sl_r_in_act)
+                                        )
+                                    _da_r_cands.sort(key=lambda x: -x[0])
+                                    for _sl_r_cap, _sl_r_lid, _sl_r_in_act in (
+                                        _da_r_cands[:3]
+                                    ):
+                                        _da_candidatas.append({
+                                            "alt_id": (
+                                                f"{len(_da_candidatas)}"
+                                                f"||{_da_proj_r}"
+                                                f"||{_da_lin_r}"
+                                                f"||{_sl_r_lid}"
+                                            ),
+                                            "capacidad_destino_h": _sl_r_cap,
+                                            "Proyecto":            _da_proj_r,
+                                            "Línea actual":        _da_lin_r,
+                                            "Línea candidata":     _sl_r_lid,
+                                            "tipo_linea": (
+                                                "Activa en escenario"
+                                                if _sl_r_in_act
+                                                else "Sugerida compatible"
+                                            ),
+                                            "modelo_capacidad_usado": _da_mdl_r,
+                                            "capacidad_origen": (
+                                                "escenario_activo"
+                                                if _sl_r_in_act
+                                                else "calculada_fase2a"
+                                            ),
+                                            "Resultado":          "Reduce",
+                                            "Mejora h":           0.0,
+                                            "Déficit actual h":   _da_def_antes,
+                                            "Déficit simulado h": _da_def_antes,
+                                            "Aviso": (
+                                                "Residual 2ª ronda — mejora "
+                                                "real calculada al aplicar."
+                                            ),
+                                            "Origen": "Residual 2ª ronda",
+                                        })
+                                        if not _sl_r_in_act and _sl_r_cap > 0:
+                                            _sl_r_lid_up = str(_sl_r_lid).strip().upper()
+                                            if _sl_r_lid_up not in _da_ext_added_lines:
+                                                _da_cap_df_alts_ext = pd.concat(
+                                                    [_da_cap_df_alts_ext, pd.DataFrame([{
+                                                        "Línea":                  _sl_r_lid,
+                                                        "Capacidad h/sem":        _sl_r_cap,
+                                                        "Modelo asignado":        _da_mdl_r,
+                                                        "tipo_linea":             "Sugerida compatible",
+                                                        "capacidad_origen":       "calculada_fase2a",
+                                                        "modelo_capacidad_usado": _da_mdl_r,
+                                                    }])],
+                                                    ignore_index=True,
+                                                )
+                                                _da_ext_added_lines.add(_sl_r_lid_up)
+
                             st.session_state[f"_prog_alt_result_{plant_id}"] = {
                                 "candidatas":  _da_candidatas,
                                 "descartadas": _da_descartadas,
