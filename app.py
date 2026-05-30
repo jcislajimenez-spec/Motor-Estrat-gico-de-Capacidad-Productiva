@@ -7291,7 +7291,7 @@ def _build_prog_reloadable_df(da_sim, prog_parsed) -> "pd.DataFrame":
 
 def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) -> bytes:
     """Exporta la simulación activa a Excel. Solo lectura; sin efectos secundarios."""
-    from openpyxl.styles import Font as _OxFont
+    from openpyxl.styles import Font as _OxFont, PatternFill as _OxFill
 
     def _fmt_list(v):
         if isinstance(v, list):
@@ -7464,12 +7464,41 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
         _df_reload = _build_prog_reloadable_df(da_sim, prog_parsed)
         _df_reload.to_excel(_writer, sheet_name="PROGRAMACION_REAL", index=False)
 
-        # ── Formato: cabeceras bold + auto-ancho + congelar fila 1 ───────────
-        for _sh_name in _writer.sheets:
-            _ws = _writer.sheets[_sh_name]
+        # ── Formato: visual completo ──────────────────────────────────────────
+        def _fill(hex6):
+            return _OxFill(fill_type="solid", fgColor=hex6)
+
+        _WHITE_FONT    = _OxFont(bold=True, color="FFFFFFFF")
+        _FILL_RED_LT   = _fill("FFE0E0")
+        _FILL_GREEN_LT = _fill("E2EFDA")
+        _FILL_YELLOW   = _fill("FFF2CC")
+        _FILL_GREY_LT  = _fill("F2F2F2")
+
+        _cfl_color = "C00000" if _n_cfl > 0 else "375623"
+        _SH_CFG = {
+            "RESUMEN":                {"tab": "1F4E79", "hdr": "1F4E79"},
+            "ACCIONES_APLICADAS":     {"tab": "2E75B6", "hdr": "2E75B6"},
+            "CONFLICTOS_RESTANTES":   {"tab": _cfl_color, "hdr": _cfl_color},
+            "CARGA_SIMULADA_SEMANAL": {"tab": "ED7D31", "hdr": "ED7D31"},
+            "PLAN_ORIGINAL":          {"tab": "808080", "hdr": "404040"},
+            "PROGRAMACION_REAL":      {"tab": "70AD47", "hdr": "375623"},
+        }
+
+        for _sh_name, _ws in _writer.sheets.items():
+            _cfg = _SH_CFG.get(_sh_name, {"tab": "808080", "hdr": "808080"})
+
+            # Tab color, freeze, auto-filter
+            _ws.sheet_properties.tabColor = _cfg["tab"]
             _ws.freeze_panes = "A2"
+            _ws.auto_filter.ref = _ws.dimensions
+
+            # Header: bold + colored background + white text
+            _hdr_fill = _fill(_cfg["hdr"])
             for _hcell in _ws[1]:
-                _hcell.font = _OxFont(bold=True)
+                _hcell.font = _WHITE_FONT
+                _hcell.fill = _hdr_fill
+
+            # Auto-width (unchanged logic)
             for _col_cells in _ws.columns:
                 _col_letter = _col_cells[0].column_letter
                 _max_len = 0
@@ -7481,6 +7510,69 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
                     except Exception:
                         pass
                 _ws.column_dimensions[_col_letter].width = min(max(_max_len + 2, 10), 55)
+
+        # ── RESUMEN: semáforo por fila ────────────────────────────────────────
+        _ws_res = _writer.sheets.get("RESUMEN")
+        if _ws_res and _ws_res.max_row > 1:
+            for _row in _ws_res.iter_rows(min_row=2):
+                if len(_row) < 2:
+                    continue
+                _param  = str(_row[0].value or "")
+                _vcell  = _row[1]
+                try:
+                    _vnum = float(_vcell.value)
+                except (TypeError, ValueError):
+                    _vnum = None
+                _vstr = str(_vcell.value or "").strip()
+                if "Déficit antes" in _param:
+                    _vcell.fill = _FILL_GREY_LT
+                elif "Déficit tras" in _param:
+                    _vcell.fill = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
+                elif "Mejora acumulada" in _param:
+                    _vcell.fill = _FILL_GREEN_LT if (_vnum or 0) > 0 else _FILL_GREY_LT
+                elif "conflictos restantes" in _param:
+                    _vcell.fill = _FILL_RED_LT if (_vnum or 0) > 0 else _FILL_GREEN_LT
+                elif "Avisos operativos" in _param:
+                    if _vstr not in ("—", "", "None"):
+                        _vcell.fill = _FILL_YELLOW
+
+        # ── CONFLICTOS_RESTANTES: color por fila ─────────────────────────────
+        _ws_cfl2 = _writer.sheets.get("CONFLICTOS_RESTANTES")
+        if _ws_cfl2 and _ws_cfl2.max_row > 1:
+            _row_fill = _FILL_RED_LT if _n_cfl > 0 else _FILL_GREEN_LT
+            for _row in _ws_cfl2.iter_rows(min_row=2):
+                for _cell in _row:
+                    _cell.fill = _row_fill
+
+        # ── PROGRAMACION_REAL: amarillo en filas _EXC_NN ─────────────────────
+        _ws_pr = _writer.sheets.get("PROGRAMACION_REAL")
+        if _ws_pr and _ws_pr.max_row > 1:
+            for _row in _ws_pr.iter_rows(min_row=2):
+                if "_EXC_" in str(_row[0].value or ""):
+                    for _cell in _row:
+                        _cell.fill = _FILL_YELLOW
+
+        # ── PLAN_ORIGINAL: gris muy claro en filas de datos ──────────────────
+        _ws_po = _writer.sheets.get("PLAN_ORIGINAL")
+        if _ws_po and _ws_po.max_row > 1:
+            for _row in _ws_po.iter_rows(min_row=2):
+                for _cell in _row:
+                    _cell.fill = _FILL_GREY_LT
+
+        # ── ACCIONES_APLICADAS: amarillo en celda Aviso si tiene contenido ───
+        _ws_acc = _writer.sheets.get("ACCIONES_APLICADAS")
+        if _ws_acc and _ws_acc.max_row > 1:
+            _aviso_idx = None
+            for _hc in _ws_acc[1]:
+                if str(_hc.value or "").strip() == "Aviso":
+                    _aviso_idx = _hc.column - 1
+                    break
+            if _aviso_idx is not None:
+                for _row in _ws_acc.iter_rows(min_row=2):
+                    if _aviso_idx < len(_row):
+                        _av = str(_row[_aviso_idx].value or "").strip()
+                        if _av and _av.lower() not in ("nan", "none", "null"):
+                            _row[_aviso_idx].fill = _FILL_YELLOW
 
     return _buf.getvalue()
 
