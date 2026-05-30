@@ -11428,6 +11428,48 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 f"Sigue con {_pr_def_str(_pr_rows)} de déficit."
                                             )
 
+                                            # Aviso proactivo equipo único antes de la elección
+                                            if _pr_proj_cands:
+                                                _prpre_parsed = st.session_state.get(
+                                                    f"_prog_parsed_{plant_id}"
+                                                )
+                                                _prpre_tipo = "desconocido"
+                                                if _prpre_parsed is not None:
+                                                    _prpre_df = _prpre_parsed.get("proyectos")
+                                                    if (
+                                                        _prpre_df is not None
+                                                        and "Proyecto" in _prpre_df.columns
+                                                        and "Tipo de proyecto"
+                                                        in _prpre_df.columns
+                                                    ):
+                                                        _prpre_mask = (
+                                                            _prpre_df["Proyecto"]
+                                                            .astype(str)
+                                                            .str.strip()
+                                                            == str(_pr_proj).strip()
+                                                        )
+                                                        if _prpre_mask.any():
+                                                            _prpre_v = _prpre_df.loc[
+                                                                _prpre_mask,
+                                                                "Tipo de proyecto",
+                                                            ].iloc[0]
+                                                            if (
+                                                                pd.notna(_prpre_v)
+                                                                and str(_prpre_v).strip()
+                                                            ):
+                                                                _prpre_tipo = str(
+                                                                    _prpre_v
+                                                                ).strip()
+                                                if _prpre_tipo == "equipo_unico":
+                                                    st.warning(
+                                                        "⚠ Equipo único: la opción recomendada "
+                                                        "es **Ampliar semanas**. Reprogramar "
+                                                        "residual solo debe usarse si se confirma "
+                                                        "operativamente que el equipo puede "
+                                                        "completarse o trasladarse físicamente "
+                                                        "a otra línea."
+                                                    )
+
                                             # Radio options from available candidates
                                             _pr_radio_opts: list = []
                                             if (
