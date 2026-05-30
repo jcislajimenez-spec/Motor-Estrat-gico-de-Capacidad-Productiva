@@ -9674,7 +9674,9 @@ if st.session_state.active_tab == "📋 Programación real":
                 _kc1.metric(t("prog_kpi_excluded"),       _n_excl)
                 _kc2.metric(t("prog_kpi_conflict_weeks"), _pkpis["n_conflict_weeks"])
                 _kc3.metric(t("prog_kpi_first_critical"), str(_pkpis["first_critical"]))
-                _kc4.metric(t("prog_kpi_total_deficit"),  _fmt_num(_pkpis["total_deficit"]) + " h")
+                _td_raw = _pkpis.get("total_deficit")
+                _td_ok  = _td_raw is not None and str(_td_raw).strip() not in ("", "nan", "None")
+                _kc4.metric(t("prog_kpi_total_deficit"), f"{_fmt_num(_td_raw)} h" if _td_ok else "—")
                 _kc5.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
                 def _prog_round_display_df(_df):
@@ -12035,7 +12037,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                     if st.button(
                                         "Aplicar ajustes seleccionados de 2ª ronda",
                                         disabled=not (
-                                            (_pr_n_ampliar_valid + _pr_n_mover_valid) == 1
+                                            (_pr_n_ampliar_valid + _pr_n_mover_valid) >= 1
                                         ),
                                         use_container_width=True,
                                         key=f"prog_pr_apply_btn_{plant_id}",
