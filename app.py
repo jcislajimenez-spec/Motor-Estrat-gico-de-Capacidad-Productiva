@@ -7088,6 +7088,207 @@ def _build_prog_template_xlsx() -> bytes:
     return _buf.getvalue()
 
 
+def _build_prog_reloadable_df(da_sim, prog_parsed) -> "pd.DataFrame":
+    """Reconstruye el plan simulado final en formato recargable por el parser."""
+    _RELOAD_COLS = [
+        "Proyecto", "Código proyecto/equipo", "Cliente / referencia",
+        "Modelo / familia", "Equipo / modelo", "Cantidad", "Nº unidades",
+        "Tipo de proyecto", "Semana inicio mínima", "Semana entrega objetivo",
+        "Duración semanas", "Horas totales", "Línea preferente",
+        "Líneas alternativas", "Estado proyecto", "Estado materiales",
+        "Prioridad", "Firme/Flexible", "Comentarios",
+    ]
+    _empty = pd.DataFrame(columns=_RELOAD_COLS)
+
+    _load = da_sim.get("load_df_sim") if da_sim else None
+    if _load is None or (hasattr(_load, "empty") and _load.empty):
+        return _empty
+
+    # Lookup from prog_parsed["proyectos"]: first occurrence per project name
+    _orig_lkp: dict = {}
+    if prog_parsed and prog_parsed.get("proyectos") is not None:
+        _pp = prog_parsed["proyectos"]
+        if "Proyecto" in _pp.columns:
+            for _, _pr in _pp.iterrows():
+                _pk = str(_pr.get("Proyecto", "") or "").strip()
+                if _pk and _pk not in _orig_lkp:
+                    _orig_lkp[_pk] = _pr
+
+    def _sv(row, col, default=""):
+        if row is None:
+            return default
+        v = row.get(col) if hasattr(row, "get") else None
+        if v is None:
+            return default
+        try:
+            if pd.isna(v):
+                return default
+        except (TypeError, ValueError):
+            pass
+        return v
+
+    # Aggregate per (Proyecto, Línea) from load_df_sim
+    _agg: dict = {}
+    for _, _r in _load.iterrows():
+        _pk = str(_r.get("Proyecto", "") or "").strip()
+        _ln = str(_r.get("Línea", "") or "").strip()
+        if not _pk:
+            continue
+        _key = (_pk, _ln)
+        if _key not in _agg:
+            _agg[_key] = {"sems": [], "horas": 0.0}
+        try:
+            _agg[_key]["sems"].append(int(_r.get("Semana", 0)))
+        except (TypeError, ValueError):
+            pass
+        try:
+            _agg[_key]["horas"] += float(_r.get("Horas proyecto semana", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+
+    # Compute min/max/duration per group
+    _agg_final: dict = {}
+    for _key, _data in _agg.items():
+        _sems = _data["sems"] or [0]
+        _sem_ini = min(_sems)
+        _sem_fin = max(_sems)
+        _agg_final[_key] = {
+            "sem_ini": _sem_ini,
+            "sem_fin": _sem_fin,
+            "dur":     _sem_fin - _sem_ini + 1,
+            "horas":   round(_data["horas"], 1),
+        }
+
+    # Group aggregations by project name
+    _by_proj: dict = {}
+    for (_pk, _ln), _ad in _agg_final.items():
+        if _pk not in _by_proj:
+            _by_proj[_pk] = []
+        _by_proj[_pk].append((_ln, _ad))
+
+    # Seed the used-ID set from all known project names (parsed plan + load) to
+    # prevent _EXC_NN candidates from colliding with pre-existing project IDs.
+    _used_ids: set = set(_orig_lkp.keys())
+    if "Proyecto" in _load.columns:
+        for _v in _load["Proyecto"].dropna():
+            _s = str(_v).strip()
+            if _s:
+                _used_ids.add(_s)
+
+    _output_rows = []
+
+    for _pk, _entries in _by_proj.items():
+        _orig = _orig_lkp.get(_pk)
+        _orig_linea = str(_sv(_orig, "Línea preferente", "")).strip()
+        _orig_entrega_raw = _sv(_orig, "Semana entrega objetivo", "")
+        try:
+            _orig_entrega = int(_orig_entrega_raw)
+        except (TypeError, ValueError):
+            _orig_entrega = None
+        _orig_coment = str(_sv(_orig, "Comentarios", "")).strip()
+
+        if len(_entries) == 1:
+            # Single-line project: update Línea, Semana inicio, Duración, Horas
+            _ln, _ad = _entries[0]
+            _entrega = max(
+                _ad["sem_fin"],
+                _orig_entrega if _orig_entrega is not None else _ad["sem_fin"],
+            )
+            _coment = _orig_coment
+            if str(_ln).strip() != _orig_linea:
+                _note = (
+                    f"[Sim] Línea: {_orig_linea} → {_ln}"
+                    if _orig_linea
+                    else f"[Sim] Línea: {_ln}"
+                )
+                _coment = f"{_coment}; {_note}".lstrip("; ") if _coment else _note
+            _output_rows.append({
+                "Proyecto":                _pk,
+                "Código proyecto/equipo":  _sv(_orig, "Código proyecto/equipo"),
+                "Cliente / referencia":    _sv(_orig, "Cliente / referencia"),
+                "Modelo / familia":        _sv(_orig, "Modelo / familia"),
+                "Equipo / modelo":         _sv(_orig, "Equipo / modelo"),
+                "Cantidad":                _sv(_orig, "Cantidad"),
+                "Nº unidades":             _sv(_orig, "Nº unidades"),
+                "Tipo de proyecto":        _sv(_orig, "Tipo de proyecto", "desconocido"),
+                "Semana inicio mínima":    _ad["sem_ini"],
+                "Semana entrega objetivo": _entrega,
+                "Duración semanas":        _ad["dur"],
+                "Horas totales":           _ad["horas"],
+                "Línea preferente":        _ln,
+                "Líneas alternativas":     _sv(_orig, "Líneas alternativas"),
+                "Estado proyecto":         _sv(_orig, "Estado proyecto"),
+                "Estado materiales":       _sv(_orig, "Estado materiales", "OK"),
+                "Prioridad":               _sv(_orig, "Prioridad"),
+                "Firme/Flexible":          _sv(_orig, "Firme/Flexible"),
+                "Comentarios":             _coment,
+            })
+        else:
+            # Multi-line project (split): primary row keeps original ID; extras get _EXC_NN
+            _primary_ln = None
+            for _ln, _ in _entries:
+                if str(_ln).strip() == _orig_linea:
+                    _primary_ln = _ln
+                    break
+            if _primary_ln is None:
+                _primary_ln = max(_entries, key=lambda x: x[1]["horas"])[0]
+
+            _exc_n = 0
+            for _ln, _ad in _entries:
+                _is_primary = str(_ln).strip() == str(_primary_ln).strip()
+                _entrega = max(
+                    _ad["sem_fin"],
+                    _orig_entrega if _orig_entrega is not None else _ad["sem_fin"],
+                )
+                if _is_primary:
+                    _row_id   = _pk
+                    _cantidad = _sv(_orig, "Cantidad")
+                    _n_uni    = _sv(_orig, "Nº unidades")
+                    _lin_alt  = _sv(_orig, "Líneas alternativas")
+                    _coment   = _orig_coment
+                else:
+                    _exc_n += 1
+                    _cand = f"{_pk}_EXC_{_exc_n:02d}"
+                    while _cand in _used_ids:
+                        _exc_n += 1
+                        _cand = f"{_pk}_EXC_{_exc_n:02d}"
+                    _row_id = _cand
+                    _used_ids.add(_row_id)
+                    _cantidad = ""
+                    _n_uni    = ""
+                    _lin_alt  = ""
+                    _coment   = (
+                        f"Fila simulada derivada de {_pk} "
+                        "por reprogramación de exceso."
+                    )
+                _output_rows.append({
+                    "Proyecto":                _row_id,
+                    "Código proyecto/equipo":  _sv(_orig, "Código proyecto/equipo"),
+                    "Cliente / referencia":    _sv(_orig, "Cliente / referencia"),
+                    "Modelo / familia":        _sv(_orig, "Modelo / familia"),
+                    "Equipo / modelo":         _sv(_orig, "Equipo / modelo"),
+                    "Cantidad":                _cantidad,
+                    "Nº unidades":             _n_uni,
+                    "Tipo de proyecto":        _sv(_orig, "Tipo de proyecto", "desconocido"),
+                    "Semana inicio mínima":    _ad["sem_ini"],
+                    "Semana entrega objetivo": _entrega,
+                    "Duración semanas":        _ad["dur"],
+                    "Horas totales":           _ad["horas"],
+                    "Línea preferente":        _ln,
+                    "Líneas alternativas":     _lin_alt,
+                    "Estado proyecto":         _sv(_orig, "Estado proyecto"),
+                    "Estado materiales":       _sv(_orig, "Estado materiales", "OK"),
+                    "Prioridad":               _sv(_orig, "Prioridad"),
+                    "Firme/Flexible":          _sv(_orig, "Firme/Flexible"),
+                    "Comentarios":             _coment,
+                })
+
+    if not _output_rows:
+        return _empty
+
+    return pd.DataFrame(_output_rows, columns=_RELOAD_COLS)
+
+
 def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) -> bytes:
     """Exporta la simulación activa a Excel. Solo lectura; sin efectos secundarios."""
     from openpyxl.styles import Font as _OxFont
@@ -7258,6 +7459,10 @@ def _build_prog_sim_export_xlsx(da_sim, prog_parsed, prog_result, plant_name) ->
             pd.DataFrame([{
                 "Estado": "Plan original no disponible.",
             }]).to_excel(_writer, sheet_name="PLAN_ORIGINAL", index=False)
+
+        # ── Hoja 6: PROGRAMACION_REAL ────────────────────────────────────────
+        _df_reload = _build_prog_reloadable_df(da_sim, prog_parsed)
+        _df_reload.to_excel(_writer, sheet_name="PROGRAMACION_REAL", index=False)
 
         # ── Formato: cabeceras bold + auto-ancho + congelar fila 1 ───────────
         for _sh_name in _writer.sheets:
