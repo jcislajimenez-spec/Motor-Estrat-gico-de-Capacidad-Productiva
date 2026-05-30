@@ -8887,25 +8887,33 @@ def _simulate_prog_move_excess(
     cap_origen_h: float,
     cap_destinos: dict,
     fracciones=None,
+    modo_residual="secuencial",
 ) -> dict:
     """
     Mueve solo el exceso de carga del proyecto de linea_origen a lineas_destino.
     Origen:  exceso_sem = min(h_proyecto_sem, max(0, total_linea_sem - cap_origen_h))
     Destino: compacta exceso_destino_h usando cap_destino_h sem a sem desde sem_inicio.
     Semanas sin exceso quedan intactas. Conserva total de horas (tol. 0.1 h).
+    modo_residual='paralelo': coloca el exceso en las mismas semanas del conflicto.
     """
     _empty: dict = {
-        "load_df":           pd.DataFrame() if load_df is None else load_df.copy(),
-        "moved_ok":          False,
-        "warning":           "",
-        "exceso_total_h":    0.0,
-        "semanas_afectadas": [],
-        "exceso_h_sem_prom": 0.0,
-        "exceso_por_semana": {},
-        "fracciones":        [],
-        "semanas_destino":   {},
-        "exceso_destino_h":  {},
-        "cap_destinos":      {},
+        "load_df":                  pd.DataFrame() if load_df is None else load_df.copy(),
+        "moved_ok":                 False,
+        "warning":                  "",
+        "modo_residual":            modo_residual,
+        "exceso_total_h":           0.0,
+        "colocado_h":               0.0,
+        "no_absorbido_h":           0.0,
+        "semanas_afectadas":        [],
+        "exceso_h_sem_prom":        0.0,
+        "exceso_por_semana":        {},
+        "colocado_por_semana":      {},
+        "no_absorbido_por_semana":  {},
+        "fracciones":               [],
+        "semanas_destino":          {},
+        "exceso_destino_h":         {},
+        "colocado_destino_h":       {},
+        "cap_destinos":             {},
     }
     for _col in ("Proyecto", "Línea", "Semana", "Horas proyecto semana"):
         if load_df is None or _col not in load_df.columns:
@@ -8977,6 +8985,155 @@ def _simulate_prog_move_excess(
 
     # Plantilla para filas destino (capturar ANTES de modificar origen)
     _fila_tmpl = _sim.loc[_mask_pl].iloc[0].to_dict()
+
+    if modo_residual not in ("secuencial", "paralelo"):
+        _empty["warning"] = f"modo_residual '{modo_residual}' no reconocido."
+        return _empty
+
+    if modo_residual == "paralelo":
+        # ── Modo paralelo: exceso en las mismas semanas del conflicto ─────────
+        _semanas_afectadas_p:       list = []
+        _exceso_por_semana_p:       dict = {}
+        _colocado_por_semana_p:     dict = {}
+        _no_absorbido_por_semana_p: dict = {}
+        _colocado_destino_h_p: dict = {str(_d).strip(): 0.0 for _d in lineas_destino}
+        _semanas_destino_p:    dict = {str(_d).strip(): [] for _d in lineas_destino}
+        _filas_nuevas_p:       list = []
+        _colocado_total        = 0.0
+        _no_absorbido_total    = 0.0
+
+        for _s in _semanas:
+            _mask_s_proj = (
+                (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+                (_sim["Línea"].astype(str).str.strip()    == _linea_s) &
+                (_sim["Semana"].astype(int)               == _s)
+            )
+            _mask_s_linea = (
+                (_sim["Línea"].astype(str).str.strip() == _linea_s) &
+                (_sim["Semana"].astype(int)            == _s)
+            )
+            _h_proj_sem  = float(_sim.loc[_mask_s_proj,  "Horas proyecto semana"].sum())
+            _h_linea_sem = float(_sim.loc[_mask_s_linea, "Horas proyecto semana"].sum())
+            _deficit_s   = max(0.0, _h_linea_sem - cap_origen_h)
+            _exceso_s    = min(_h_proj_sem, _deficit_s)
+
+            if _exceso_s <= 0.001:
+                continue
+
+            _exceso_por_semana_p[_s] = round(_exceso_s, 4)
+
+            # Capacidad libre real en cada destino para la semana _s
+            _disp: dict = {}
+            for _d_p in lineas_destino:
+                _d_ps = str(_d_p).strip()
+                _mask_d_s = (
+                    (_sim["Línea"].astype(str).str.strip() == _d_ps) &
+                    (_sim["Semana"].astype(int)            == _s)
+                )
+                _carga_d_s = float(_sim.loc[_mask_d_s, "Horas proyecto semana"].sum())
+                _disp[_d_ps] = max(0.0, _cap_destinos_norm[_d_ps] - _carga_d_s)
+
+            _total_disp_s = sum(_disp.values())
+            _colocable_s  = round(min(_exceso_s, _total_disp_s), 4)
+
+            if _colocable_s <= 0.001:
+                _no_absorbido_por_semana_p[_s] = round(_exceso_s, 4)
+                _no_absorbido_total += _exceso_s
+                _semanas_afectadas_p.append(_s)
+                continue
+
+            # Distribuir colocable_s entre destinos (proporcional, limitado por disponible)
+            _h_col_s = 0.0
+            for _di_p, _d_p in enumerate(lineas_destino):
+                _d_ps   = str(_d_p).strip()
+                _h_asig = round(_colocable_s * fracciones[_di_p], 4)
+                _h_col  = min(_h_asig, _disp[_d_ps])
+                if _h_col > 0.001:
+                    _nv = dict(_fila_tmpl)
+                    _nv["Línea"]                 = _d_ps
+                    _nv["Semana"]                = _s
+                    _nv["Horas proyecto semana"] = round(_h_col, 4)
+                    _filas_nuevas_p.append(_nv)
+                    if _s not in _semanas_destino_p[_d_ps]:
+                        _semanas_destino_p[_d_ps].append(_s)
+                    _colocado_destino_h_p[_d_ps] = round(
+                        _colocado_destino_h_p[_d_ps] + _h_col, 4
+                    )
+                    _h_col_s += _h_col
+
+            _h_col_s = round(_h_col_s, 4)
+
+            # Reducir origen por exactamente lo colocado en destino
+            if _h_col_s > 0.001 and _h_proj_sem > 0:
+                _fk_p = (_h_proj_sem - _h_col_s) / _h_proj_sem
+                _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
+                    _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _fk_p
+                ).round(4)
+
+            _no_abs_s = max(0.0, round(_exceso_s - _h_col_s, 4))
+            _semanas_afectadas_p.append(_s)
+            _colocado_por_semana_p[_s]     = _h_col_s
+            _no_absorbido_por_semana_p[_s] = _no_abs_s
+            _colocado_total     += _h_col_s
+            _no_absorbido_total += _no_abs_s
+
+        if not _exceso_por_semana_p:
+            _empty["warning"] = (
+                f"Proyecto '{proyecto}' en '{linea_origen}': "
+                f"ninguna semana tiene exceso respecto a {cap_origen_h} h/sem."
+            )
+            return _empty
+
+        if _colocado_total < 0.001:
+            _exc_tot_chk = round(sum(_exceso_por_semana_p.values()), 1)
+            _empty["warning"] = (
+                f"Proyecto '{proyecto}': ninguna línea destino tiene capacidad "
+                f"libre en las semanas conflictivas. El exceso ({_exc_tot_chk} h) "
+                f"permanece en origen."
+            )
+            return _empty
+
+        if _filas_nuevas_p:
+            _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas_p)], ignore_index=True)
+
+        _tot_despues_p = round(
+            float(_sim.loc[
+                _sim["Proyecto"].astype(str).str.strip() == _proj_s,
+                "Horas proyecto semana",
+            ].sum()), 4
+        )
+
+        if abs(_tot_antes - _tot_despues_p) > 0.1:
+            _empty["warning"] = (
+                f"Conservación de horas fallida (paralelo): "
+                f"antes={_tot_antes}, después={_tot_despues_p}."
+            )
+            return _empty
+
+        _exc_tot_p    = round(sum(_exceso_por_semana_p.values()), 1)
+        _col_tot_r    = round(_colocado_total, 1)
+        _no_abs_tot_r = round(_no_absorbido_total, 1)
+        _n_sems_p     = len(_semanas_afectadas_p)
+        _col_dest_r   = {k: round(v, 1) for k, v in _colocado_destino_h_p.items()}
+        return {
+            "load_df":                  _sim,
+            "moved_ok":                 True,
+            "warning":                  "",
+            "modo_residual":            "paralelo",
+            "exceso_total_h":           _exc_tot_p,
+            "colocado_h":               _col_tot_r,
+            "no_absorbido_h":           _no_abs_tot_r,
+            "semanas_afectadas":        _semanas_afectadas_p,
+            "exceso_h_sem_prom":        round(_exc_tot_p / _n_sems_p, 1) if _n_sems_p > 0 else 0.0,
+            "exceso_por_semana":        _exceso_por_semana_p,
+            "colocado_por_semana":      _colocado_por_semana_p,
+            "no_absorbido_por_semana":  _no_absorbido_por_semana_p,
+            "fracciones":               fracciones,
+            "semanas_destino":          _semanas_destino_p,
+            "exceso_destino_h":         _col_dest_r,
+            "colocado_destino_h":       _col_dest_r,
+            "cap_destinos":             _cap_destinos_norm,
+        }
 
     # ── Fase 1: retirar exceso del origen semana a semana ────────────────────
     _semanas_afectadas: list = []
@@ -9088,17 +9245,23 @@ def _simulate_prog_move_excess(
 
     _n_sems = len(_semanas_afectadas)
     return {
-        "load_df":           _sim,
-        "moved_ok":          True,
-        "warning":           "",
-        "exceso_total_h":    _exc_tot,
-        "semanas_afectadas": _semanas_afectadas,
-        "exceso_h_sem_prom": round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
-        "exceso_por_semana": _exceso_por_semana,
-        "fracciones":        fracciones,
-        "semanas_destino":   _semanas_destino,
-        "exceso_destino_h":  _exceso_destino_h_map,
-        "cap_destinos":      _cap_destinos_norm,
+        "load_df":                  _sim,
+        "moved_ok":                 True,
+        "warning":                  "",
+        "modo_residual":            "secuencial",
+        "exceso_total_h":           _exc_tot,
+        "colocado_h":               _exc_tot,
+        "no_absorbido_h":           0.0,
+        "semanas_afectadas":        _semanas_afectadas,
+        "exceso_h_sem_prom":        round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
+        "exceso_por_semana":        _exceso_por_semana,
+        "colocado_por_semana":      _exceso_por_semana,
+        "no_absorbido_por_semana":  {},
+        "fracciones":               fracciones,
+        "semanas_destino":          _semanas_destino,
+        "exceso_destino_h":         _exceso_destino_h_map,
+        "colocado_destino_h":       _exceso_destino_h_map,
+        "cap_destinos":             _cap_destinos_norm,
     }
 
 
@@ -11615,6 +11778,31 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                 "La mejora real se recalcula "
                                                                 "al aplicar la simulación."
                                                             )
+                                                            if (
+                                                                _pr_action
+                                                                == "Reprogramar residual"
+                                                                and _prpre_tipo
+                                                                == "lote_divisible"
+                                                            ):
+                                                                st.radio(
+                                                                    "Modo de residual:",
+                                                                    options=[
+                                                                        "Paralelo",
+                                                                        "Secuencial",
+                                                                    ],
+                                                                    key=f"_pr_modo_res_"
+                                                                    f"{plant_id}_{_pr_san}",
+                                                                    horizontal=True,
+                                                                    help=(
+                                                                        "Paralelo: mueve el exceso "
+                                                                        "a otra línea en las mismas "
+                                                                        "semanas donde aparece el "
+                                                                        "déficit. Secuencial: "
+                                                                        "mantiene el comportamiento "
+                                                                        "actual y coloca el residual "
+                                                                        "en semanas posteriores."
+                                                                    ),
+                                                                )
                                                 else:
                                                     st.caption(
                                                         "No se encontró candidato de movimiento "
@@ -11991,6 +12179,56 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                     f"No se aplica."
                                                                                 )
                                                                             else:
+                                                                                _prb_tipo_gate = "desconocido"
+                                                                                _prb_parsed_gate = st.session_state.get(
+                                                                                    f"_prog_parsed_{plant_id}"
+                                                                                )
+                                                                                if _prb_parsed_gate is not None:
+                                                                                    _prb_df_gate = _prb_parsed_gate.get(
+                                                                                        "proyectos"
+                                                                                    )
+                                                                                    if (
+                                                                                        _prb_df_gate is not None
+                                                                                        and "Proyecto"
+                                                                                        in _prb_df_gate.columns
+                                                                                        and "Tipo de proyecto"
+                                                                                        in _prb_df_gate.columns
+                                                                                    ):
+                                                                                        _prb_mask_gate = (
+                                                                                            _prb_df_gate["Proyecto"]
+                                                                                            .astype(str)
+                                                                                            .str.strip()
+                                                                                            == str(_prb_proj).strip()
+                                                                                        )
+                                                                                        if _prb_mask_gate.any():
+                                                                                            _tp_gate = _prb_df_gate.loc[
+                                                                                                _prb_mask_gate,
+                                                                                                "Tipo de proyecto",
+                                                                                            ].iloc[0]
+                                                                                            if (
+                                                                                                pd.notna(_tp_gate)
+                                                                                                and str(_tp_gate).strip()
+                                                                                            ):
+                                                                                                _prb_tipo_gate = str(
+                                                                                                    _tp_gate
+                                                                                                ).strip()
+                                                                                _prb_modo_residual = (
+                                                                                    "paralelo"
+                                                                                    if (
+                                                                                        _prb_tipo_gate
+                                                                                        == "lote_divisible"
+                                                                                        and str(
+                                                                                            st.session_state.get(
+                                                                                                f"_pr_modo_res_"
+                                                                                                f"{plant_id}"
+                                                                                                f"_{_prb_san_m}",
+                                                                                                "Secuencial",
+                                                                                            )
+                                                                                        ).lower()
+                                                                                        == "paralelo"
+                                                                                    )
+                                                                                    else "secuencial"
+                                                                                )
                                                                                 _prb_excess = (
                                                                                     _simulate_prog_move_excess(
                                                                                         _prb_load_acc,
@@ -11999,6 +12237,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                         _prb_dest_sel,
                                                                                         _cap_orig_h,
                                                                                         _prb_cap_destinos,
+                                                                                        modo_residual=_prb_modo_residual,
                                                                                     )
                                                                                 )
                                                                                 if not _prb_excess["moved_ok"]:
@@ -12008,6 +12247,19 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                     )
                                                                                 else:
                                                                                     _prb_load_acc = _prb_excess["load_df"]
+                                                                                    _prb_no_abs_h = float(
+                                                                                        _prb_excess.get(
+                                                                                            "no_absorbido_h", 0.0
+                                                                                        )
+                                                                                    )
+                                                                                    if _prb_no_abs_h > 0.001:
+                                                                                        st.warning(
+                                                                                            "⚠ Parte del exceso no ha podido "
+                                                                                            "moverse por falta de capacidad "
+                                                                                            "disponible en destino. Esas horas "
+                                                                                            "permanecen en origen y el conflicto "
+                                                                                            "sigue activo en las semanas afectadas."
+                                                                                        )
                                                                                     _prb_new_movs: list = []
                                                                                     _prb_fracs_e  = _prb_excess["fracciones"]
                                                                                     _prb_exc_tot  = _prb_excess["exceso_total_h"]
@@ -12066,31 +12318,55 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                         )
                                                                                         _prb_new_movs.append(
                                                                                             {
-                                                                                                "tipo_accion":       "Mover exceso 2ª ronda",
-                                                                                                "origen":            "segunda_ronda",
-                                                                                                "proyecto":          _prb_proj,
-                                                                                                "linea_origen":      _prb_linea_m,
-                                                                                                "linea_destino":     _prbd,
-                                                                                                "fraccion":          round(_prbd_frac, 4),
-                                                                                                "fraccion_pct":      f"{round(_prbd_frac * 100, 1)} %",
-                                                                                                "exceso_total_h":    round(_prb_exc_tot, 1),
-                                                                                                "exceso_destino_h":  round(
+                                                                                                "tipo_accion":              "Mover exceso 2ª ronda",
+                                                                                                "origen":                   "segunda_ronda",
+                                                                                                "proyecto":                 _prb_proj,
+                                                                                                "linea_origen":             _prb_linea_m,
+                                                                                                "linea_destino":            _prbd,
+                                                                                                "fraccion":                 round(_prbd_frac, 4),
+                                                                                                "fraccion_pct":             f"{round(_prbd_frac * 100, 1)} %",
+                                                                                                "modo_residual":            _prb_modo_residual,
+                                                                                                "exceso_total_h":           round(_prb_exc_tot, 1),
+                                                                                                "colocado_h":               round(
+                                                                                                    float(_prb_excess.get("colocado_h", _prb_exc_tot)),
+                                                                                                    1,
+                                                                                                ),
+                                                                                                "no_absorbido_h":           round(
+                                                                                                    float(_prb_excess.get("no_absorbido_h", 0.0)),
+                                                                                                    1,
+                                                                                                ),
+                                                                                                "exceso_destino_h":         round(
                                                                                                     (_prb_excess.get("exceso_destino_h") or {}).get(
                                                                                                         str(_prbd).strip(), 0.0
                                                                                                     ),
                                                                                                     1,
                                                                                                 ),
-                                                                                                "cap_destino_h":     _prb_cap_destinos.get(
+                                                                                                "colocado_destino_h":       round(
+                                                                                                    (_prb_excess.get("colocado_destino_h") or {}).get(
+                                                                                                        str(_prbd).strip(), 0.0
+                                                                                                    ),
+                                                                                                    1,
+                                                                                                ),
+                                                                                                "cap_destino_h":            _prb_cap_destinos.get(
                                                                                                     str(_prbd).strip(), 0.0
                                                                                                 ),
-                                                                                                "semanas_destino":   (
+                                                                                                "semanas_destino":          (
                                                                                                     _prb_excess.get("semanas_destino") or {}
                                                                                                 ).get(str(_prbd).strip(), []),
-                                                                                                "exceso_h_sem_prom": round(_prb_exc_prom, 1),
-                                                                                                "semanas_afectadas": _prb_exc_sems,
-                                                                                                "tipo_proyecto":     _prb_tipo_proyecto,
-                                                                                                "n_unidades":        _prb_n_unidades,
-                                                                                                "aviso":             "",
+                                                                                                "exceso_h_sem_prom":        round(_prb_exc_prom, 1),
+                                                                                                "semanas_afectadas":        _prb_exc_sems,
+                                                                                                "exceso_por_semana":        _prb_excess.get(
+                                                                                                    "exceso_por_semana", {}
+                                                                                                ),
+                                                                                                "colocado_por_semana":      _prb_excess.get(
+                                                                                                    "colocado_por_semana", {}
+                                                                                                ),
+                                                                                                "no_absorbido_por_semana":  _prb_excess.get(
+                                                                                                    "no_absorbido_por_semana", {}
+                                                                                                ),
+                                                                                                "tipo_proyecto":            _prb_tipo_proyecto,
+                                                                                                "n_unidades":               _prb_n_unidades,
+                                                                                                "aviso":                    "",
                                                                                             }
                                                                                         )
                                                                                     _prb_final_m = (
