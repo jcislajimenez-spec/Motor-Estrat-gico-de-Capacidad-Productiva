@@ -169,7 +169,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_no_excel":           "Sube primero el Excel de programación real.",
         "prog_calc_no_cap":        "No hay capacidad calculada para las líneas planificadas. Revisa la configuración del escenario.",
         "prog_calc_btn":           "Calcular programación real",
-        "prog_calc_caption":       "Reparto uniforme V1: las Horas totales se distribuyen linealmente entre las semanas activas. No optimiza secuencia, materiales ni alternativas de línea.",
+        "prog_calc_caption":       "Reparto uniforme: las Horas totales se distribuyen linealmente entre las semanas activas. No optimiza secuencia, materiales ni alternativas de línea.",
         "prog_kpi_loaded":         "Proyectos cargados",
         "prog_kpi_calculated":     "Proyectos calculados",
         "prog_kpi_sin_linea":      "Sin línea",
@@ -462,7 +462,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_no_excel":           "Upload the real scheduling Excel file first.",
         "prog_calc_no_cap":        "No capacity calculated for the planned lines. Check the scenario configuration.",
         "prog_calc_btn":           "Calculate real scheduling",
-        "prog_calc_caption":       "Uniform distribution V1: Total hours are distributed linearly across active weeks. Does not optimize sequence, materials or alternative lines.",
+        "prog_calc_caption":       "Uniform distribution: Total hours are distributed linearly across active weeks. Does not optimize sequence, materials or alternative lines.",
         "prog_kpi_loaded":         "Projects loaded",
         "prog_kpi_calculated":     "Projects calculated",
         "prog_kpi_sin_linea":      "Without line",
@@ -755,7 +755,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_no_excel":           "Igo lehenik benetako programazioaren Excel fitxategia.",
         "prog_calc_no_cap":        "Ez dago planifikatutako lerroentzat kalkulatutako ahalmenrik. Egiaztatu eszenatokiaren konfigurazioa.",
         "prog_calc_btn":           "Kalkulatu benetako programazioa",
-        "prog_calc_caption":       "V1 banaketa uniformea: Ordu guztiak asteka banatzen dira linealtasunez. Ez du sekuentzia, materialak edo lerro alternatiboak optimizatzen.",
+        "prog_calc_caption":       "Banaketa uniformea: Ordu guztiak asteka banatzen dira linealtasunez. Ez du sekuentzia, materialak edo lerro alternatiboak optimizatzen.",
         "prog_kpi_loaded":         "Kargatutako proiektuak",
         "prog_kpi_calculated":     "Kalkulatutako proiektuak",
         "prog_kpi_sin_linea":      "Lerrorik gabe",
@@ -13842,6 +13842,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             label=str(_gcc_w),
                             width=54,
                         )
+                    _gcc_labels = {"Modelo/familia": "Modelo / familia"}
                     for _gcc_txt, _gcc_width in [
                         ("Proyecto",        115),
                         ("Línea",            62),
@@ -13851,7 +13852,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     ]:
                         if _gcc_txt in _gt_df.columns:
                             _gt_col_cfg[_gcc_txt] = st.column_config.TextColumn(
-                                label=_gcc_txt,
+                                label=_gcc_labels.get(_gcc_txt, _gcc_txt),
                                 width=_gcc_width,
                             )
                     for _gcc_num, _gcc_fmt, _gcc_width in [
@@ -13897,7 +13898,8 @@ if st.session_state.active_tab == "📋 Programación real":
                     )
                 _cdf = _cdf.reset_index(drop=True)
 
-                with st.expander("Diagnóstico avanzado", expanded=False):
+                _aud_sel_current = st.session_state.get(f"prog_audit_section_{plant_id}")
+                with st.expander("Diagnóstico avanzado", expanded=bool(_aud_sel_current)):
                     _aud_c1, _aud_c2, _aud_c3, _aud_c4, _aud_c5 = st.columns(5)
                     with _aud_c1:
                         if st.button("Excluidos", key=f"prog_audit_btn_excl_{plant_id}", use_container_width=True):
@@ -13915,99 +13917,99 @@ if st.session_state.active_tab == "📋 Programación real":
                         if st.button("Conflictos", key=f"prog_audit_btn_conf_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
 
-                # ── Contenido técnico seleccionado ──────────────────────────────────
-                _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
+                    # ── Contenido técnico seleccionado ─────────────────────────────
+                    _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
 
-                if _aud_sel == "excluidos":
-                    st.markdown("##### Proyectos excluidos")
-                    if _n_excl == 0:
-                        st.caption("Sin proyectos excluidos en este cálculo.")
-                    else:
-                        if not _prog_result["sin_linea_df"].empty:
-                            st.markdown(t("prog_sin_linea_header"))
+                    if _aud_sel == "excluidos":
+                        st.markdown("##### Proyectos excluidos")
+                        if _n_excl == 0:
+                            st.caption("Sin proyectos excluidos en este cálculo.")
+                        else:
+                            if not _prog_result["sin_linea_df"].empty:
+                                st.markdown(t("prog_sin_linea_header"))
+                                st.dataframe(
+                                    _prog_round_display_df(_prog_result["sin_linea_df"]),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            if not _prog_result["no_calculables_df"].empty:
+                                st.markdown(t("prog_no_calc_header"))
+                                st.dataframe(
+                                    _prog_round_display_df(_prog_result["no_calculables_df"]),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                    elif _aud_sel == "capacidad":
+                        st.markdown("##### Capacidad por línea")
+                        st.caption(t("prog_intro"))
+                        if _prog_cap_df.empty:
+                            st.warning(t("prog_cap_no_rows"))
+                        else:
+                            st.dataframe(_prog_round_display_df(_prog_cap_df), use_container_width=True, hide_index=True)
+                            st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
+                        for _pcw in _prog_cap_warns:
+                            st.warning(_pcw)
+
+                    elif _aud_sel == "carga":
+                        st.markdown("##### Carga calculada por semana y línea")
+                        if _prog_result["load_df"].empty:
+                            st.caption("Sin proyectos calculados.")
+                        else:
                             st.dataframe(
-                                _prog_round_display_df(_prog_result["sin_linea_df"]),
+                                _prog_round_display_df(_prog_result["load_df"]),
                                 use_container_width=True,
                                 hide_index=True,
                             )
-                        if not _prog_result["no_calculables_df"].empty:
-                            st.markdown(t("prog_no_calc_header"))
-                            st.dataframe(
-                                _prog_round_display_df(_prog_result["no_calculables_df"]),
-                                use_container_width=True,
-                                hide_index=True,
+
+                    elif _aud_sel == "avisos":
+                        st.markdown("##### Avisos de importación y programación")
+                        st.caption(t("prog_calc_caption"))
+                        _avisos_mostrados = False
+                        if _prog_parsed is not None:
+                            if _prog_parsed.get("warnings"):
+                                for _piw_aud in _prog_parsed["warnings"]:
+                                    st.warning(_piw_aud)
+                                _avisos_mostrados = True
+                            _prog_col_orden_aud = [
+                                "Prioridad", "Proyecto", "Código proyecto/equipo",
+                                "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
+                                "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
+                                "Duración semanas", "Horas totales",
+                                "Línea preferente", "Líneas alternativas",
+                                "Estado proyecto", "Estado materiales", "Comentarios",
+                            ]
+                            _df_prev_aud = _prog_parsed["proyectos"][
+                                [c for c in _prog_col_orden_aud if c in _prog_parsed["proyectos"].columns]
+                            ]
+                            st.markdown(f"**{t('prog_preview_expander').format(n=_prog_parsed['n_proyectos'])}**")
+                            st.dataframe(_prog_round_display_df(_df_prev_aud), use_container_width=True, hide_index=True)
+                            st.caption(
+                                f"{_prog_parsed['n_proyectos']} "
+                                f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
+                                f"Planta: {selected_plant_name} · "
+                                f"Escenario activo: {_prog_sc_name}"
                             )
-
-                elif _aud_sel == "capacidad":
-                    st.markdown("##### Capacidad por línea")
-                    st.caption(t("prog_intro"))
-                    if _prog_cap_df.empty:
-                        st.warning(t("prog_cap_no_rows"))
-                    else:
-                        st.dataframe(_prog_round_display_df(_prog_cap_df), use_container_width=True, hide_index=True)
-                        st.caption(t("prog_cap_total").format(total=_fmt_num(_prog_cap_total)))
-                    for _pcw in _prog_cap_warns:
-                        st.warning(_pcw)
-
-                elif _aud_sel == "carga":
-                    st.markdown("##### Carga calculada por semana y línea")
-                    if _prog_result["load_df"].empty:
-                        st.caption("Sin proyectos calculados.")
-                    else:
-                        st.dataframe(
-                            _prog_round_display_df(_prog_result["load_df"]),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-
-                elif _aud_sel == "avisos":
-                    st.markdown("##### Avisos de importación y programación")
-                    st.caption(t("prog_calc_caption"))
-                    _avisos_mostrados = False
-                    if _prog_parsed is not None:
-                        if _prog_parsed.get("warnings"):
-                            for _piw_aud in _prog_parsed["warnings"]:
-                                st.warning(_piw_aud)
                             _avisos_mostrados = True
-                        _prog_col_orden_aud = [
-                            "Prioridad", "Proyecto", "Código proyecto/equipo",
-                            "Cliente / referencia", "Modelo / familia", "Equipo / modelo",
-                            "Cantidad", "Semana inicio mínima", "Semana entrega objetivo",
-                            "Duración semanas", "Horas totales",
-                            "Línea preferente", "Líneas alternativas",
-                            "Estado proyecto", "Estado materiales", "Comentarios",
-                        ]
-                        _df_prev_aud = _prog_parsed["proyectos"][
-                            [c for c in _prog_col_orden_aud if c in _prog_parsed["proyectos"].columns]
-                        ]
-                        st.markdown(f"**{t('prog_preview_expander').format(n=_prog_parsed['n_proyectos'])}**")
-                        st.dataframe(_prog_round_display_df(_df_prev_aud), use_container_width=True, hide_index=True)
-                        st.caption(
-                            f"{_prog_parsed['n_proyectos']} "
-                            f"proyecto{'s' if _prog_parsed['n_proyectos'] != 1 else ''} · "
-                            f"Planta: {selected_plant_name} · "
-                            f"Escenario activo: {_prog_sc_name}"
-                        )
-                        _avisos_mostrados = True
-                    if _prog_result["warnings"]:
-                        for _pw_aud in _prog_result["warnings"]:
-                            st.warning(_pw_aud)
-                        _avisos_mostrados = True
-                    if not _avisos_mostrados:
-                        st.caption("Sin avisos de importación ni de programación.")
+                        if _prog_result["warnings"]:
+                            for _pw_aud in _prog_result["warnings"]:
+                                st.warning(_pw_aud)
+                            _avisos_mostrados = True
+                        if not _avisos_mostrados:
+                            st.caption("Sin avisos de importación ni de programación.")
 
-                elif _aud_sel == "conflictos":
-                    st.markdown("##### Conflictos completos")
-                    if _prog_result["conflict_df"].empty:
-                        st.success(t("prog_no_conflicts"))
-                    else:
-                        st.caption(t("prog_conflicts_reading"))
-                        st.dataframe(
-                            _prog_round_display_df(_cdf),
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(400, max(200, len(_cdf) * 36 + 56)),
-                        )
+                    elif _aud_sel == "conflictos":
+                        st.markdown("##### Conflictos completos")
+                        if _prog_result["conflict_df"].empty:
+                            st.success(t("prog_no_conflicts"))
+                        else:
+                            st.caption(t("prog_conflicts_reading"))
+                            st.dataframe(
+                                _prog_round_display_df(_cdf),
+                                use_container_width=True,
+                                hide_index=True,
+                                height=min(400, max(200, len(_cdf) * 36 + 56)),
+                            )
 
             # ── Planificación V2 avanzada ────────────────────────────────────────────
             with st.expander("Líneas compatibles adicionales", expanded=False):
@@ -14156,8 +14158,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _v2_excl_cols = [c for c in [
                                     "proyecto_id", "estado", "motivo",
                                 ] if c in _v2_excl_df.columns]
-                                st.dataframe(_v2_excl_df[_v2_excl_cols],
-                                             use_container_width=True, hide_index=True)
+                                st.dataframe(
+                                    _v2_excl_df[_v2_excl_cols],
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    column_config={
+                                        "proyecto_id": st.column_config.TextColumn("Proyecto"),
+                                        "estado":      st.column_config.TextColumn("Estado"),
+                                        "motivo":      st.column_config.TextColumn("Motivo"),
+                                    },
+                                )
 
                         _v2_all_warns = (
                             _prog_v2_warns_ss
