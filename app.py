@@ -13898,9 +13898,11 @@ if st.session_state.active_tab == "📋 Programación real":
                     )
                 _cdf = _cdf.reset_index(drop=True)
 
+                if st.session_state.get(f"prog_audit_section_{plant_id}") == "conflictos":
+                    st.session_state.pop(f"prog_audit_section_{plant_id}", None)
                 _aud_sel_current = st.session_state.get(f"prog_audit_section_{plant_id}")
                 with st.expander("Diagnóstico avanzado", expanded=bool(_aud_sel_current)):
-                    _aud_c1, _aud_c2, _aud_c3, _aud_c4, _aud_c5 = st.columns(5)
+                    _aud_c1, _aud_c2, _aud_c3, _aud_c4 = st.columns(4)
                     with _aud_c1:
                         if st.button("Excluidos", key=f"prog_audit_btn_excl_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "excluidos"
@@ -13913,9 +13915,6 @@ if st.session_state.active_tab == "📋 Programación real":
                     with _aud_c4:
                         if st.button("Proyectos cargados / avisos", key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
-                    with _aud_c5:
-                        if st.button("Conflictos", key=f"prog_audit_btn_conf_{plant_id}", use_container_width=True):
-                            st.session_state[f"prog_audit_section_{plant_id}"] = "conflictos"
 
                     # ── Contenido técnico seleccionado ─────────────────────────────
                     _aud_sel = st.session_state.get(f"prog_audit_section_{plant_id}")
@@ -13997,19 +13996,6 @@ if st.session_state.active_tab == "📋 Programación real":
                             _avisos_mostrados = True
                         if not _avisos_mostrados:
                             st.caption("Sin avisos de importación ni de programación.")
-
-                    elif _aud_sel == "conflictos":
-                        st.markdown("##### Conflictos completos")
-                        if _prog_result["conflict_df"].empty:
-                            st.success(t("prog_no_conflicts"))
-                        else:
-                            st.caption(t("prog_conflicts_reading"))
-                            st.dataframe(
-                                _prog_round_display_df(_cdf),
-                                use_container_width=True,
-                                hide_index=True,
-                                height=min(400, max(200, len(_cdf) * 36 + 56)),
-                            )
 
             # ── Planificación V2 avanzada ────────────────────────────────────────────
             with st.expander("Líneas compatibles adicionales", expanded=False):
