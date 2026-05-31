@@ -10077,6 +10077,30 @@ if st.session_state.active_tab == "📋 Programación real":
                             use_container_width=True,
                             config={"displayModeBar": False},
                         )
+                        st.markdown(
+                            "<div style='display:flex;gap:1.2rem;align-items:center;"
+                            "font-size:0.76rem;color:inherit;margin-top:-4px;"
+                            "padding-left:2px;flex-wrap:wrap;'>"
+                            "<span style='display:flex;align-items:center;gap:4px;'>"
+                            "<span style='display:inline-block;width:12px;height:12px;"
+                            "border-radius:2px;background:#2ca02c;flex-shrink:0;'></span>"
+                            "Sin déficit</span>"
+                            "<span style='display:flex;align-items:center;gap:4px;'>"
+                            "<span style='display:inline-block;width:12px;height:12px;"
+                            "border-radius:2px;background:#ffffb2;"
+                            "border:1px solid #bbb;flex-shrink:0;'></span>"
+                            "Déficit bajo</span>"
+                            "<span style='display:flex;align-items:center;gap:4px;'>"
+                            "<span style='display:inline-block;width:12px;height:12px;"
+                            "border-radius:2px;background:#fd8d3c;flex-shrink:0;'></span>"
+                            "Déficit medio</span>"
+                            "<span style='display:flex;align-items:center;gap:4px;'>"
+                            "<span style='display:inline-block;width:12px;height:12px;"
+                            "border-radius:2px;background:#d62728;flex-shrink:0;'></span>"
+                            "Déficit alto</span>"
+                            "</div>",
+                            unsafe_allow_html=True,
+                        )
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
                 # ── Acciones simulables: Mover línea | Ampliar semanas ──────────────────
