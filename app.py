@@ -9763,9 +9763,12 @@ if st.session_state.active_tab == "📋 Programación real":
                 _kc1.metric(t("prog_kpi_excluded"),       _n_excl)
                 _kc2.metric(t("prog_kpi_conflict_weeks"), _pkpis["n_conflict_weeks"])
                 _kc3.metric(t("prog_kpi_first_critical"), str(_pkpis["first_critical"]))
-                _td_raw = _pkpis.get("total_deficit")
-                _td_ok  = _td_raw is not None and str(_td_raw).strip() not in ("", "nan", "None")
-                _kc4.metric(t("prog_kpi_total_deficit"), f"{_fmt_num(_td_raw)} h" if _td_ok else "—")
+                try:
+                    _td_val  = float(_pkpis.get("total_deficit", 0.0))
+                    _td_disp = f"{_td_val:.1f} h" if pd.notna(_td_val) else "— h"
+                except (TypeError, ValueError):
+                    _td_disp = "— h"
+                _kc4.metric(t("prog_kpi_total_deficit"), _td_disp)
                 _kc5.metric(t("prog_kpi_most_tense"),     str(_pkpis["most_tense"]))
 
                 def _prog_round_display_df(_df):
@@ -10030,7 +10033,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                         # 8. Hovertemplate con todos los campos disponibles
                         _hm_hover = (
-                            "<b>Sem %{y} · %{x}</b><br>"
+                            "<b>%{y} · %{x}</b><br>"
                             "Carga: %{customdata[0]:.1f} h<br>"
                             "Capacidad: %{customdata[1]:.1f} h<br>"
                             "Déficit: %{customdata[2]:.1f} h<br>"
@@ -10047,7 +10050,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         _hm_fig = go.Figure(data=[go.Heatmap(
                             z=_hm_z,
                             x=[str(_l) for _l in _hm_lines],
-                            y=[str(_s) for _s in _hm_sems],
+                            y=[f"S{_s}" for _s in _hm_sems],
                             text=_hm_text,
                             texttemplate="%{text}",
                             textfont={"size": 11},
@@ -10055,6 +10058,8 @@ if st.session_state.active_tab == "📋 Programación real":
                             zmin=0.0,
                             zmax=_hm_zmax,
                             showscale=False,
+                            xgap=2,
+                            ygap=2,
                             customdata=_hm_custom,
                             hovertemplate=_hm_hover,
                         )])
