@@ -9914,65 +9914,163 @@ if st.session_state.active_tab == "📋 Programación real":
 
                 _da_btn_clicked = False
                 with _da_main_col:
-                    # ── Qué se rompe: conflictos enriquecidos (8 filas) ───────
+                    # ── Qué se rompe: heatmap de conflictos ──────────────────
                     _qsr_cdf = _prog_result["conflict_df"]
                     if not _qsr_cdf.empty:
                         st.markdown("#### Qué se rompe")
-                        _qsr_df = _qsr_cdf.copy()
-                        if "Capacidad h" in _qsr_df.columns and "Carga h" in _qsr_df.columns:
-                            _qsr_df["Saturación %"] = _qsr_df.apply(
-                                lambda _r: round(_r["Carga h"] / _r["Capacidad h"] * 100, 1)
-                                if _r["Capacidad h"] > 0 else 0.0,
-                                axis=1,
-                            )
                         _qsr_load = _prog_result.get("load_df", pd.DataFrame())
-                        if (not _qsr_load.empty
-                                and "Modelo / familia" in _qsr_load.columns
-                                and "Equipo / modelo" in _qsr_load.columns):
-                            _qsr_agg = (
-                                _qsr_load.groupby(["Semana", "Línea"], as_index=False)
-                                .apply(lambda _g: pd.Series({
-                                    "Modelos implicados": ", ".join(sorted(set(
-                                        str(_v) for _v in _g["Modelo / familia"]
-                                        if str(_v) not in ("", "nan", "None")
-                                    ))) or "—",
-                                    "Equipos implicados": ", ".join(sorted(set(
-                                        str(_v) for _v in _g["Equipo / modelo"]
-                                        if str(_v) not in ("", "nan", "None")
-                                    ))) or "—",
-                                }))
-                            )
-                            _qsr_df = _qsr_df.merge(_qsr_agg, on=["Semana", "Línea"], how="left")
-                            _qsr_df["Modelos implicados"] = _qsr_df["Modelos implicados"].fillna("—")
-                            _qsr_df["Equipos implicados"] = _qsr_df["Equipos implicados"].fillna("—")
-                        elif not _qsr_load.empty and "Modelo / familia" in _qsr_load.columns:
-                            _qsr_agg = (
-                                _qsr_load.groupby(["Semana", "Línea"], as_index=False)
-                                .apply(lambda _g: pd.Series({
-                                    "Modelos implicados": ", ".join(sorted(set(
-                                        str(_v) for _v in _g["Modelo / familia"]
-                                        if str(_v) not in ("", "nan", "None")
-                                    ))) or "—",
-                                }))
-                            )
-                            _qsr_df = _qsr_df.merge(_qsr_agg, on=["Semana", "Línea"], how="left")
-                            _qsr_df["Modelos implicados"] = _qsr_df["Modelos implicados"].fillna("—")
-                        _qsr_sort = "Déficit h" if "Déficit h" in _qsr_df.columns else "Semana"
-                        _qsr_disp = (
-                            _qsr_df
-                            .sort_values(_qsr_sort, ascending=(_qsr_sort != "Déficit h"))
-                            .reset_index(drop=True)
+                        _qsr_load_has_week_line = (
+                            not _qsr_load.empty
+                            and "Semana" in _qsr_load.columns
+                            and "Línea" in _qsr_load.columns
                         )
-                        _qsr_cols = [c for c in [
-                            "Semana", "Proyectos implicados",
-                            "Modelos implicados", "Equipos implicados",
-                            "Línea", "Déficit h", "Carga h", "Capacidad h", "Saturación %",
-                        ] if c in _qsr_disp.columns]
-                        st.dataframe(
-                            _prog_round_display_df(_qsr_disp[_qsr_cols]),
+
+                        # 1. Lookup capacidad por línea desde _prog_cap_df
+                        _hm_cap_lkp: dict = {}
+                        if (not _prog_cap_df.empty
+                                and "Línea" in _prog_cap_df.columns
+                                and "Capacidad h/sem" in _prog_cap_df.columns):
+                            for _, _hpr in _prog_cap_df.iterrows():
+                                try:
+                                    _hm_cap_lkp[str(_hpr["Línea"])] = float(_hpr["Capacidad h/sem"])
+                                except (ValueError, TypeError):
+                                    pass
+
+                        # 2. Agrupación auxiliar desde load_df (carga para celdas sin conflicto)
+                        _hm_base_lkp: dict = {}
+                        if (_qsr_load_has_week_line
+                                and "Horas proyecto semana" in _qsr_load.columns):
+                            _hm_base_agg = (
+                                _qsr_load.groupby(["Semana", "Línea"], as_index=False)
+                                ["Horas proyecto semana"].sum()
+                            )
+                            for _, _br in _hm_base_agg.iterrows():
+                                _bk = (int(_br["Semana"]), str(_br["Línea"]))
+                                _hm_base_lkp[_bk] = {
+                                    "carga": round(float(_br["Horas proyecto semana"]), 1),
+                                    "cap":   round(float(_hm_cap_lkp.get(str(_br["Línea"]), 0.0)), 1),
+                                }
+
+                        # 3. Lookup oficial desde conflict_df (fuente de verdad para celdas con déficit)
+                        _hm_cfl_lkp: dict = {}
+                        for _, _cr in _qsr_cdf.iterrows():
+                            _hm_cfl_lkp[(int(_cr["Semana"]), str(_cr["Línea"]))] = _cr
+
+                        # 4. Lookups de modelos y equipos desde load_df
+                        _hm_mdl_lkp: dict = {}
+                        _hm_eqp_lkp: dict = {}
+                        _hm_has_eqp = False
+                        if _qsr_load_has_week_line:
+                            _hm_has_mdl_col = "Modelo / familia" in _qsr_load.columns
+                            _hm_has_eqp_col = "Equipo / modelo" in _qsr_load.columns
+                            _hm_has_eqp = _hm_has_eqp_col
+                            if _hm_has_mdl_col or _hm_has_eqp_col:
+                                for (_sg, _lg), _grp in _qsr_load.groupby(["Semana", "Línea"]):
+                                    _gk = (int(_sg), str(_lg))
+                                    if _hm_has_mdl_col:
+                                        _hm_mdl_lkp[_gk] = ", ".join(sorted(set(
+                                            str(_v) for _v in _grp["Modelo / familia"]
+                                            if str(_v) not in ("", "nan", "None")
+                                        ))) or "—"
+                                    if _hm_has_eqp_col:
+                                        _hm_eqp_lkp[_gk] = ", ".join(sorted(set(
+                                            str(_v) for _v in _grp["Equipo / modelo"]
+                                            if str(_v) not in ("", "nan", "None")
+                                        ))) or "—"
+
+                        # 5. Semanas y líneas relevantes (unión conflict_df + load_df)
+                        _hm_sems = sorted(set(
+                            list(_qsr_cdf["Semana"].astype(int))
+                            + ([int(_s) for _s in _qsr_load["Semana"].dropna()]
+                               if _qsr_load_has_week_line else [])
+                        ))
+                        _hm_lines = sorted(set(
+                            list(_qsr_cdf["Línea"].astype(str))
+                            + ([str(_l) for _l in _qsr_load["Línea"].dropna()]
+                               if _qsr_load_has_week_line else [])
+                        ))
+
+                        # 6. Matrices z / text / customdata para go.Heatmap
+                        _hm_z, _hm_text, _hm_custom = [], [], []
+                        for _sem in _hm_sems:
+                            _row_z, _row_t, _row_c = [], [], []
+                            for _lin in _hm_lines:
+                                _ck = (int(_sem), str(_lin))
+                                if _ck in _hm_cfl_lkp:
+                                    _cr   = _hm_cfl_lkp[_ck]
+                                    _def  = round(float(_cr.get("Déficit h",   0.0) or 0.0), 1)
+                                    _carg = round(float(_cr.get("Carga h",     0.0) or 0.0), 1)
+                                    _cap  = round(float(_cr.get("Capacidad h", 0.0) or 0.0), 1)
+                                    _proy = str(_cr.get("Proyectos implicados", "—") or "—")
+                                else:
+                                    _base = _hm_base_lkp.get(_ck, {})
+                                    _def  = 0.0
+                                    _carg = _base.get("carga", 0.0)
+                                    _cap  = _base.get("cap", round(float(_hm_cap_lkp.get(str(_lin), 0.0)), 1))
+                                    _proy = "—"
+                                _sat = round(_carg / _cap * 100, 1) if _cap > 0 else 0.0
+                                _mdl = _hm_mdl_lkp.get(_ck, "—")
+                                _eqp = _hm_eqp_lkp.get(_ck, "—")
+                                _row_z.append(_def)
+                                _row_t.append(f"{_def:.1f}" if _def > 0 else "")
+                                _row_c.append([_carg, _cap, _def, _sat, _proy, _mdl, _eqp])
+                            _hm_z.append(_row_z)
+                            _hm_text.append(_row_t)
+                            _hm_custom.append(_row_c)
+
+                        # 7. Colorscale: verde (0) → amarillo → naranja → rojo
+                        _hm_flat = [_v for _row in _hm_z for _v in _row]
+                        _hm_zmax = max((_v for _v in _hm_flat if _v > 0), default=1.0)
+                        _hm_cs = [
+                            [0.0,    "#2ca02c"],
+                            [0.0001, "#ffffb2"],
+                            [0.35,   "#fd8d3c"],
+                            [1.0,    "#d62728"],
+                        ]
+
+                        # 8. Hovertemplate con todos los campos disponibles
+                        _hm_hover = (
+                            "<b>Sem %{y} · %{x}</b><br>"
+                            "Carga: %{customdata[0]:.1f} h<br>"
+                            "Capacidad: %{customdata[1]:.1f} h<br>"
+                            "Déficit: %{customdata[2]:.1f} h<br>"
+                            "Saturación: %{customdata[3]:.1f}%<br>"
+                            "Proyectos: %{customdata[4]}<br>"
+                            "Modelos: %{customdata[5]}"
+                        )
+                        if _hm_has_eqp:
+                            _hm_hover += "<br>Equipos: %{customdata[6]}"
+                        _hm_hover += "<extra></extra>"
+
+                        # 9. Figura y render
+                        _hm_height = min(max(240, len(_hm_sems) * 24 + 80), 480)
+                        _hm_fig = go.Figure(data=[go.Heatmap(
+                            z=_hm_z,
+                            x=[str(_l) for _l in _hm_lines],
+                            y=[str(_s) for _s in _hm_sems],
+                            text=_hm_text,
+                            texttemplate="%{text}",
+                            textfont={"size": 11},
+                            colorscale=_hm_cs,
+                            zmin=0.0,
+                            zmax=_hm_zmax,
+                            showscale=False,
+                            customdata=_hm_custom,
+                            hovertemplate=_hm_hover,
+                        )])
+                        _hm_fig.update_layout(
+                            height=_hm_height,
+                            margin=dict(l=44, r=8, t=30, b=36),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            xaxis=dict(side="top", tickangle=-30),
+                            yaxis=dict(autorange="reversed"),
+                            font=dict(size=11),
+                        )
+                        st.plotly_chart(
+                            _hm_fig,
                             use_container_width=True,
-                            hide_index=True,
-                            height=330,
+                            config={"displayModeBar": False},
                         )
                 # ── fin 14D.1A ─────────────────────────────────────────────────────────
 
