@@ -11886,7 +11886,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                 _prpre_tipo = str(
                                                                     _prpre_v
                                                                 ).strip()
-                                                if _prpre_tipo == "equipo_unico":
+                                                _pr_action_ss = st.session_state.get(
+                                                    f"_pr_action_{plant_id}_{_pr_san}", ""
+                                                )
+                                                if (
+                                                    _prpre_tipo == "equipo_unico"
+                                                    and _pr_action_ss not in {
+                                                        "Reprogramar residual",
+                                                        "Mover exceso a otra línea",
+                                                    }
+                                                ):
                                                     st.warning(
                                                         "⚠ Equipo único: la opción recomendada "
                                                         "es **Ampliar semanas**. Reprogramar "
@@ -11920,28 +11929,6 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 key=f"_pr_action_{plant_id}_{_pr_san}",
                                                 horizontal=True,
                                             )
-
-                                            # Caption de jerarquía por tipo — Fase 2
-                                            if _pr_proj_cands:
-                                                if _prpre_tipo == "lote_divisible":
-                                                    st.caption(
-                                                        "✅ Reprogramar residual puede tener "
-                                                        "sentido si el proyecto representa "
-                                                        "unidades separables."
-                                                    )
-                                                elif _prpre_tipo == "fase_transferible":
-                                                    st.caption(
-                                                        "⚠ Verificar antes: usar Reprogramar "
-                                                        "residual solo si la fase pendiente "
-                                                        "puede trasladarse físicamente a "
-                                                        "otra línea."
-                                                    )
-                                                elif _prpre_tipo == "desconocido":
-                                                    st.caption(
-                                                        "⚠ Validar tipo de proyecto antes de "
-                                                        "reprogramar residual; no se debe "
-                                                        "asumir divisibilidad."
-                                                    )
 
                                             if _pr_action == "Ampliar semanas en destino":
                                                 if (
@@ -12071,6 +12058,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         "No se encontró candidato de movimiento "
                                                         "para este proyecto."
                                                     )
+
+                                            elif _pr_action == "No actuar":
+                                                st.caption(
+                                                    f"Sin ajuste: el déficit de "
+                                                    f"{_pr_def_str(_pr_rows)} "
+                                                    f"queda pendiente de revisión manual."
+                                                )
 
                                             _pr_chk = st.checkbox(
                                                 "Aplicar este ajuste",
