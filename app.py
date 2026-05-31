@@ -9964,9 +9964,9 @@ if st.session_state.active_tab == "📋 Programación real":
                             .reset_index(drop=True)
                         )
                         _qsr_cols = [c for c in [
-                            "Semana", "Línea", "Déficit h", "Carga h", "Capacidad h",
-                            "Saturación %", "Proyectos implicados",
+                            "Semana", "Proyectos implicados",
                             "Modelos implicados", "Equipos implicados",
+                            "Línea", "Déficit h", "Carga h", "Capacidad h", "Saturación %",
                         ] if c in _qsr_disp.columns]
                         st.dataframe(
                             _prog_round_display_df(_qsr_disp[_qsr_cols]),
@@ -11515,6 +11515,36 @@ if st.session_state.active_tab == "📋 Programación real":
                                     if "Aplicar" in _dat_df.columns:
                                         _dat_df = _dat_df.drop(columns=["Aplicar"])
                                     _dat_df.insert(0, "Aplicar", False)
+                                    _as_pss = st.session_state.get(f"_prog_parsed_{plant_id}")
+                                    _as_mdl_sets: dict = {}
+                                    if _as_pss is not None:
+                                        _as_proy_df_m = _as_pss.get("proyectos")
+                                        if _as_proy_df_m is not None:
+                                            _as_mdl_col = next(
+                                                (c for c in [
+                                                    "Modelo / familia", "Modelo/familia",
+                                                    "Equipo / modelo", "Equipo/modelo",
+                                                ] if c in _as_proy_df_m.columns),
+                                                None,
+                                            )
+                                            if _as_mdl_col:
+                                                for _, _as_mr in _as_proy_df_m.iterrows():
+                                                    _as_mpn = str(_as_mr.get("Proyecto", "") or "").strip()
+                                                    _as_mv  = _as_mr.get(_as_mdl_col)
+                                                    if _as_mpn and pd.notna(_as_mv) and str(_as_mv).strip():
+                                                        _as_mdl_sets.setdefault(_as_mpn, set()).add(str(_as_mv).strip())
+                                    _as_mdl_por_proj: dict = {
+                                        _pn: " / ".join(sorted(_ms))
+                                        for _pn, _ms in _as_mdl_sets.items()
+                                    }
+                                    if (
+                                        "Proyecto" in _dat_df.columns
+                                        and "Modelo" not in _dat_df.columns
+                                    ):
+                                        _dat_df.insert(
+                                            2, "Modelo",
+                                            _dat_df["Proyecto"].map(_as_mdl_por_proj).fillna(""),
+                                        )
                                     _dat_h   = 255
                                     _ext_ver = st.session_state.get(
                                         f"_prog_extend_editor_ver_{plant_id}", 0
@@ -11535,6 +11565,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 "Estado", width="small"
+                                            ),
+                                            "Modelo": st.column_config.TextColumn(
+                                                "Modelo", width="small"
                                             ),
                                             "Proyecto": st.column_config.TextColumn("Proyecto"),
                                             "Línea": st.column_config.TextColumn(
@@ -13432,6 +13465,34 @@ if st.session_state.active_tab == "📋 Programación real":
                                     })
                             _da_res_df = pd.DataFrame(_da_res_rows)
                             if not _da_res_df.empty:
+                                _da_sim_pss = st.session_state.get(f"_prog_parsed_{plant_id}")
+                                _da_sim_mdl_sets: dict = {}
+                                if _da_sim_pss is not None:
+                                    _da_sim_proy_m = _da_sim_pss.get("proyectos")
+                                    if _da_sim_proy_m is not None:
+                                        _da_sim_mdl_col = next(
+                                            (c for c in [
+                                                "Modelo / familia", "Modelo/familia",
+                                                "Equipo / modelo", "Equipo/modelo",
+                                            ] if c in _da_sim_proy_m.columns),
+                                            None,
+                                        )
+                                        if _da_sim_mdl_col:
+                                            for _, _da_sim_mr in _da_sim_proy_m.iterrows():
+                                                _da_sim_mpn = str(_da_sim_mr.get("Proyecto", "") or "").strip()
+                                                _da_sim_mv  = _da_sim_mr.get(_da_sim_mdl_col)
+                                                if _da_sim_mpn and pd.notna(_da_sim_mv) and str(_da_sim_mv).strip():
+                                                    _da_sim_mdl_sets.setdefault(_da_sim_mpn, set()).add(str(_da_sim_mv).strip())
+                                _da_sim_mdl_por_proj: dict = {
+                                    _pn: " / ".join(sorted(_ms))
+                                    for _pn, _ms in _da_sim_mdl_sets.items()
+                                }
+                                if "Proyecto" in _da_res_df.columns:
+                                    _da_res_df.insert(
+                                        _da_res_df.columns.get_loc("Proyecto") + 1,
+                                        "Modelo",
+                                        _da_res_df["Proyecto"].map(_da_sim_mdl_por_proj).fillna(""),
+                                    )
                                 st.dataframe(
                                     _prog_round_display_df(_da_res_df),
                                     use_container_width=True,
