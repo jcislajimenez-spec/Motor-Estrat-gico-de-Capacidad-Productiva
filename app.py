@@ -205,15 +205,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "prog_chart_no_capacity":         "No hay capacidad disponible para construir el gráfico.",
         "prog_alt_btn":           "Calcular alternativas",
         "prog_alt_header":        "Alternativas candidatas",
-        "prog_alt_caption":       "Simulación individual V1: cada candidata evalúa mover un proyecto de forma aislada, sin combinar movimientos. No aplica cambios automáticamente.",
+        "prog_alt_caption":       "Simulación individual: cada candidata evalúa mover un proyecto de forma aislada, sin combinar movimientos. No aplica cambios automáticamente.",
         "prog_alt_no_conflicts":  "Sin conflictos activos; no se calculan alternativas de línea.",
         "prog_alt_no_alts_found": "No se encontraron alternativas que mejoren el déficit global con las líneas alternativas declaradas.",
         "prog_alt_tech_expander": "Alternativas descartadas / avisos ({n})",
         "prog_alt_warn_model":    "Modelo del proyecto distinto del modelo asignado de la línea candidata. Capacidad puede no ser representativa.",
-        "prog_alt_warn_v2_cap":   "Alternativa V2 — línea no activa en el escenario actual; capacidad estimada. Usar solo como referencia.",
+        "prog_alt_warn_v2_cap":   "Línea compatible no incluida en el escenario activo; capacidad estimada. Validar antes de aplicar.",
         "prog_alt_incompat_model": "Modelo/familia no compatible con la línea según tabla de compatibilidad.",
         "prog_alt_recalc_cap":     "Cap. recalculada para {mdl}: {cap} h/sem (escenario usa modelo distinto).",
-        "prog_alt_v2_stale_warn":  "V2 puede no estar actualizado respecto al plan actual. Recalcula V2 para usar capacidades recalculadas en alternativas.",
+        "prog_alt_v2_stale_warn":  "Las líneas compatibles adicionales pueden no estar actualizadas respecto al plan activo. Recalcula para actualizar capacidades.",
         "prog_alt_apply_btn":      "Aplicar alternativa seleccionada",
         "prog_alt_applied_title":  "Simulación aplicada — no modifica el plan real",
         "prog_alt_applied_warn":   "Esta simulación NO modifica el plan real. Pulsa 'Descartar' para volver al estado base.",
@@ -10912,6 +10912,27 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             _da_f41_sem_ent[_f41_pn] = int(_f41_sv)
                                                     except (ValueError, TypeError):
                                                         pass
+                                        _da_mdl_sets: dict = {}
+                                        if _da_f41_pss is not None:
+                                            _da_f41_proy_df_m = _da_f41_pss.get("proyectos")
+                                            if _da_f41_proy_df_m is not None:
+                                                _da_mdl_col = next(
+                                                    (c for c in [
+                                                        "Modelo / familia", "Modelo/familia",
+                                                        "Equipo / modelo", "Equipo/modelo",
+                                                    ] if c in _da_f41_proy_df_m.columns),
+                                                    None,
+                                                )
+                                                if _da_mdl_col:
+                                                    for _, _da_mr in _da_f41_proy_df_m.iterrows():
+                                                        _da_mpn = str(_da_mr.get("Proyecto", "") or "").strip()
+                                                        _da_mv  = _da_mr.get(_da_mdl_col)
+                                                        if _da_mpn and pd.notna(_da_mv) and str(_da_mv).strip():
+                                                            _da_mdl_sets.setdefault(_da_mpn, set()).add(str(_da_mv).strip())
+                                        _da_mdl_por_proj: dict = {
+                                            _pn: " / ".join(sorted(_ms))
+                                            for _pn, _ms in _da_mdl_sets.items()
+                                        }
                                         _da_f41_info: dict = {}
                                         if not _da_load_df_src.empty:
                                             for (_f41p, _f41l), _f41g in _da_load_df_src.groupby(["Proyecto", "Línea"]):
@@ -11021,8 +11042,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         else:
                                             for _f41c in ("Tipo solución", "Fin destino sim.", "Impacto entrega", "Aviso destino"):
                                                 _da_df_c[_f41c] = ""
+                                        _da_df_c["Modelo"] = _da_df_c["Proyecto"].map(_da_mdl_por_proj).fillna("")
                                         _da_edit_cols = [c for c in [
-                                            "Aplicar", "Estado", "Proyecto",
+                                            "Aplicar", "Estado", "Modelo", "Proyecto",
                                             "Movimiento", "Resultado", "Origen",
                                             "Carga origen prom. h/sem", "Cap. origen h/sem",
                                             "Cap. destino h/sem", "Margen si 100% h/sem",
@@ -11034,6 +11056,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 label="Estado", width=110,
+                                            ),
+                                            "Modelo": st.column_config.TextColumn(
+                                                label="Modelo", width=110,
                                             ),
                                             "Movimiento": st.column_config.TextColumn(
                                                 label="Movimiento", width=160,
@@ -11692,6 +11717,31 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 f"Línea{'s' if len(_lns) > 1 else ''}: "
                                                 f"{', '.join(_lns)}"
                                             )
+                                        _prh_pss = st.session_state.get(f"_prog_parsed_{plant_id}")
+                                        if _prh_pss is not None:
+                                            _prh_proy_df = _prh_pss.get("proyectos")
+                                            if _prh_proy_df is not None:
+                                                _prh_mdl_col = next(
+                                                    (c for c in [
+                                                        "Modelo / familia", "Modelo/familia",
+                                                        "Equipo / modelo", "Equipo/modelo",
+                                                    ] if c in _prh_proy_df.columns),
+                                                    None,
+                                                )
+                                                if _prh_mdl_col:
+                                                    _prh_mask = (
+                                                        _prh_proy_df["Proyecto"]
+                                                        .astype(str).str.strip()
+                                                        == str(proj).strip()
+                                                    )
+                                                    if _prh_mask.any():
+                                                        _prh_mdls = sorted({
+                                                            str(_v).strip()
+                                                            for _v in _prh_proy_df.loc[_prh_mask, _prh_mdl_col]
+                                                            if pd.notna(_v) and str(_v).strip()
+                                                        })
+                                                        if _prh_mdls:
+                                                            st.caption(f"Modelo: {' / '.join(_prh_mdls)}")
                                         _sms = _pr_sem_str(rows)
                                         if _sms:
                                             if len(_sms) <= 6:
@@ -11759,9 +11809,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                     elif _tipo == "lote_divisible":
                                         st.info(
                                             "Lote divisible: reprogramar residual puede tener sentido si "
-                                            "el proyecto representa varias unidades separables. En esta "
-                                            "versión la simulación sigue usando la lógica conservadora "
-                                            "actual; no se activa reparto paralelo."
+                                            "el proyecto representa varias unidades separables. Elige "
+                                            "Paralelo si el exceso puede repartirse entre unidades/líneas, "
+                                            "o Secuencial si debe ejecutarse después."
                                         )
                                     elif _tipo == "fase_transferible":
                                         st.info(
@@ -12879,7 +12929,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     "No hay ajustes válidos seleccionados."
                                                 )
                                     with st.expander(
-                                        "Ver detalle técnico / auditoría", expanded=False
+                                        "Ver movimientos registrados", expanded=False
                                     ):
                                         if _pr_movs:
                                             for _prmi, _prmov in enumerate(_pr_movs, 1):
@@ -13786,7 +13836,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     )
                 _cdf = _cdf.reset_index(drop=True)
 
-                with st.expander("Auditoría técnica", expanded=False):
+                with st.expander("Diagnóstico avanzado", expanded=False):
                     _aud_c1, _aud_c2, _aud_c3, _aud_c4, _aud_c5 = st.columns(5)
                     with _aud_c1:
                         if st.button("Excluidos", key=f"prog_audit_btn_excl_{plant_id}", use_container_width=True):
@@ -13798,7 +13848,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         if st.button("Carga", key=f"prog_audit_btn_carga_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "carga"
                     with _aud_c4:
-                        if st.button("Avisos", key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
+                        if st.button("Proyectos cargados / avisos", key=f"prog_audit_btn_avisos_{plant_id}", use_container_width=True):
                             st.session_state[f"prog_audit_section_{plant_id}"] = "avisos"
                     with _aud_c5:
                         if st.button("Conflictos", key=f"prog_audit_btn_conf_{plant_id}", use_container_width=True):
@@ -13899,11 +13949,11 @@ if st.session_state.active_tab == "📋 Programación real":
                         )
 
             # ── Planificación V2 avanzada ────────────────────────────────────────────
-            with st.expander("Planificación V2 avanzada", expanded=False):
+            with st.expander("Líneas compatibles adicionales", expanded=False):
                 _prog_v2_calc_clicked = False
                 if _prog_parsed is not None and not _prog_cap_df.empty:
                     _prog_v2_calc_clicked = st.button(
-                        "Calcular planificación V2",
+                        "Calcular con líneas compatibles adicionales",
                         key=f"prog_v2_calc_btn_{plant_id}",
                     )
 
@@ -13973,7 +14023,7 @@ if st.session_state.active_tab == "📋 Programación real":
                     if _prog_v2_norm_ss is not None and not _prog_v2_norm_ss["ok"]:
                         for _v2e in _prog_v2_norm_ss.get("errores", []):
                             _v2e_msg = _v2e.get("mensaje", str(_v2e)) if isinstance(_v2e, dict) else str(_v2e)
-                            st.error(f"V2 normalización: {_v2e_msg}")
+                            st.error(f"Error al procesar líneas compatibles: {_v2e_msg}")
 
                     if _prog_v2_result_ss is not None:
                         _v2k = _prog_v2_result_ss["kpis"]
@@ -14025,7 +14075,7 @@ if st.session_state.active_tab == "📋 Programación real":
 
                         if _prog_v2_result_ss.get("excluidos"):
                             with st.expander(
-                                f"Excluidos V2 ({len(_prog_v2_result_ss['excluidos'])})",
+                                f"Proyectos no asignados ({len(_prog_v2_result_ss['excluidos'])})",
                                 expanded=False,
                             ):
                                 _v2_excl_df = pd.DataFrame(_prog_v2_result_ss["excluidos"])
@@ -14042,7 +14092,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         if _v2_all_warns:
                             _v2_n_cc = len(_prog_v2_result_ss.get("conflictos_criticos", []))
                             with st.expander(
-                                f"Warnings / Auditoría V2 ({len(_v2_all_warns)} entradas)",
+                                f"Avisos y conflictos ({len(_v2_all_warns)} entradas)",
                                 expanded=_v2_n_cc > 0,
                             ):
                                 for _v2cc in _prog_v2_result_ss.get("conflictos_criticos", []):
