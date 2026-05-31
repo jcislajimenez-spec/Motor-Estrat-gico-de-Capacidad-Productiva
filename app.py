@@ -14132,6 +14132,19 @@ if st.session_state.active_tab == "📋 Programación real":
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(280, max(110, len(_v2_asg_df) * 32 + 48)),
+                                column_config={
+                                    "proyecto_id":           st.column_config.TextColumn("Proyecto"),
+                                    "linea_asignada":        st.column_config.TextColumn("Línea asignada"),
+                                    "tipo_linea":            st.column_config.TextColumn("Tipo de línea"),
+                                    "modelo_capacidad_usado": st.column_config.TextColumn("Modelo capacidad"),
+                                    "capacidad_origen":      st.column_config.TextColumn("Origen capacidad"),
+                                    "sem_inicio":            st.column_config.NumberColumn("Sem. inicio", format="%d"),
+                                    "sem_fin":               st.column_config.NumberColumn("Sem. fin",    format="%d"),
+                                    "estado":                st.column_config.TextColumn("Estado"),
+                                    "delta_semanas":         st.column_config.NumberColumn(
+                                        "Desviación vs entrega (sem)", format="%d"
+                                    ),
+                                },
                             )
 
                         if _prog_v2_result_ss.get("excluidos"):
