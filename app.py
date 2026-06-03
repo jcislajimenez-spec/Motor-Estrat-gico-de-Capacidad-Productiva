@@ -5680,6 +5680,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
     cycle_by_model = _t.groupby("model")["cycle_time"].sum().to_dict()
 
     line_stats_rows = []
+    no_mix_rows     = []
     capH_line_model = {}
     capU_line_model = {}
     max_h_week_by_line = {}
@@ -5704,6 +5705,13 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
 
         models_allowed = allowed_by_line.get(line_id, [])
         if not models_allowed:
+            no_mix_rows.append({
+                "nave": nave,
+                "line": base_line,
+                "Estado": "Sin mix activo calculable",
+                "Modelo Máx (h/SEM)": "—",
+                "Modelo Mín (h/SEM)": "—",
+            })
             continue
 
         capU_vals = []
@@ -5733,6 +5741,13 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             model_for_capH.append(m)
 
         if not capU_vals:
+            no_mix_rows.append({
+                "nave": nave,
+                "line": base_line,
+                "Estado": "Sin mix activo calculable",
+                "Modelo Máx (h/SEM)": "—",
+                "Modelo Mín (h/SEM)": "—",
+            })
             continue
 
         max_u = float(np.max(capU_vals))
@@ -5753,6 +5768,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             "nave": nave,
             "line": base_line,
             "line_id": line_id,
+            "Estado": "Con mix activo",
             "Modelo Máx (h/SEM)": model_max_h,
             "Modelo Mín (h/SEM)": model_min_h,
             "Max UDS/SEM": max_u,
@@ -5769,59 +5785,62 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
             "Min h/AÑO": min_h * weeks_equiv,
         })
 
-    if not line_stats_rows:
+    if not line_stats_rows and not no_mix_rows:
         st.warning(t("mix_no_combos"))
     else:
-        line_stats_df = pd.DataFrame(line_stats_rows)
+        if line_stats_rows:
+            line_stats_df = pd.DataFrame(line_stats_rows)
 
-        plant_max_u_sem = float(line_stats_df["Max UDS/SEM"].sum())
-        plant_avg_u_sem = float(line_stats_df["Prom UDS/SEM"].sum())
-        plant_min_u_sem = float(line_stats_df["Min UDS/SEM"].sum())
+            plant_max_u_sem = float(line_stats_df["Max UDS/SEM"].sum())
+            plant_avg_u_sem = float(line_stats_df["Prom UDS/SEM"].sum())
+            plant_min_u_sem = float(line_stats_df["Min UDS/SEM"].sum())
 
-        plant_max_h_sem = float(line_stats_df["Max h/SEM"].sum())
-        plant_avg_h_sem = float(line_stats_df["Prom h/SEM"].sum())
-        plant_min_h_sem = float(line_stats_df["Min h/SEM"].sum())
+            plant_max_h_sem = float(line_stats_df["Max h/SEM"].sum())
+            plant_avg_h_sem = float(line_stats_df["Prom h/SEM"].sum())
+            plant_min_h_sem = float(line_stats_df["Min h/SEM"].sum())
 
-        plant_rows = [
-            {"Escenario": "Máximo", "UDS/SEM": plant_max_u_sem, "UDS/AÑO": plant_max_u_sem * weeks_equiv, "h/SEM": plant_max_h_sem, "h/AÑO": plant_max_h_sem * weeks_equiv},
-            {"Escenario": "Promedio", "UDS/SEM": plant_avg_u_sem, "UDS/AÑO": plant_avg_u_sem * weeks_equiv, "h/SEM": plant_avg_h_sem, "h/AÑO": plant_avg_h_sem * weeks_equiv},
-            {"Escenario": "Mínimo", "UDS/SEM": plant_min_u_sem, "UDS/AÑO": plant_min_u_sem * weeks_equiv, "h/SEM": plant_min_h_sem, "h/AÑO": plant_min_h_sem * weeks_equiv},
-        ]
-        plant_df = pd.DataFrame(plant_rows)
+            plant_rows = [
+                {"Escenario": "Máximo", "UDS/SEM": plant_max_u_sem, "UDS/AÑO": plant_max_u_sem * weeks_equiv, "h/SEM": plant_max_h_sem, "h/AÑO": plant_max_h_sem * weeks_equiv},
+                {"Escenario": "Promedio", "UDS/SEM": plant_avg_u_sem, "UDS/AÑO": plant_avg_u_sem * weeks_equiv, "h/SEM": plant_avg_h_sem, "h/AÑO": plant_avg_h_sem * weeks_equiv},
+                {"Escenario": "Mínimo", "UDS/SEM": plant_min_u_sem, "UDS/AÑO": plant_min_u_sem * weeks_equiv, "h/SEM": plant_min_h_sem, "h/AÑO": plant_min_h_sem * weeks_equiv},
+            ]
+            plant_df = pd.DataFrame(plant_rows)
 
-        st.markdown(t("mix_level1"))
-        st.dataframe(
-            plant_df.style.format({"UDS/SEM": "{:.1f}", "UDS/AÑO": "{:.1f}", "h/SEM": "{:.1f}", "h/AÑO": "{:.1f}"}),
-            use_container_width=True,
-            hide_index=True
-        )
+            st.markdown(t("mix_level1"))
+            st.dataframe(
+                plant_df.style.format({"UDS/SEM": "{:.1f}", "UDS/AÑO": "{:.1f}", "h/SEM": "{:.1f}", "h/AÑO": "{:.1f}"}),
+                use_container_width=True,
+                hide_index=True
+            )
 
-        st.divider()
+            st.divider()
 
         st.markdown(t("mix_level2"))
         col_order = [
-            "nave", "line",
+            "nave", "line", "Estado",
             "Modelo Máx (h/SEM)", "Modelo Mín (h/SEM)",
             "Max UDS/SEM", "Prom UDS/SEM", "Min UDS/SEM",
             "Max UDS/AÑO", "Prom UDS/AÑO", "Min UDS/AÑO",
             "Max h/SEM", "Prom h/SEM", "Min h/SEM",
             "Max h/AÑO", "Prom h/AÑO", "Min h/AÑO",
         ]
+        _base_df = pd.DataFrame(line_stats_rows) if line_stats_rows else pd.DataFrame()
+        _no_mix_df = pd.DataFrame(no_mix_rows) if no_mix_rows else pd.DataFrame()
+        _combined_df = pd.concat([_base_df, _no_mix_df], ignore_index=True)
         for c in col_order:
-            if c not in line_stats_df.columns:
-                line_stats_df[c] = ""
-
-        line_stats_df = line_stats_df[col_order].copy()
-
+            if c not in _combined_df.columns:
+                _combined_df[c] = None
+        _combined_df = _combined_df[col_order].copy()
+        _num_fmt = {
+            "Max UDS/SEM": "{:.1f}", "Prom UDS/SEM": "{:.1f}", "Min UDS/SEM": "{:.1f}",
+            "Max UDS/AÑO": "{:.1f}", "Prom UDS/AÑO": "{:.1f}", "Min UDS/AÑO": "{:.1f}",
+            "Max h/SEM": "{:.1f}", "Prom h/SEM": "{:.1f}", "Min h/SEM": "{:.1f}",
+            "Max h/AÑO": "{:.1f}", "Prom h/AÑO": "{:.1f}", "Min h/AÑO": "{:.1f}",
+        }
         st.dataframe(
-            line_stats_df.style.format({
-                "Max UDS/SEM": "{:.1f}", "Prom UDS/SEM": "{:.1f}", "Min UDS/SEM": "{:.1f}",
-                "Max UDS/AÑO": "{:.1f}", "Prom UDS/AÑO": "{:.1f}", "Min UDS/AÑO": "{:.1f}",
-                "Max h/SEM": "{:.1f}", "Prom h/SEM": "{:.1f}", "Min h/SEM": "{:.1f}",
-                "Max h/AÑO": "{:.1f}", "Prom h/AÑO": "{:.1f}", "Min h/AÑO": "{:.1f}",
-            }),
+            _combined_df.style.format(_num_fmt, na_rep="—"),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
         st.markdown(t("mix_level3"))
