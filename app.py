@@ -13,6 +13,17 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from engine import normalizar_programacion_v2, schedule_proyectos
+import time as _time
+
+_APP_PROFILE = os.getenv("APP_PROFILE", "0").strip() == "1"
+_T0_RERUN = _time.perf_counter()
+
+
+def _perf_add(label: str, t0: float) -> None:
+    if _APP_PROFILE:
+        ms = round((_time.perf_counter() - t0) * 1000, 1)
+        st.session_state.setdefault("_perf", []).append((label, ms))
+
 
 def _fmt_num(v) -> str:
     """Formatea un número con máximo 2 decimales y sin ceros finales.
@@ -2108,7 +2119,19 @@ def compute_all_plants_structural_capacity(
 # =========================================================
 # SELECCIÓN DE PLANTA.
 # =========================================================
+if _APP_PROFILE:
+    st.session_state["_perf"] = []
+    st.session_state["_perf_rerun_count"] = st.session_state.get("_perf_rerun_count", 0) + 1
+    _perf_prev_tab = st.session_state.get("_perf_prev_tab")
+    _perf_tab_now = st.session_state.get("active_tab", "")
+    _perf_tab_changed = (_perf_prev_tab is not None and _perf_prev_tab != _perf_tab_now)
+    st.session_state["_perf_prev_tab"] = _perf_tab_now
+else:
+    _perf_tab_changed = False
+
+_t0_plants = _time.perf_counter()
 plants_df = load_table("plants")
+_perf_add("PLANTS_LOAD", _t0_plants)
 
 if plants_df.empty:
     st.sidebar.error("No hay plantas definidas en la tabla plants")
@@ -2198,7 +2221,9 @@ st.sidebar.divider()
 # =========================================================
 st.sidebar.header(t("params_header"))
 
+_t0_settings = _time.perf_counter()
 settings_df = load_table("settings")
+_perf_add("SETTINGS_LOAD", _t0_settings)
 settings_df = settings_df[settings_df["plant_id"] == plant_id]
 
 if settings_df.empty:
@@ -2295,7 +2320,9 @@ if st.sidebar.button(t("btn_save_params")):
 # =========================================================
 # CARGA DATOS
 # =========================================================
+_t0_lpd = _time.perf_counter()
 _pd = load_plant_data(plant_id)
+_perf_add("LOAD_PLANT_DATA", _t0_lpd)
 
 models_df     = _pd["models_df"]
 times_df      = _pd["times_df"]
@@ -2328,7 +2355,9 @@ if "line_bench_variant" not in st.session_state:
 _pid_init = st.session_state["plant_id"]
 if _pid_init != st.session_state.get("_last_pid"):
     # Plant changed (first visit or return) — always reload active scenario from DB
+    _t0_las = _time.perf_counter()
     _scenario = load_active_scenario(_pid_init)
+    _perf_add("LOAD_ACTIVE_SCENARIO", _t0_las)
     if _scenario:
         st.session_state.line_model[_pid_init] = _scenario["line_model"]
         st.session_state.line_demand[_pid_init] = _scenario["line_demand"]
@@ -2346,7 +2375,9 @@ if _pid_init != st.session_state.get("_last_pid"):
     # Populate name map on plant change — ensures Resultados and Simulación
     # always have the scenario name available, even before Planificación renders.
     if _has_db():
+        _t0_lsc = _time.perf_counter()
         _init_sc_list = list_scenarios(_pid_init)
+        _perf_add("LIST_SCENARIOS", _t0_lsc)
         st.session_state[f"_sc_name_map_{_pid_init}"] = {s["id"]: s["name"] for s in _init_sc_list}
     st.session_state["_last_pid"] = _pid_init
 if _pid_init not in st.session_state.line_demand:
@@ -14316,3 +14347,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                     st.error(f"[{_v2cc.get('tipo','CONFLICTO')}] {_cc_d}")
                                 for _v2w in _prog_v2_warns_ss:
                                     st.warning(_v2w if isinstance(_v2w, str) else str(_v2w))
+
+# =========================================================
+# APP_PROFILE=1 — panel de tiempos (siempre al final del script)
+# =========================================================
+if _APP_PROFILE:
+    _perf_add("TOTAL_RERUN", _T0_RERUN)
+    _perf_rows = st.session_state.get("_perf", [])
+    with st.sidebar.expander("🔬 Profiling", expanded=True):
+        st.caption(f"Rerun: {st.session_state.get('_perf_rerun_count', 0)}")
+        st.caption(f"Tab actual: {st.session_state.get('active_tab', '—')}")
+        st.caption(f"Cambio tab: {'sí' if _perf_tab_changed else 'no'}")
+        for _lbl, _ms in _perf_rows:
+            st.text(f"{_lbl}: {_ms} ms")
