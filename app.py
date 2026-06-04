@@ -9649,6 +9649,7 @@ if st.session_state.active_tab == "📋 Programación real":
             _prog_proc_ov = (
                 st.session_state["proc_shift_override"][plant_id][_prog_ov_sc_key]
             )
+            _t0_prog_cap = _time.perf_counter()
             _prog_cap_df, _prog_cap_warns = _compute_prog_cap_por_linea(
                 plant_id,
                 _prog_planned_line_ids,
@@ -9663,6 +9664,7 @@ if st.session_state.active_tab == "📋 Programación real":
                 efficiency,
                 hours_eff,
             )
+            _perf_add("PROG_CAP_POR_LINEA", _t0_prog_cap)
 
             # ── CSS local acotado a cabecera de Programación real ────────────
             st.markdown("""<style>
