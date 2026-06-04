@@ -1280,7 +1280,7 @@ def _has_db() -> bool:
     return bool(os.getenv("DATABASE_URL"))
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_table(table: str) -> pd.DataFrame:
     """
     Carga una tabla completa desde Postgres (Neon) y devuelve DataFrame.
