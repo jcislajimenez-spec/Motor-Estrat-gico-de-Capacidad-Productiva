@@ -1427,6 +1427,7 @@ def save_scenario(plant_id: int, name: str, line_model: dict, line_demand: dict,
         c.close()
 
 
+@st.cache_data(ttl=300)
 def list_scenarios(plant_id: int) -> list[dict]:
     """Returns all scenarios for plant_id ordered by created_at DESC."""
     if not _has_db():
@@ -3146,12 +3147,20 @@ if st.session_state.active_tab == "📊 Planificación":
                 if _activated:
                     _activated["_msg"] = "plan_activate_ok"
                     st.session_state[f"_pending_scenario_{_pid}"] = _activated
+                try:
+                    list_scenarios.clear()
+                except Exception:
+                    pass
                 st.rerun()
             if _sce4.button(t("plan_duplicate_btn"), use_container_width=True, key="btn_duplicate_sc"):
                 _dup_id, _dup_name = duplicate_scenario(_sc_sel_id, _pid)
                 if _dup_id is not None:
                     st.session_state[f"_deferred_sc_select_{_pid}"] = _dup_id
                     st.session_state[f"_deferred_sc_name_{_pid}"] = _dup_name
+                try:
+                    list_scenarios.clear()
+                except Exception:
+                    pass
                 st.rerun()
             if _sce5.button(t("plan_delete_btn"), use_container_width=True, key="btn_delete_sc"):
                 if _sc_is_active_map.get(_sc_sel_id, False):
@@ -3165,6 +3174,10 @@ if st.session_state.active_tab == "📊 Planificación":
                     sc_key = f"scenario_select_{_pid}"
                     if st.session_state.get(sc_key) == _sc_sel_id:
                         st.session_state.pop(sc_key, None)
+                    try:
+                        list_scenarios.clear()
+                    except Exception:
+                        pass
                     st.rerun()
         else:
             st.caption(t("plan_no_scenarios"))
@@ -3196,6 +3209,10 @@ if st.session_state.active_tab == "📊 Planificación":
             st.session_state.pop(f"scenario_select_{_pid}", None)
             st.session_state[f"_deferred_sc_select_{_pid}"] = _sc_sel_id
             st.toast(t("plan_save_changes_ok"))
+            try:
+                list_scenarios.clear()
+            except Exception:
+                pass
             st.rerun()
     if _sc_col3.button(t("plan_save_new_btn"), use_container_width=True):
         if not _has_db():
@@ -3213,6 +3230,10 @@ if st.session_state.active_tab == "📊 Planificación":
                 st.session_state[f"_deferred_sc_select_{_pid}"] = _new_id
                 st.session_state[f"_deferred_sc_name_{_pid}"] = _used_name
             st.success(t("plan_save_ok"))
+            try:
+                list_scenarios.clear()
+            except Exception:
+                pass
             st.rerun()
 
 
