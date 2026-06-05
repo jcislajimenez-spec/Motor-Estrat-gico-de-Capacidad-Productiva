@@ -2538,8 +2538,8 @@ st.session_state["_active_tab_prev"] = st.session_state.active_tab
 
 if st.session_state.active_tab == "🌐 Global":
     st.subheader(t("tab_global_header"))
-    st.info(t("global_info"))
-    
+    st.caption(t("global_info"))
+
     # --- Cargar TODOS los datos de TODAS las plantas ---
     all_data = load_all_plants_data()
 
@@ -3306,7 +3306,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
 
     # --- B) Tiempos por modelo y proceso
     st.markdown(t("cfg_times_header"))
-    st.info(t("cfg_times_info"))
+    with st.expander("ℹ️ Sobre tiempos por modelo y proceso", expanded=False):
+        st.markdown(t("cfg_times_info"))
 
     with st.expander("📐 ¿Dos métricas de tiempo distintas? Ejemplo real: PT0163 · proceso ML"):
         st.markdown(
@@ -5325,7 +5326,8 @@ if st.session_state.active_tab == "📈 Resultados":
         # -----------------------------------------------------------------
         st.divider()
         st.markdown(t("res_bench_header"))
-        st.info(t("res_bench_info"))
+        with st.expander("ℹ️ Sobre el análisis de bancos de prueba", expanded=False):
+            st.markdown(t("res_bench_info"))
 
         _bench_cfg_r = load_table("test_bench_config")
         _bench_map_r = load_table("da_bench_type")
