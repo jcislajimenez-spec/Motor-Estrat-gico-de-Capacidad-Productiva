@@ -6051,7 +6051,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                                 textinfo="none",
                             ))
                             fig_d.update_layout(
-                                height=240,
+                                height=200,
                                 margin=dict(l=10, r=10, t=10, b=10),
                                 showlegend=False,
                                 annotations=[dict(
@@ -6061,17 +6061,7 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                             )
                             st.plotly_chart(fig_d, use_container_width=True, key=f"chart_donut_{m}")
 
-                            df_m = pd.DataFrame({
-                                "": ["Seleccionado", "Máximo modelo"],
-                                "Uds/sem": [sel_u_week, max_u_week],
-                                "Uds/año": [sel_u_year, max_u_year],
-                                "h/sem": [sel_h_week, maxH],
-                                "h/año": [sel_h_year, maxH * float(weeks_equiv)],
-                            })
-                            df_show = df_m.copy()
-                            for c in ["Uds/sem", "Uds/año", "h/sem", "h/año"]:
-                                df_show[c] = df_show[c].map(lambda x: f"{float(x):.2f}")
-                            st.table(df_show)
+                            st.caption(f"Máx modelo: {max_u_week:.1f} uds/sem · {max_u_year:.1f} uds/año · {maxH:.1f} h/sem · {maxH * float(weeks_equiv):.1f} h/año")
 
 # =========================================================
 # BLOQUE 11 BIS — SIMULACIÓN ANUAL CAPACIDAD VS DEMANDA
