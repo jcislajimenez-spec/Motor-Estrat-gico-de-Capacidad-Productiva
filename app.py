@@ -5393,7 +5393,8 @@ if st.session_state.active_tab == "📈 Resultados":
             # -----------------------------------------------------------------
             st.markdown("---")
             st.markdown(t("res_bench_agg_header"))
-            st.markdown(t("res_bench_agg_text"))
+            with st.expander("📖 Cómo interpretar esta tabla", expanded=False):
+                st.markdown(t("res_bench_agg_text"))
 
             # Recolectar datos numéricos por banco — solo líneas D&A con tiempo_para válido
             _agg_input: dict[str, dict] = {}
@@ -5486,7 +5487,7 @@ if st.session_state.active_tab == "📈 Resultados":
                 # ---------------------------------------------------------
                 st.markdown("---")
                 st.markdown(t("res_bench_sim_header"))
-                st.warning(t("res_bench_sim_warning"))
+                st.caption("⚠️ " + t("res_bench_sim_warning"))
 
                 import math as _math
 
