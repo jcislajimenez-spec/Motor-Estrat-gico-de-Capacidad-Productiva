@@ -2545,9 +2545,7 @@ if st.session_state.active_tab == "🌐 Global":
 
     # --- Calcular capacidad para TODAS las plantas ---
     # Selector global de turnos (solo afecta a esta pestaña)
-    st.markdown(t("global_scenario_header"))
-    
-    col_esc1, col_esc2, col_esc3 = st.columns([1, 1, 2])
+    col_esc1, col_esc2 = st.columns([1, 2])
     with col_esc1:
         escenario = st.radio(
             t("global_escenario_label"),
