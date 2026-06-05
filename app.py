@@ -2841,7 +2841,6 @@ if st.session_state.active_tab == "🌐 Global":
                     st.rerun()
         
         # Resumen de hitos
-        st.markdown("---")
         st.markdown(t("global_milestones_header"))
         total_mods = len(st.session_state.global_modificaciones)
         total_horas_mods = sum(m["horas"] for m in st.session_state.global_modificaciones)
@@ -5391,7 +5390,6 @@ if st.session_state.active_tab == "📈 Resultados":
             # -----------------------------------------------------------------
             # RESUMEN AGREGADO POR TIPO DE BANCO
             # -----------------------------------------------------------------
-            st.markdown("---")
             st.markdown(t("res_bench_agg_header"))
             with st.expander("📖 Cómo interpretar esta tabla", expanded=False):
                 st.markdown(t("res_bench_agg_text"))
@@ -5485,7 +5483,6 @@ if st.session_state.active_tab == "📈 Resultados":
                 # Proyección hipotética basada en el resumen agregado.
                 # No modifica ningún valor oficial del motor.
                 # ---------------------------------------------------------
-                st.markdown("---")
                 st.markdown(t("res_bench_sim_header"))
                 st.caption("⚠️ " + t("res_bench_sim_warning"))
 
