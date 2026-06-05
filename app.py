@@ -1364,6 +1364,7 @@ def save_table(df: pd.DataFrame, table: str) -> None:
 # =========================================================
 # Scenario persistence (Bloque 2)
 # =========================================================
+@st.cache_data(ttl=300)
 def load_active_scenario(plant_id: int) -> dict | None:
     """Returns dict with keys line_model, line_demand, line_bench_variant for
     the active scenario of plant_id, or None if no active scenario exists."""
@@ -3151,6 +3152,10 @@ if st.session_state.active_tab == "📊 Planificación":
                     list_scenarios.clear()
                 except Exception:
                     pass
+                try:
+                    load_active_scenario.clear()
+                except Exception:
+                    pass
                 st.rerun()
             if _sce4.button(t("plan_duplicate_btn"), use_container_width=True, key="btn_duplicate_sc"):
                 _dup_id, _dup_name = duplicate_scenario(_sc_sel_id, _pid)
@@ -3211,6 +3216,10 @@ if st.session_state.active_tab == "📊 Planificación":
             st.toast(t("plan_save_changes_ok"))
             try:
                 list_scenarios.clear()
+            except Exception:
+                pass
+            try:
+                load_active_scenario.clear()
             except Exception:
                 pass
             st.rerun()
