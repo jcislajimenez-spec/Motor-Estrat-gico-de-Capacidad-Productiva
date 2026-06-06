@@ -2629,9 +2629,7 @@ if st.session_state.active_tab == "🌐 Global":
         })
     
     st.dataframe(style_resumen(resumen_df), use_container_width=True, hide_index=True)
-    
-    st.divider()
-    
+
     # =====================================================
     # 3️⃣ DISPONIBILIDAD Y % USO
     # =====================================================
@@ -2727,9 +2725,7 @@ if st.session_state.active_tab == "🌐 Global":
         height=400,
     )
     st.plotly_chart(fig_cap_disp, use_container_width=True, key="chart_cap_disp_global")
-    
-    st.divider()
-    
+
     # =====================================================
     # 4️⃣ RESUMEN POR MODELO
     # =====================================================
@@ -5677,7 +5673,6 @@ if st.session_state.active_tab == "📈 Resultados":
                         hide_index=True
                     )
 
-    st.divider()
     st.markdown(t("res_chart_header"))
 
     if not summary_df.empty:
@@ -5874,7 +5869,6 @@ if st.session_state.active_tab == "🧭 Capacidad según mix":
                 hide_index=True
             )
 
-            st.divider()
 
         st.markdown(t("mix_level2"))
         col_order = [
