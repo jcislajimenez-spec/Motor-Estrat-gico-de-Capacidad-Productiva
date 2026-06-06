@@ -2156,37 +2156,37 @@ st.session_state["plant_id"] = plant_id
 # =========================================================
 # AÑADIR NUEVA PLANTA
 # =========================================================
-new_plant_name = st.sidebar.text_input(t("plant_new"))
+with st.sidebar.expander(t("plant_add"), expanded=False):
+    new_plant_name = st.text_input(t("plant_new"), key="sidebar_new_plant_input")
+    if st.button(t("plant_add"), key="sidebar_add_plant_btn"):
+        if new_plant_name.strip():
+            if _has_db():
+                c = get_connection()
+                try:
+                    with c.cursor() as cur:
+                        cur.execute(
+                            'INSERT INTO "plants" ("name") VALUES (%s)',
+                            (new_plant_name.strip(),)
+                        )
+                    c.commit()
+                finally:
+                    c.close()
+                try:
+                    load_table.clear()
+                    load_plant_data.clear()
+                    load_all_plants_data.clear()
+                except Exception:
+                    pass
+            else:
+                next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
+                new_row = pd.DataFrame([{"id": next_id, "name": new_plant_name.strip()}])
+                plants_df = pd.concat([plants_df, new_row], ignore_index=True)
+                save_csv(plants_df, "plants.csv")
 
-if st.sidebar.button(t("plant_add")):
-    if new_plant_name.strip():
-        if _has_db():
-            c = get_connection()
-            try:
-                with c.cursor() as cur:
-                    cur.execute(
-                        'INSERT INTO "plants" ("name") VALUES (%s)',
-                        (new_plant_name.strip(),)
-                    )
-                c.commit()
-            finally:
-                c.close()
-            try:
-                load_table.clear()
-                load_plant_data.clear()
-                load_all_plants_data.clear()
-            except Exception:
-                pass
+            st.sidebar.success(t("plant_added"))
+            st.rerun()
         else:
-            next_id = int(plants_df["id"].max()) + 1 if not plants_df.empty else 1
-            new_row = pd.DataFrame([{"id": next_id, "name": new_plant_name.strip()}])
-            plants_df = pd.concat([plants_df, new_row], ignore_index=True)
-            save_csv(plants_df, "plants.csv")
-
-        st.sidebar.success(t("plant_added"))
-        st.rerun()
-    else:
-        st.sidebar.warning(t("plant_name_empty"))
+            st.sidebar.warning(t("plant_name_empty"))
 # =========================================================
 # APP CONFIG
 # =========================================================
