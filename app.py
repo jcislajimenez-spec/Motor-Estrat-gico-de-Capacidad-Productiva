@@ -1241,6 +1241,7 @@ if _auth_required() and st.session_state.get("_current_user") not in ("", "anon"
 
 logo = _load_logo()
 st.sidebar.image(logo, use_container_width=True)
+st.sidebar.caption("Motor Estratégico · INGETEAM")
 
 DATA_DIR = resource_path("data")
 
@@ -2209,6 +2210,7 @@ _PAGES_I18N = {p: k for p, k in zip(_PAGES, [
     "nav_global", "nav_planning", "nav_config", "nav_results", "nav_mix", "nav_sim_annual",
     "nav_prog_real",
 ])}
+st.sidebar.divider()
 st.sidebar.radio(
     t("nav_label"),
     _PAGES,
@@ -2221,7 +2223,7 @@ st.sidebar.divider()
 # =========================================================
 # SIDEBAR – PARÁMETROS (SIEMPRE VISIBLES)
 # =========================================================
-st.sidebar.header(t("params_header"))
+st.sidebar.subheader(t("params_header"))
 
 _t0_settings = _time.perf_counter()
 settings_df = load_table("settings")
