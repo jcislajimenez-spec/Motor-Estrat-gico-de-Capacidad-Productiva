@@ -1176,7 +1176,7 @@ if _auth_required():
         st.stop()
 
     if not st.session_state["_authenticated"]:
-        st.markdown("## Motor Estratégico de Capacidad")
+        st.markdown("## Motor Estratégico de Capacidad Productiva")
         st.markdown("Introduce tus credenciales para acceder.")
 
         with st.form("_login_form"):
@@ -4525,7 +4525,7 @@ if st.session_state.active_tab == "📈 Resultados":
             else:
                 st.caption(f"{t('res_hours_eff')} {_fmt_num(hours_eff)} {t('unit_week')}")
         else:
-            st.caption("Sin líneas planificadas. Selecciona modelos en Planificación.")
+            st.caption(t("res_no_lines"))
 
     # Sincronizar line_params_override con estado explícito enabled/disabled
     for _lid in _planned_line_ids:
@@ -5733,7 +5733,7 @@ if st.session_state.active_tab == "📈 Resultados":
 
 if st.session_state.active_tab == "🧭 Capacidad según mix":
     st.subheader(t("tab_mix_header"))
-    with st.expander("ℹ Sobre esta vista", expanded=False):
+    with st.expander("ℹ️ Sobre esta vista", expanded=False):
         st.markdown(t("mix_info"))
 
     _t = times_df.copy()
