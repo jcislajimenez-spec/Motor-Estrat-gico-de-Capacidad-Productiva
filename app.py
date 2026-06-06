@@ -4352,7 +4352,7 @@ if st.session_state.active_tab == "📈 Resultados":
                 st.toast(t("res_save_line_err"), icon="🚨")
 
     # ── Bloque azul escenario (debajo del título) ─────────────────────────────
-    st.info(_ex_header_info)
+    st.markdown(_ex_header_info)
 
     _expander_label = t("res_params_expander")
     if _active_ov_lines:
