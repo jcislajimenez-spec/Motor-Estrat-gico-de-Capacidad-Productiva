@@ -10948,6 +10948,136 @@ if st.session_state.active_tab == "📋 Programación real":
                         st.caption("⚠ Calculadas sobre: **Simulación activa** — el plan real no ha cambiado.")
                     else:
                         st.caption("Calculadas sobre: **Plan real**")
+                    # ── PROG-REC.1 Guía de actuación ────────────────────────────────────
+                    _rec_cands_raw = _da_alt_result.get("candidatas", []) if isinstance(_da_alt_result, dict) else []
+                    _rec_foto_raw  = st.session_state.get(f"_prog_as_foto_{plant_id}") or {}
+                    _rec_foto_rows = _rec_foto_raw.get("rows", []) or []
+
+                    def _rec_mej_h(_c):
+                        try:
+                            return float(_c.get("Mejora h", 0) or 0)
+                        except (TypeError, ValueError):
+                            return 0.0
+
+                    def _rec_def_elim(_r):
+                        try:
+                            return float(_r.get("Déficit global eliminado (h)", 0) or 0)
+                        except (TypeError, ValueError):
+                            return 0.0
+
+                    def _rec_estado_a(_c):
+                        _resultado = str(_c.get("Resultado", "") or "")
+                        _aviso     = str(_c.get("Aviso", "") or "")
+                        if _resultado == "Reduce" or "Nuevo conflicto" in _aviso:
+                            return "Revisar"
+                        return "Recomendable"
+
+                    _rec_a_pool = sorted(
+                        _rec_cands_raw,
+                        key=lambda _c: (
+                            0 if _rec_estado_a(_c) == "Recomendable" else 1,
+                            1 if "Nuevo conflicto" in str(_c.get("Aviso", "")) else 0,
+                            0 if str(_c.get("Resultado", "")) == "Libera" else 1,
+                            -_rec_mej_h(_c),
+                        ),
+                    )
+                    _rec_plan_a = _rec_a_pool[0] if _rec_a_pool else None
+
+                    _rec_b_pool = sorted(
+                        [_r for _r in _rec_foto_rows if str(_r.get("Estado", "")) == "Recomendable"],
+                        key=lambda _r: -_rec_def_elim(_r),
+                    )
+                    _rec_plan_b = _rec_b_pool[0] if _rec_b_pool else None
+
+                    _rec_plan_c_needed = False
+                    if _rec_plan_a is not None:
+                        try:
+                            _rec_plan_c_needed = float(_rec_plan_a.get("Déficit simulado h", 0) or 0) > 0
+                        except (TypeError, ValueError):
+                            pass
+
+                    with st.container(border=True):
+                        st.markdown("#### Guía de actuación")
+                        st.caption(
+                            "Guía informativa. No aplica cambios. "
+                            "Para ejecutar una acción usa las selecciones y el botón "
+                            "**Aplicar alternativas seleccionadas**."
+                        )
+                        if not _rec_cands_raw and not _rec_foto_rows:
+                            st.caption("No hay rutas sugeridas con las alternativas actuales.")
+                        else:
+                            _gc_col_a, _gc_col_b, _gc_col_c = st.columns(3)
+                            with _gc_col_a:
+                                with st.container(border=True):
+                                    st.markdown("**Plan A — Movimiento prioritario**")
+                                    if _rec_plan_a is not None:
+                                        _gc_a_proy = str(_rec_plan_a.get("Proyecto", "—") or "—")
+                                        _gc_a_la   = str(_rec_plan_a.get("Línea actual", "—") or "—")
+                                        _gc_a_lc   = str(_rec_plan_a.get("Línea candidata", "—") or "—")
+                                        _gc_a_est  = _rec_estado_a(_rec_plan_a)
+                                        _gc_a_res  = str(_rec_plan_a.get("Resultado", "") or "")
+                                        _gc_a_avi  = str(_rec_plan_a.get("Aviso", "") or "")
+                                        try:
+                                            _gc_a_mej = round(float(_rec_plan_a.get("Mejora h", 0) or 0), 1)
+                                        except (TypeError, ValueError):
+                                            _gc_a_mej = 0.0
+                                        try:
+                                            _gc_a_def = round(float(_rec_plan_a.get("Déficit simulado h", 0) or 0), 1)
+                                        except (TypeError, ValueError):
+                                            _gc_a_def = 0.0
+                                        st.markdown("✅ Recomendable" if _gc_a_est == "Recomendable" else "⚠ Revisar")
+                                        st.markdown(f"**{_gc_a_proy}**")
+                                        st.caption(f"Mover: {_gc_a_la} → {_gc_a_lc}")
+                                        st.caption(f"Elimina: {_gc_a_mej} h · Déficit residual: {_gc_a_def} h")
+                                        if _gc_a_res == "Libera":
+                                            st.caption("Libera la línea del conflicto")
+                                        else:
+                                            st.caption("Reduce sin liberar la línea")
+                                        if _gc_a_avi and "Nuevo conflicto" in _gc_a_avi:
+                                            st.caption(f"⚠ {_gc_a_avi}")
+                                    else:
+                                        st.caption("No hay movimiento de línea recomendable calculado.")
+                            with _gc_col_b:
+                                with st.container(border=True):
+                                    st.markdown("**Plan B — Ajuste temporal**")
+                                    if _rec_plan_b is not None:
+                                        _gc_b_proy = str(_rec_plan_b.get("Proyecto", "—") or "—")
+                                        _gc_b_mas  = _rec_plan_b.get("+ semanas")
+                                        _gc_b_def  = _rec_plan_b.get("Déficit global eliminado (h)")
+                                        _gc_b_imp  = str(_rec_plan_b.get("Impacto entrega", "") or "")
+                                        _gc_b_ff   = str(_rec_plan_b.get("Firme/Flexible", "") or "")
+                                        st.markdown("✅ Recomendable")
+                                        st.markdown(f"**{_gc_b_proy}**")
+                                        try:
+                                            st.caption(f"Ampliar: +{int(float(_gc_b_mas))} sem")
+                                        except (TypeError, ValueError):
+                                            if _gc_b_mas is not None:
+                                                st.caption(f"Ampliar: +{_gc_b_mas} sem")
+                                        try:
+                                            st.caption(f"Elimina: {round(float(_gc_b_def), 1)} h")
+                                        except (TypeError, ValueError):
+                                            pass
+                                        if _gc_b_imp:
+                                            st.caption(f"Entrega: {_gc_b_imp}")
+                                        if _gc_b_ff and _gc_b_ff.lower() not in ("", "sin dato", "nan", "none"):
+                                            st.caption(f"Firme/Flexible: {_gc_b_ff}")
+                                    else:
+                                        st.caption("No hay ajuste temporal recomendable calculado.")
+                            with _gc_col_c:
+                                with st.container(border=True):
+                                    st.markdown("**Plan C — Segunda revisión**")
+                                    if _rec_plan_c_needed:
+                                        st.markdown("→ Acción adicional")
+                                        st.caption(
+                                            "Tras aplicar la primera acción, "
+                                            "revisa **2ª ronda / Ajustar pendientes**."
+                                        )
+                                    else:
+                                        st.caption(
+                                            "Si la acción elimina el conflicto, "
+                                            "no sería necesaria segunda revisión."
+                                        )
+                    # ── fin PROG-REC.1 ───────────────────────────────────────────────────
                     with st.container(key=f"prog_sim_tabs_{plant_id}"):
                         _tab_ml, _tab_as, _tab_pr = st.tabs(["Mover línea", "Ampliar semanas", "2ª ronda / Ajustar pendientes"])
                     _da_df_c      = pd.DataFrame()
