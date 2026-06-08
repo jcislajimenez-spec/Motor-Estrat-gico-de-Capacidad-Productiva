@@ -10948,7 +10948,7 @@ if st.session_state.active_tab == "📋 Programación real":
                         st.caption("⚠ Calculadas sobre: **Simulación activa** — el plan real no ha cambiado.")
                     else:
                         st.caption("Calculadas sobre: **Plan real**")
-                    # ── PROG-REC.1 Guía de actuación ────────────────────────────────────
+                    # ── PROG-REC.2 Guía de actuación ────────────────────────────────────
                     _rec_cands_raw = _da_alt_result.get("candidatas", []) if isinstance(_da_alt_result, dict) else []
                     _rec_foto_raw  = st.session_state.get(f"_prog_as_foto_{plant_id}") or {}
                     _rec_foto_rows = _rec_foto_raw.get("rows", []) or []
@@ -10983,18 +10983,38 @@ if st.session_state.active_tab == "📋 Programación real":
                     )
                     _rec_plan_a = _rec_a_pool[0] if _rec_a_pool else None
 
-                    _rec_b_pool = sorted(
+                    # Plan B: primer candidato distinto de Plan A recorriendo _rec_a_pool[1:]
+                    _rec_plan_b = None
+                    _rec_a_key = (
+                        str(_rec_plan_a.get("Proyecto", "")) if _rec_plan_a else "",
+                        str(_rec_plan_a.get("Línea candidata", "")) if _rec_plan_a else "",
+                    )
+                    for _rec_plan_b_raw in _rec_a_pool[1:]:
+                        _rec_b_key = (
+                            str(_rec_plan_b_raw.get("Proyecto", "")),
+                            str(_rec_plan_b_raw.get("Línea candidata", "")),
+                        )
+                        if _rec_b_key != _rec_a_key:
+                            _rec_plan_b = _rec_plan_b_raw
+                            break
+
+                    # Plan C: mejor candidata de Ampliar semanas
+                    _rec_c_pool = sorted(
                         [_r for _r in _rec_foto_rows if str(_r.get("Estado", "")) == "Recomendable"],
                         key=lambda _r: -_rec_def_elim(_r),
                     )
-                    _rec_plan_b = _rec_b_pool[0] if _rec_b_pool else None
+                    _rec_plan_c_temporal = _rec_c_pool[0] if _rec_c_pool else None
 
+                    # Indicador de segunda ronda: si Plan A o Plan B dejan déficit residual
                     _rec_plan_c_needed = False
-                    if _rec_plan_a is not None:
-                        try:
-                            _rec_plan_c_needed = float(_rec_plan_a.get("Déficit simulado h", 0) or 0) > 0
-                        except (TypeError, ValueError):
-                            pass
+                    for _rpc in [_rec_plan_a, _rec_plan_b]:
+                        if _rpc is not None:
+                            try:
+                                if float(_rpc.get("Déficit simulado h", 0) or 0) > 0:
+                                    _rec_plan_c_needed = True
+                                    break
+                            except (TypeError, ValueError):
+                                pass
 
                     with st.container(border=True):
                         st.markdown("#### Guía de actuación")
@@ -11009,7 +11029,7 @@ if st.session_state.active_tab == "📋 Programación real":
                             _gc_col_a, _gc_col_b, _gc_col_c = st.columns(3)
                             with _gc_col_a:
                                 with st.container(border=True):
-                                    st.markdown("**Plan A — Movimiento prioritario**")
+                                    st.markdown("**Plan A · Mejor movimiento**")
                                     if _rec_plan_a is not None:
                                         _gc_a_proy = str(_rec_plan_a.get("Proyecto", "—") or "—")
                                         _gc_a_la   = str(_rec_plan_a.get("Línea actual", "—") or "—")
@@ -11025,7 +11045,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             _gc_a_def = round(float(_rec_plan_a.get("Déficit simulado h", 0) or 0), 1)
                                         except (TypeError, ValueError):
                                             _gc_a_def = 0.0
-                                        st.markdown("✅ Recomendable" if _gc_a_est == "Recomendable" else "⚠ Revisar")
+                                        st.markdown("✅ Recomendado" if _gc_a_est == "Recomendable" else "⚠ Revisar")
                                         st.markdown(f"**{_gc_a_proy}**")
                                         st.caption(f"Mover: {_gc_a_la} → {_gc_a_lc}")
                                         st.caption(f"Elimina: {_gc_a_mej} h · Déficit residual: {_gc_a_def} h")
@@ -11039,37 +11059,63 @@ if st.session_state.active_tab == "📋 Programación real":
                                         st.caption("No hay movimiento de línea recomendable calculado.")
                             with _gc_col_b:
                                 with st.container(border=True):
-                                    st.markdown("**Plan B — Ajuste temporal**")
+                                    st.markdown("**Plan B · Alternativa comparable**")
                                     if _rec_plan_b is not None:
                                         _gc_b_proy = str(_rec_plan_b.get("Proyecto", "—") or "—")
-                                        _gc_b_mas  = _rec_plan_b.get("+ semanas")
-                                        _gc_b_def  = _rec_plan_b.get("Déficit global eliminado (h)")
-                                        _gc_b_imp  = str(_rec_plan_b.get("Impacto entrega", "") or "")
-                                        _gc_b_ff   = str(_rec_plan_b.get("Firme/Flexible", "") or "")
-                                        st.markdown("✅ Recomendable")
+                                        _gc_b_la   = str(_rec_plan_b.get("Línea actual", "—") or "—")
+                                        _gc_b_lc   = str(_rec_plan_b.get("Línea candidata", "—") or "—")
+                                        _gc_b_res  = str(_rec_plan_b.get("Resultado", "") or "")
+                                        _gc_b_avi  = str(_rec_plan_b.get("Aviso", "") or "")
+                                        try:
+                                            _gc_b_mej = round(float(_rec_plan_b.get("Mejora h", 0) or 0), 1)
+                                        except (TypeError, ValueError):
+                                            _gc_b_mej = 0.0
+                                        try:
+                                            _gc_b_def = round(float(_rec_plan_b.get("Déficit simulado h", 0) or 0), 1)
+                                        except (TypeError, ValueError):
+                                            _gc_b_def = 0.0
+                                        st.markdown("Alternativa")
                                         st.markdown(f"**{_gc_b_proy}**")
-                                        try:
-                                            st.caption(f"Ampliar: +{int(float(_gc_b_mas))} sem")
-                                        except (TypeError, ValueError):
-                                            if _gc_b_mas is not None:
-                                                st.caption(f"Ampliar: +{_gc_b_mas} sem")
-                                        try:
-                                            st.caption(f"Elimina: {round(float(_gc_b_def), 1)} h")
-                                        except (TypeError, ValueError):
-                                            pass
-                                        if _gc_b_imp:
-                                            st.caption(f"Entrega: {_gc_b_imp}")
-                                        if _gc_b_ff and _gc_b_ff.lower() not in ("", "sin dato", "nan", "none"):
-                                            st.caption(f"Firme/Flexible: {_gc_b_ff}")
+                                        st.caption(f"Mover: {_gc_b_la} → {_gc_b_lc}")
+                                        st.caption(f"Elimina: {_gc_b_mej} h · Déficit residual: {_gc_b_def} h")
+                                        if _gc_b_res == "Libera":
+                                            st.caption("Libera la línea del conflicto")
+                                        else:
+                                            st.caption("Reduce sin liberar la línea")
+                                        if _gc_b_avi and "Nuevo conflicto" in _gc_b_avi:
+                                            st.caption(f"⚠ {_gc_b_avi}")
+                                        st.caption("Útil si Plan A no encaja operativamente.")
                                     else:
-                                        st.caption("No hay ajuste temporal recomendable calculado.")
+                                        st.caption("No hay segunda alternativa de movimiento calculada.")
                             with _gc_col_c:
                                 with st.container(border=True):
-                                    st.markdown("**Plan C — Segunda revisión**")
+                                    st.markdown("**Plan C · Ajuste / revisión**")
+                                    if _rec_plan_c_temporal is not None:
+                                        _gc_c_proy = str(_rec_plan_c_temporal.get("Proyecto", "—") or "—")
+                                        _gc_c_mas  = _rec_plan_c_temporal.get("+ semanas")
+                                        _gc_c_def  = _rec_plan_c_temporal.get("Déficit global eliminado (h)")
+                                        _gc_c_imp  = str(_rec_plan_c_temporal.get("Impacto entrega", "") or "")
+                                        _gc_c_ff   = str(_rec_plan_c_temporal.get("Firme/Flexible", "") or "")
+                                        st.markdown("Siguiente paso")
+                                        st.markdown(f"**{_gc_c_proy}**")
+                                        try:
+                                            st.caption(f"Ampliar: +{int(float(_gc_c_mas))} sem")
+                                        except (TypeError, ValueError):
+                                            if _gc_c_mas is not None:
+                                                st.caption(f"Ampliar: +{_gc_c_mas} sem")
+                                        try:
+                                            st.caption(f"Elimina: {round(float(_gc_c_def), 1)} h")
+                                        except (TypeError, ValueError):
+                                            pass
+                                        if _gc_c_imp:
+                                            st.caption(f"Entrega: {_gc_c_imp}")
+                                        if _gc_c_ff and _gc_c_ff.lower() not in ("", "sin dato", "nan", "none"):
+                                            st.caption(f"Firme/Flexible: {_gc_c_ff}")
+                                    else:
+                                        st.caption("No hay ajuste temporal recomendable calculado.")
                                     if _rec_plan_c_needed:
-                                        st.markdown("→ Acción adicional")
                                         st.caption(
-                                            "Tras aplicar la primera acción, "
+                                            "Revisión posterior: si Plan A o Plan B dejan déficit residual, "
                                             "revisa **2ª ronda / Ajustar pendientes**."
                                         )
                                     else:
@@ -11077,7 +11123,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Si la acción elimina el conflicto, "
                                             "no sería necesaria segunda revisión."
                                         )
-                    # ── fin PROG-REC.1 ───────────────────────────────────────────────────
+                    # ── fin PROG-REC.2 ───────────────────────────────────────────────────
                     with st.container(key=f"prog_sim_tabs_{plant_id}"):
                         _tab_ml, _tab_as, _tab_pr = st.tabs(["Mover línea", "Ampliar semanas", "2ª ronda / Ajustar pendientes"])
                     _da_df_c      = pd.DataFrame()
