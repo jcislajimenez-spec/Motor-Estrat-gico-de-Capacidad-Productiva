@@ -11094,6 +11094,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _fba_avi = str(_rec_fb_a.get("Aviso", "") or "")
                                         if _fba_avi and "Nuevo conflicto" in _fba_avi:
                                             st.caption(f"⚠ {_fba_avi}")
+                                        st.caption("Dónde actuar: pestaña **Mover línea**")
                                     else:
                                         st.caption("No hay movimiento de línea recomendable calculado.")
                             with _fb_col_b:
@@ -11118,6 +11119,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         if _fbb_avi and "Nuevo conflicto" in _fbb_avi:
                                             st.caption(f"⚠ {_fbb_avi}")
                                         st.caption("Útil si Plan A no encaja operativamente.")
+                                        st.caption("Dónde actuar: pestaña **Mover línea**")
                                     else:
                                         st.caption("No hay segunda alternativa de movimiento calculada.")
                             with _fb_col_c:
@@ -11133,10 +11135,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                             st.caption(f"Elimina: {round(float(_rec_fb_c.get('Déficit global eliminado (h)', 0)), 1)} h")
                                         except (TypeError, ValueError):
                                             pass
+                                        st.caption("Dónde actuar: pestaña **Ampliar semanas**")
                                     else:
                                         st.caption("No hay ajuste temporal calculado.")
                                     st.caption(
-                                        "Si queda déficit residual, revisa **2ª ronda / Ajustar pendientes**."
+                                        "Si queda déficit residual, dónde actuar: pestaña **2ª ronda / Ajustar pendientes**."
                                         if _rec_fb_ok
                                         else "Si la acción elimina el conflicto, no sería necesaria segunda revisión."
                                     )
@@ -11226,6 +11229,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             st.caption("Reduce sin liberar la línea")
                                         if _rpa_avi and "Nuevo conflicto" in _rpa_avi:
                                             st.caption(f"⚠ {_rpa_avi}")
+                                        st.caption("Dónde actuar: pestaña **Mover línea**")
                                     else:
                                         st.caption("No hay movimiento de línea recomendable calculado para este foco.")
                             with _rp_col_b:
@@ -11249,6 +11253,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         if _rpb_avi and "Nuevo conflicto" in _rpb_avi:
                                             st.caption(f"⚠ {_rpb_avi}")
                                         st.caption("Útil si Plan A no encaja operativamente.")
+                                        st.caption("Dónde actuar: pestaña **Mover línea**")
                                     else:
                                         st.caption("No hay segunda opción calculada para este foco.")
                             with _rp_col_c:
@@ -11272,10 +11277,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                             st.caption(f"Entrega: {_rpc_imp}")
                                         if _rpc_ff and _rpc_ff.lower() not in ("", "sin dato", "nan", "none"):
                                             st.caption(f"Firme/Flexible: {_rpc_ff}")
+                                        st.caption("Dónde actuar: pestaña **Ampliar semanas**")
                                     else:
                                         st.caption("No hay ajuste temporal calculado para este foco.")
                                     st.caption(
-                                        "Si queda déficit residual, revisa **2ª ronda / Ajustar pendientes**."
+                                        "Si queda déficit residual, dónde actuar: pestaña **2ª ronda / Ajustar pendientes**."
                                         if _rec_needed
                                         else "Si la acción elimina el conflicto, no sería necesaria segunda revisión."
                                     )
