@@ -11041,9 +11041,8 @@ if st.session_state.active_tab == "📋 Programación real":
                     with st.container(border=True):
                         st.markdown("#### Guía por línea con déficit")
                         st.caption(
-                            "Selecciona una línea para ver una guía orientativa. "
-                            "La guía se calcula por línea; las semanas muestran cuándo ocurre el conflicto. "
-                            "No aplica cambios."
+                            "Guía informativa basada en alternativas ya calculadas. "
+                            "No aplica cambios ni garantiza una solución óptima."
                         )
                         if not _rec_focos or (not _rec_cands_raw and not _rec_foto_rows):
                             st.caption(
@@ -11082,7 +11081,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         st.caption(f"Mover: {_rec_fb_a.get('Línea actual', '—')} → {_rec_fb_a.get('Línea candidata', '—')}")
                                         try:
                                             st.caption(
-                                                f"Elimina: {round(float(_rec_fb_a.get('Mejora h', 0) or 0), 1)} h"
+                                                f"Impacto estimado: {round(float(_rec_fb_a.get('Mejora h', 0) or 0), 1)} h"
                                                 f" · Déficit residual: {round(float(_rec_fb_a.get('Déficit simulado h', 0) or 0), 1)} h"
                                             )
                                         except (TypeError, ValueError):
@@ -11106,7 +11105,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         st.caption(f"Mover: {_rec_fb_b.get('Línea actual', '—')} → {_rec_fb_b.get('Línea candidata', '—')}")
                                         try:
                                             st.caption(
-                                                f"Elimina: {round(float(_rec_fb_b.get('Mejora h', 0) or 0), 1)} h"
+                                                f"Impacto estimado: {round(float(_rec_fb_b.get('Mejora h', 0) or 0), 1)} h"
                                                 f" · Déficit residual: {round(float(_rec_fb_b.get('Déficit simulado h', 0) or 0), 1)} h"
                                             )
                                         except (TypeError, ValueError):
@@ -11132,7 +11131,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                         except (TypeError, ValueError):
                                             pass
                                         try:
-                                            st.caption(f"Elimina: {round(float(_rec_fb_c.get('Déficit global eliminado (h)', 0)), 1)} h")
+                                            st.caption(f"Impacto estimado: {round(float(_rec_fb_c.get('Déficit global eliminado (h)', 0)), 1)} h")
                                         except (TypeError, ValueError):
                                             pass
                                         st.caption("Dónde actuar: pestaña **Ampliar semanas**")
@@ -11176,110 +11175,155 @@ if st.session_state.active_tab == "📋 Programación real":
                                 [_c for _c in _rec_a_pool if str(_c.get("Línea actual", "")) == _rec_lin],
                                 key=_rec_sort_key,
                             )
-                            # Plan A del foco
-                            _rec_pa = _rec_fcands[0] if _rec_fcands else None
-                            # Plan B del foco (primera distinta de Plan A)
-                            _rec_pb = None
-                            if _rec_pa is not None:
-                                _rec_pa_key = (
-                                    str(_rec_pa.get("Proyecto", "")),
-                                    str(_rec_pa.get("Línea candidata", "")),
-                                )
-                                for _rpbc in _rec_fcands[1:]:
-                                    if (str(_rpbc.get("Proyecto", "")), str(_rpbc.get("Línea candidata", ""))) != _rec_pa_key:
-                                        _rec_pb = _rpbc
-                                        break
-                            # Plan C del foco (cruce por proyectos del foco)
-                            _rec_pc = None
+                            # Pool ampliar del foco
+                            _rec_pc_pool: list = []
                             if _rec_pset:
                                 _rec_pc_pool = [
                                     _r for _r in _rec_c_pool_g
                                     if str(_r.get("Proyecto", "")).strip() in _rec_pset
                                 ]
-                                _rec_pc = _rec_pc_pool[0] if _rec_pc_pool else None
-                            # Indicador 2ª ronda para el foco
+                            # Lista unificada mover + ampliar, ordenada por impacto
+                            _rec_actions: list = []
+                            for _c in _rec_fcands:
+                                _rec_actions.append({
+                                    "tipo":      "mover",
+                                    "proyecto":  _c.get("Proyecto", ""),
+                                    "estado":    _rec_estado_a(_c),
+                                    "impacto_h": _rec_mej_h(_c),
+                                    "elimina":   str(_c.get("Resultado", "")) == "Libera",
+                                    "aviso":     str(_c.get("Aviso", "") or ""),
+                                    "data":      _c,
+                                })
+                            try:
+                                _rec_def_total = float(_rec_foco.get("deficit_total", 0) or 0)
+                            except (TypeError, ValueError):
+                                _rec_def_total = 0.0
+                            for _r in _rec_pc_pool:
+                                _rec_amp_impacto = _rec_def_elim(_r)
+                                _rec_amp_elimina = _rec_def_total > 0 and _rec_amp_impacto >= _rec_def_total
+                                _rec_actions.append({
+                                    "tipo":      "ampliar",
+                                    "proyecto":  _r.get("Proyecto", ""),
+                                    "estado":    str(_r.get("Estado", "") or ""),
+                                    "impacto_h": _rec_amp_impacto,
+                                    "elimina":   _rec_amp_elimina,
+                                    "aviso":     "",
+                                    "data":      _r,
+                                })
+                            _rec_actions.sort(key=lambda _x: (
+                                0 if _x["estado"] == "Recomendable" else 1,
+                                1 if "Nuevo conflicto" in _x["aviso"] else 0,
+                                0 if _x["elimina"] else 1,
+                                -_x["impacto_h"],
+                            ))
+                            # Dedup: Plan A, B, C con claves distintas
+                            def _rec_action_key(_ax):
+                                if _ax["tipo"] == "mover":
+                                    return ("mover", str(_ax["proyecto"]), str(_ax["data"].get("Línea candidata", "")))
+                                try:
+                                    return ("ampliar", str(_ax["proyecto"]), str(int(float(_ax["data"].get("+ semanas", 0)))))
+                                except (TypeError, ValueError):
+                                    return ("ampliar", str(_ax["proyecto"]), "")
+
+                            _rec_plan_a = _rec_actions[0] if _rec_actions else None
+                            _rec_plan_b = None
+                            _rec_plan_c = None
+                            _rec_seen_keys: set = set()
+                            if _rec_plan_a is not None:
+                                _rec_seen_keys.add(_rec_action_key(_rec_plan_a))
+                            for _rax in (_rec_actions[1:] if _rec_actions else []):
+                                _rax_k = _rec_action_key(_rax)
+                                if _rax_k in _rec_seen_keys:
+                                    continue
+                                _rec_seen_keys.add(_rax_k)
+                                if _rec_plan_b is None:
+                                    _rec_plan_b = _rax
+                                elif _rec_plan_c is None:
+                                    _rec_plan_c = _rax
+                                    break
+                            # Indicador 2ª ronda: si la mejor acción no elimina el déficit
                             _rec_needed = False
-                            for _rnx in [_rec_pa, _rec_pb]:
+                            for _rnx in [_rec_plan_a, _rec_plan_b]:
                                 if _rnx is not None:
+                                    if _rnx["tipo"] == "mover":
+                                        try:
+                                            if float(_rnx["data"].get("Déficit simulado h", 0) or 0) > 0:
+                                                _rec_needed = True
+                                                break
+                                        except (TypeError, ValueError):
+                                            pass
+                                    elif not _rnx["elimina"]:
+                                        _rec_needed = True
+                                        break
+                            if not _rec_foto_rows:
+                                st.caption("La guía se completa con ajustes temporales cuando están calculados.")
+                            # ── Función de render de acción ────────────────────────────────
+                            def _render_rec_action(_action, _plan_title):
+                                st.markdown(f"**{_plan_title}**")
+                                if _action is None:
+                                    st.caption("No hay acción calculada para este foco.")
+                                    return
+                                _act_d   = _action["data"]
+                                _act_est = _action["estado"]
+                                if _act_est == "Recomendable":
+                                    st.markdown("✅ Recomendado")
+                                elif _act_est == "Revisar":
+                                    st.markdown("⚠ Revisar")
+                                st.markdown(f"**{str(_act_d.get('Proyecto', '—') or '—')}**")
+                                if _action["tipo"] == "mover":
+                                    st.caption(
+                                        f"Mover: {_act_d.get('Línea actual', '—')} → {_act_d.get('Línea candidata', '—')}"
+                                    )
                                     try:
-                                        if float(_rnx.get("Déficit simulado h", 0) or 0) > 0:
-                                            _rec_needed = True
-                                            break
+                                        _act_mej = round(float(_act_d.get("Mejora h", 0) or 0), 1)
+                                        _act_def = round(float(_act_d.get("Déficit simulado h", 0) or 0), 1)
+                                        st.caption(f"Impacto estimado: {_act_mej} h · Déficit residual: {_act_def} h")
                                     except (TypeError, ValueError):
                                         pass
+                                    if _action["elimina"]:
+                                        st.caption("Libera la línea del conflicto")
+                                    else:
+                                        st.caption("Reduce sin liberar la línea")
+                                    if _action["aviso"] and "Nuevo conflicto" in _action["aviso"]:
+                                        st.caption(f"⚠ {_action['aviso']}")
+                                    st.caption("Dónde actuar: pestaña **Mover línea**")
+                                else:
+                                    _act_mas = _act_d.get("+ semanas")
+                                    try:
+                                        st.caption(f"Ampliar: +{int(float(_act_mas))} sem")
+                                    except (TypeError, ValueError):
+                                        if _act_mas is not None:
+                                            st.caption(f"Ampliar: +{_act_mas} sem")
+                                    try:
+                                        st.caption(
+                                            f"Impacto estimado: {round(float(_act_d.get('Déficit global eliminado (h)', 0)), 1)} h"
+                                        )
+                                    except (TypeError, ValueError):
+                                        pass
+                                    _act_imp = str(_act_d.get("Impacto entrega", "") or "")
+                                    _act_ff  = str(_act_d.get("Firme/Flexible", "") or "")
+                                    if _act_imp:
+                                        st.caption(f"Entrega: {_act_imp}")
+                                    if _act_ff and _act_ff.lower() not in ("", "sin dato", "nan", "none"):
+                                        st.caption(f"Firme/Flexible: {_act_ff}")
+                                    st.caption("Dónde actuar: pestaña **Ampliar semanas**")
+
                             # ── Tres planes ───────────────────────────────────────────────
                             _rp_col_a, _rp_col_b, _rp_col_c = st.columns(3)
                             with _rp_col_a:
                                 with st.container(border=True):
-                                    st.markdown("**Plan A · Mejor opción**")
-                                    if _rec_pa is not None:
-                                        _rpa_avi = str(_rec_pa.get("Aviso", "") or "")
-                                        st.markdown("✅ Recomendado" if _rec_estado_a(_rec_pa) == "Recomendable" else "⚠ Revisar")
-                                        st.markdown(f"**{str(_rec_pa.get('Proyecto', '—') or '—')}**")
-                                        st.caption(f"Mover: {_rec_pa.get('Línea actual', '—')} → {_rec_pa.get('Línea candidata', '—')}")
-                                        try:
-                                            _rpa_mej = round(float(_rec_pa.get("Mejora h", 0) or 0), 1)
-                                            _rpa_def = round(float(_rec_pa.get("Déficit simulado h", 0) or 0), 1)
-                                            st.caption(f"Elimina: {_rpa_mej} h · Déficit residual: {_rpa_def} h")
-                                        except (TypeError, ValueError):
-                                            pass
-                                        if str(_rec_pa.get("Resultado", "")) == "Libera":
-                                            st.caption("Libera la línea del conflicto")
-                                        else:
-                                            st.caption("Reduce sin liberar la línea")
-                                        if _rpa_avi and "Nuevo conflicto" in _rpa_avi:
-                                            st.caption(f"⚠ {_rpa_avi}")
-                                        st.caption("Dónde actuar: pestaña **Mover línea**")
-                                    else:
-                                        st.caption("No hay movimiento de línea recomendable calculado para este foco.")
+                                    _render_rec_action(_rec_plan_a, "Plan A · Mejor opción")
                             with _rp_col_b:
                                 with st.container(border=True):
-                                    st.markdown("**Plan B · Segunda mejor opción**")
-                                    if _rec_pb is not None:
-                                        _rpb_avi = str(_rec_pb.get("Aviso", "") or "")
-                                        st.markdown("Alternativa")
-                                        st.markdown(f"**{str(_rec_pb.get('Proyecto', '—') or '—')}**")
-                                        st.caption(f"Mover: {_rec_pb.get('Línea actual', '—')} → {_rec_pb.get('Línea candidata', '—')}")
-                                        try:
-                                            _rpb_mej = round(float(_rec_pb.get("Mejora h", 0) or 0), 1)
-                                            _rpb_def = round(float(_rec_pb.get("Déficit simulado h", 0) or 0), 1)
-                                            st.caption(f"Elimina: {_rpb_mej} h · Déficit residual: {_rpb_def} h")
-                                        except (TypeError, ValueError):
-                                            pass
-                                        if str(_rec_pb.get("Resultado", "")) == "Libera":
-                                            st.caption("Libera la línea del conflicto")
-                                        else:
-                                            st.caption("Reduce sin liberar la línea")
-                                        if _rpb_avi and "Nuevo conflicto" in _rpb_avi:
-                                            st.caption(f"⚠ {_rpb_avi}")
+                                    _render_rec_action(_rec_plan_b, "Plan B · Segunda mejor opción")
+                                    if _rec_plan_b is not None:
                                         st.caption("Útil si Plan A no encaja operativamente.")
-                                        st.caption("Dónde actuar: pestaña **Mover línea**")
-                                    else:
-                                        st.caption("No hay segunda opción calculada para este foco.")
                             with _rp_col_c:
                                 with st.container(border=True):
-                                    st.markdown("**Plan C · Si queda déficit**")
-                                    if _rec_pc is not None:
-                                        _rpc_mas = _rec_pc.get("+ semanas")
-                                        _rpc_imp = str(_rec_pc.get("Impacto entrega", "") or "")
-                                        _rpc_ff  = str(_rec_pc.get("Firme/Flexible", "") or "")
-                                        st.markdown(f"**{str(_rec_pc.get('Proyecto', '—') or '—')}**")
-                                        try:
-                                            st.caption(f"Ampliar: +{int(float(_rpc_mas))} sem")
-                                        except (TypeError, ValueError):
-                                            if _rpc_mas is not None:
-                                                st.caption(f"Ampliar: +{_rpc_mas} sem")
-                                        try:
-                                            st.caption(f"Elimina: {round(float(_rec_pc.get('Déficit global eliminado (h)', 0)), 1)} h")
-                                        except (TypeError, ValueError):
-                                            pass
-                                        if _rpc_imp:
-                                            st.caption(f"Entrega: {_rpc_imp}")
-                                        if _rpc_ff and _rpc_ff.lower() not in ("", "sin dato", "nan", "none"):
-                                            st.caption(f"Firme/Flexible: {_rpc_ff}")
-                                        st.caption("Dónde actuar: pestaña **Ampliar semanas**")
-                                    else:
-                                        st.caption("No hay ajuste temporal calculado para este foco.")
+                                    _render_rec_action(
+                                        _rec_plan_c,
+                                        "Plan C · Tercera opción" if _rec_plan_c is not None else "Plan C · Si queda déficit",
+                                    )
                                     st.caption(
                                         "Si queda déficit residual, dónde actuar: pestaña **2ª ronda / Ajustar pendientes**."
                                         if _rec_needed
