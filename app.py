@@ -13339,24 +13339,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                         None,
                                                                                     )
                                                                                     st.rerun()
-                                            elif len(_prb_ampliar) > 1:
-                                                st.warning(
-                                                    "Solo se permite un ajuste por vez. "
-                                                    "Desmarca los proyectos extra: "
-                                                    + ", ".join(_prb_ampliar) + "."
-                                                )
-                                            elif len(_prb_ampliar) == 1:
-                                                _prb_proj = _prb_ampliar[0]
-                                                _prb_as   = _pr_as_by_proj.get(_prb_proj)
-                                                if (
-                                                    _prb_as is None
-                                                    or _prb_as.get("Semanas simuladas") is None
-                                                ):
-                                                    st.warning(
-                                                        f"{_prb_proj}: sin candidato de "
-                                                        f"ampliación. Recalcula alternativas."
-                                                    )
-                                                else:
+                                            elif _prb_ampliar:
+                                                # Procesar todas las ampliaciones secuencialmente
+                                                _prb_new_movs_amp: list = []
+                                                for _prb_proj in _prb_ampliar:
+                                                    _prb_as = _pr_as_by_proj.get(_prb_proj)
+                                                    if (
+                                                        _prb_as is None
+                                                        or _prb_as.get("Semanas simuladas") is None
+                                                    ):
+                                                        st.warning(
+                                                            f"{_prb_proj}: sin candidato de "
+                                                            f"ampliación. Recalcula alternativas."
+                                                        )
+                                                        continue
                                                     try:
                                                         _prb_sem_sim = int(
                                                             _prb_as["Semanas simuladas"]
@@ -13368,170 +13364,170 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             f"{_prb_proj}: semanas simuladas "
                                                             f"inválidas."
                                                         )
-                                                    else:
-                                                        # Línea actual desde load_df_sim
-                                                        _prb_lins = (
+                                                        continue
+                                                    # Línea actual desde load_df_sim
+                                                    _prb_lins = (
+                                                        _prb_load_acc[
                                                             _prb_load_acc[
-                                                                _prb_load_acc[
-                                                                    "Proyecto"
-                                                                ].astype(str) == _prb_proj
-                                                            ]["Línea"]
-                                                            .astype(str)
-                                                            .unique()
-                                                            .tolist()
+                                                                "Proyecto"
+                                                            ].astype(str) == _prb_proj
+                                                        ]["Línea"]
+                                                        .astype(str)
+                                                        .unique()
+                                                        .tolist()
+                                                    )
+                                                    if not _prb_lins:
+                                                        st.warning(
+                                                            f"{_prb_proj}: no encontrado "
+                                                            f"en la simulación activa."
                                                         )
-                                                        if not _prb_lins:
-                                                            st.warning(
-                                                                f"{_prb_proj}: no encontrado "
-                                                                f"en la simulación activa."
+                                                        continue
+                                                    elif len(_prb_lins) > 1:
+                                                        st.warning(
+                                                            f"{_prb_proj}: está en varias "
+                                                            f"líneas "
+                                                            f"({', '.join(_prb_lins)}). "
+                                                            f"Usa la 2ª solapa."
+                                                        )
+                                                        continue
+                                                    _prb_linea = _prb_lins[0]
+                                                    # Guard doble aplicación:
+                                                    # tipo + proyecto + linea_actual
+                                                    # incluye movimientos ya acumulados en este lote
+                                                    if any(
+                                                        m.get("tipo_accion")
+                                                        == "Ajuste temporal 2ª ronda"
+                                                        and str(
+                                                            m.get("proyecto", "")
+                                                        ).strip() == _prb_proj
+                                                        and str(
+                                                            m.get("linea_actual", "")
+                                                        ).strip() == _prb_linea
+                                                        for m in _prb_prev_movs + _prb_new_movs_amp
+                                                    ):
+                                                        st.warning(
+                                                            f"{_prb_proj}: ya tiene "
+                                                            f"ampliación de 2ª ronda "
+                                                            f"en {_prb_linea}. No se "
+                                                            f"aplica dos veces."
+                                                        )
+                                                        continue
+                                                    _prb_ext = (
+                                                        _simulate_prog_extend_duration(
+                                                            _prb_load_acc,
+                                                            _prb_proj,
+                                                            _prb_linea,
+                                                            _prb_sem_sim,
+                                                        )
+                                                    )
+                                                    if not _prb_ext["ok"]:
+                                                        st.warning(
+                                                            f"{_prb_proj}: "
+                                                            f"{_prb_ext['warning']}"
+                                                        )
+                                                        continue
+                                                    _prb_load_acc = _prb_ext["load_df"]
+                                                    try:
+                                                        _prb_sem_act = int(
+                                                            _prb_as.get(
+                                                                "Semanas actuales",
+                                                                0,
                                                             )
-                                                        elif len(_prb_lins) > 1:
-                                                            st.warning(
-                                                                f"{_prb_proj}: está en varias "
-                                                                f"líneas "
-                                                                f"({', '.join(_prb_lins)}). "
-                                                                f"Usa la 2ª solapa."
-                                                            )
-                                                        else:
-                                                            _prb_linea = _prb_lins[0]
-                                                            # Guard doble aplicación:
-                                                            # tipo + proyecto + linea_actual
-                                                            if any(
-                                                                m.get("tipo_accion")
-                                                                == "Ajuste temporal 2ª ronda"
-                                                                and str(
-                                                                    m.get("proyecto", "")
-                                                                ).strip() == _prb_proj
-                                                                and str(
-                                                                    m.get("linea_actual", "")
-                                                                ).strip() == _prb_linea
-                                                                for m in _prb_prev_movs
-                                                            ):
-                                                                st.warning(
-                                                                    f"{_prb_proj}: ya tiene "
-                                                                    f"ampliación de 2ª ronda "
-                                                                    f"en {_prb_linea}. No se "
-                                                                    f"aplica dos veces."
-                                                                )
-                                                            else:
-                                                                _prb_ext = (
-                                                                    _simulate_prog_extend_duration(
-                                                                        _prb_load_acc,
-                                                                        _prb_proj,
-                                                                        _prb_linea,
-                                                                        _prb_sem_sim,
-                                                                    )
-                                                                )
-                                                                if not _prb_ext["ok"]:
-                                                                    st.warning(
-                                                                        f"{_prb_proj}: "
-                                                                        f"{_prb_ext['warning']}"
-                                                                    )
-                                                                else:
-                                                                    _prb_load_acc = (
-                                                                        _prb_ext["load_df"]
-                                                                    )
-                                                                    try:
-                                                                        _prb_sem_act = int(
-                                                                            _prb_as.get(
-                                                                                "Semanas actuales",
-                                                                                0,
-                                                                            )
-                                                                        )
-                                                                    except (TypeError, ValueError):
-                                                                        _prb_sem_act = 0
-                                                                    try:
-                                                                        _prb_mej = float(
-                                                                            _prb_as.get(
-                                                                                "Déficit global eliminado (h)",
-                                                                                0.0,
-                                                                            ) or 0.0
-                                                                        )
-                                                                    except (TypeError, ValueError):
-                                                                        _prb_mej = 0.0
-                                                                    _prb_av = str(
-                                                                        _prb_as.get(
-                                                                            "Comentario"
-                                                                        ) or ""
-                                                                    ).strip()
-                                                                    _prb_new_mov = {
-                                                                        "tipo_accion":       "Ajuste temporal 2ª ronda",
-                                                                        "origen":            "segunda_ronda",
-                                                                        "proyecto":          _prb_proj,
-                                                                        "linea_actual":      _prb_linea,
-                                                                        "linea_destino":     _prb_linea,
-                                                                        "semanas_actuales":  _prb_sem_act,
-                                                                        "semanas_simuladas": _prb_sem_sim,
-                                                                        "h_sem_antes":       _prb_ext["h_sem_antes"],
-                                                                        "h_sem_despues":     _prb_ext["h_sem_despues"],
-                                                                        "mejora_h_est":      _prb_mej,
-                                                                        "aviso":             _prb_av,
-                                                                    }
-                                                                    if _prb_av and _prb_av.lower() not in (
-                                                                        "nan", "none", "null", ""
-                                                                    ):
-                                                                        _prb_avisos.append(
-                                                                            f"{_prb_proj} "
-                                                                            f"(2ª ronda): "
-                                                                            f"{_prb_av}"
-                                                                        )
-                                                                    _prb_final = (
-                                                                        _recompute_prog_deficit_global(
-                                                                            _prb_load_acc,
-                                                                            _prb_cap_base,
-                                                                        )
-                                                                    )
-                                                                    _prb_def_des = (
-                                                                        _prb_final[
-                                                                            "deficit_total_h"
-                                                                        ]
-                                                                    )
-                                                                    # Preservar claves previas
-                                                                    st.session_state[
-                                                                        f"_prog_alt_sim_{plant_id}"
-                                                                    ] = {
-                                                                        **_pr_sim,
-                                                                        "movimientos": (
-                                                                            _prb_prev_movs
-                                                                            + [_prb_new_mov]
-                                                                        ),
-                                                                        "load_df_sim":     _prb_load_acc,
-                                                                        "conflict_df_sim": _prb_final["conflict_df"],
-                                                                        "deficit_despues": _prb_def_des,
-                                                                        "mejora_total_h":  max(
-                                                                            0.0,
-                                                                            _prb_def_antes
-                                                                            - _prb_def_des,
-                                                                        ),
-                                                                        "avisos":          _prb_avisos,
-                                                                    }
-                                                                    st.session_state[
-                                                                        f"prog_gantt_vista_{plant_id}"
-                                                                    ] = "Simulación"
-                                                                    for _prb_pk in list(
-                                                                        _pr_by_proj.keys()
-                                                                    ):
-                                                                        _prb_ps = "".join(
-                                                                            c if c.isalnum() or c == "_" else "_"
-                                                                            for c in str(_prb_pk)
-                                                                        )
-                                                                        st.session_state.pop(
-                                                                            f"_pr_check_{plant_id}_{_prb_ps}",
-                                                                            None,
-                                                                        )
-                                                                        st.session_state.pop(
-                                                                            f"_pr_action_{plant_id}_{_prb_ps}",
-                                                                            None,
-                                                                        )
-                                                                    st.session_state.pop(
-                                                                        f"_prog_as_foto_{plant_id}",
-                                                                        None,
-                                                                    )
-                                                                    st.session_state.pop(
-                                                                        f"_prog_alt_result_{plant_id}",
-                                                                        None,
-                                                                    )
-                                                                    st.rerun()
+                                                        )
+                                                    except (TypeError, ValueError):
+                                                        _prb_sem_act = 0
+                                                    try:
+                                                        _prb_mej = float(
+                                                            _prb_as.get(
+                                                                "Déficit global eliminado (h)",
+                                                                0.0,
+                                                            ) or 0.0
+                                                        )
+                                                    except (TypeError, ValueError):
+                                                        _prb_mej = 0.0
+                                                    _prb_av = str(
+                                                        _prb_as.get(
+                                                            "Comentario"
+                                                        ) or ""
+                                                    ).strip()
+                                                    _prb_new_movs_amp.append({
+                                                        "tipo_accion":       "Ajuste temporal 2ª ronda",
+                                                        "origen":            "segunda_ronda",
+                                                        "proyecto":          _prb_proj,
+                                                        "linea_actual":      _prb_linea,
+                                                        "linea_destino":     _prb_linea,
+                                                        "semanas_actuales":  _prb_sem_act,
+                                                        "semanas_simuladas": _prb_sem_sim,
+                                                        "h_sem_antes":       _prb_ext["h_sem_antes"],
+                                                        "h_sem_despues":     _prb_ext["h_sem_despues"],
+                                                        "mejora_h_est":      _prb_mej,
+                                                        "aviso":             _prb_av,
+                                                    })
+                                                    if _prb_av and _prb_av.lower() not in (
+                                                        "nan", "none", "null", ""
+                                                    ):
+                                                        _prb_avisos.append(
+                                                            f"{_prb_proj} "
+                                                            f"(2ª ronda): "
+                                                            f"{_prb_av}"
+                                                        )
+                                                # Recalcular déficit una sola vez sobre el acumulado
+                                                if _prb_new_movs_amp:
+                                                    _prb_final = (
+                                                        _recompute_prog_deficit_global(
+                                                            _prb_load_acc,
+                                                            _prb_cap_base,
+                                                        )
+                                                    )
+                                                    _prb_def_des = (
+                                                        _prb_final["deficit_total_h"]
+                                                    )
+                                                    # Preservar claves previas
+                                                    st.session_state[
+                                                        f"_prog_alt_sim_{plant_id}"
+                                                    ] = {
+                                                        **_pr_sim,
+                                                        "movimientos": (
+                                                            _prb_prev_movs
+                                                            + _prb_new_movs_amp
+                                                        ),
+                                                        "load_df_sim":     _prb_load_acc,
+                                                        "conflict_df_sim": _prb_final["conflict_df"],
+                                                        "deficit_despues": _prb_def_des,
+                                                        "mejora_total_h":  max(
+                                                            0.0,
+                                                            _prb_def_antes
+                                                            - _prb_def_des,
+                                                        ),
+                                                        "avisos":          _prb_avisos,
+                                                    }
+                                                    st.session_state[
+                                                        f"prog_gantt_vista_{plant_id}"
+                                                    ] = "Simulación"
+                                                    for _prb_pk in list(
+                                                        _pr_by_proj.keys()
+                                                    ):
+                                                        _prb_ps = "".join(
+                                                            c if c.isalnum() or c == "_" else "_"
+                                                            for c in str(_prb_pk)
+                                                        )
+                                                        st.session_state.pop(
+                                                            f"_pr_check_{plant_id}_{_prb_ps}",
+                                                            None,
+                                                        )
+                                                        st.session_state.pop(
+                                                            f"_pr_action_{plant_id}_{_prb_ps}",
+                                                            None,
+                                                        )
+                                                    st.session_state.pop(
+                                                        f"_prog_as_foto_{plant_id}",
+                                                        None,
+                                                    )
+                                                    st.session_state.pop(
+                                                        f"_prog_alt_result_{plant_id}",
+                                                        None,
+                                                    )
+                                                    st.rerun()
                                             else:
                                                 st.info(
                                                     "No hay ajustes válidos seleccionados."
