@@ -10723,7 +10723,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Línea actual":      _da_linea_act,
                                                 "Línea resuelta":    str(_sl_id),
                                                 "Modelo proyecto":   _da_modelo_p,
-                                                "Motivo": "Compatible, pero sin capacidad suficiente en destino.",
+                                                "Motivo": "Compatible, pero mover el proyecto completo crearía conflicto en destino. Puede servir para ajuste parcial en segunda ronda.",
                                                 "Tipo":   "Compatible no libre",
                                             })
                                             continue
@@ -10982,10 +10982,16 @@ if st.session_state.active_tab == "📋 Programación real":
 
                     _rec_a_pool = sorted(_rec_cands_raw, key=_rec_sort_key)
 
-                    # Plan C global pool (ampliar semanas recomendables)
+                    # Plan C global pool (ampliar semanas recomendables o revisables)
                     _rec_c_pool_g = sorted(
-                        [_r for _r in _rec_foto_rows if str(_r.get("Estado", "")) == "Recomendable"],
-                        key=lambda _r: -_rec_def_elim(_r),
+                        [
+                            _r for _r in _rec_foto_rows
+                            if str(_r.get("Estado", "")) in ("Recomendable", "Revisar")
+                        ],
+                        key=lambda _r: (
+                            0 if str(_r.get("Estado", "")) == "Recomendable" else 1,
+                            -_rec_def_elim(_r),
+                        ),
                     )
 
                     # Build focos (by Línea) from conflict_df — semanas como contexto
