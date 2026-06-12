@@ -3293,6 +3293,8 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
+        st.session_state["filter_models_name"] = ""
+        st.session_state["filter_models_status"] = t("cfg_status_all")
         st.rerun()
 
     if st.session_state.get("models_saved"):
@@ -3356,6 +3358,10 @@ la carga visible sin que el trabajo desaparezca de la planta.
     _times_hidden  = times_df[~_mask_t].copy()
     if _filter_t_model or _filter_t_proc:
         st.caption(t("cfg_showing_rows").format(shown=len(_times_visible), total=len(times_df)))
+        if st.button("✕ Limpiar filtros", key="btn_clear_filter_times"):
+            st.session_state["filter_times_model"] = ""
+            st.session_state["filter_times_proc"] = ""
+            st.rerun()
 
     edited_times = st.data_editor(
         _times_visible,
@@ -3464,6 +3470,11 @@ la carga visible sin que el trabajo desaparezca de la planta.
     _stations_hidden  = stations_df[~_mask_st].copy()
     if any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc]):
         st.caption(t("cfg_showing_rows").format(shown=len(_stations_visible), total=len(stations_df)))
+        if st.button("✕ Limpiar filtros", key="btn_clear_filter_stations"):
+            st.session_state["filter_stations_nave"] = _all_token
+            st.session_state["filter_stations_line"] = _all_token
+            st.session_state["filter_stations_proc"] = _all_token
+            st.rerun()
 
     edited_stations = st.data_editor(
         _stations_visible,
@@ -3798,6 +3809,9 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
         _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
         st.caption(t("cfg_showing_rows").format(shown=len(_bmap_visible), total=len(_bmap_show)))
+        if st.button("✕ Limpiar filtros", key="btn_clear_filter_da"):
+            st.session_state["filter_da_bench"] = t("cfg_filter_da_all")
+            st.rerun()
     else:
         _bmap_visible = _bmap_show.copy()
         _bmap_hidden  = _bmap_show.iloc[0:0].copy()
