@@ -2319,7 +2319,7 @@ if st.sidebar.button(t("btn_save_params")):
 
     save_table(new_settings, "settings")
 
-    st.sidebar.success(t("msg_params_saved"))
+    st.toast(t("msg_params_saved"), icon="✅")
 
 # =========================================================
 # CARGA DATOS
@@ -3275,8 +3275,14 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
 
     _models_visible = models_editor[_mask_m].copy()
     _models_hidden  = models_editor[~_mask_m].copy()
+
+    def _clear_model_filters():
+        st.session_state["filter_models_name"] = ""
+        st.session_state["filter_models_status"] = t("cfg_status_all")
+
     if _filter_m_name or _filter_m_status != t("cfg_status_all"):
         st.caption(t("cfg_showing_rows").format(shown=len(_models_visible), total=len(models_editor)))
+        st.button("✕ Limpiar filtros", key="btn_clear_filter_models", on_click=_clear_model_filters)
 
     edited_models = st.data_editor(
         _models_visible,
@@ -3732,7 +3738,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         st.session_state["compat_saved"] = True
 
     if st.session_state.get("compat_saved"):
-        st.success(t("msg_compat_saved"))
+        st.toast(t("msg_compat_saved"), icon="✅")
         st.session_state["compat_saved"] = False
 
     # --- E) Bancos de prueba ----------------------------
