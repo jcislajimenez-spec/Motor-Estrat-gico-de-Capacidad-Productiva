@@ -3278,6 +3278,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         _models_visible,
         use_container_width=True,
         num_rows="dynamic",
+        column_order=["model", "description", "active"],
         column_config={
             "active": st.column_config.CheckboxColumn("active", help="Modelo activo (aparece en la app).")
         }
@@ -3360,6 +3361,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _times_visible,
         use_container_width=True,
         num_rows="dynamic",
+        column_order=["model", "process", "cycle_time", "machine_time", "labor_time"],
         column_config={
             "cycle_time": st.column_config.NumberColumn(
                 "cycle_time",
@@ -3467,6 +3469,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _stations_visible,
         use_container_width=True,
         num_rows="dynamic",
+        column_order=["nave", "line", "process", "stations", "operators_per_station"],
         column_config={
             "stations": st.column_config.NumberColumn("stations", min_value=0.0, step=0.1, format="%.2f"),
             "operators_per_station": st.column_config.NumberColumn("operators_per_station", min_value=0.0, step=0.1, format="%.2f"),
