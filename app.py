@@ -3254,6 +3254,10 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
     models_editor = models_df.copy()
     models_editor["active"] = models_editor["active"].astype(int).clip(0, 1).astype(bool)
 
+    if st.session_state.pop("clear_models_filters_after_save", False):
+        st.session_state["filter_models_name"] = ""
+        st.session_state["filter_models_status"] = t("cfg_status_all")
+
     _mf1, _mf2 = st.columns(2)
     _filter_m_name = _mf1.text_input(t("cfg_filter_model"), key="filter_models_name", placeholder="")
     _status_opts = [t("cfg_status_all"), t("cfg_status_active"), t("cfg_status_inactive")]
@@ -3293,8 +3297,7 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
-        st.session_state["filter_models_name"] = ""
-        st.session_state["filter_models_status"] = t("cfg_status_all")
+        st.session_state["clear_models_filters_after_save"] = True
         st.rerun()
 
     if st.session_state.get("models_saved"):
