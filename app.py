@@ -3292,9 +3292,10 @@ if st.session_state.active_tab == "⚙️ Configuración (Power User)":
         out["plant_id"] = plant_id
         save_table(out, "models")
         st.session_state["models_saved"] = True
+        st.rerun()
 
     if st.session_state.get("models_saved"):
-        st.success(t("msg_models_saved"))
+        st.toast(t("msg_models_saved"), icon="✅")
         st.session_state["models_saved"] = False
 
     st.divider()
@@ -3424,7 +3425,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         st.session_state["times_warning"] = None
 
     if st.session_state.get("times_saved"):
-        st.success(t("msg_times_saved"))
+        st.toast(t("msg_times_saved"), icon="✅")
         st.session_state["times_saved"] = False
 
     st.divider()
@@ -3501,7 +3502,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         st.session_state["stations_warning"] = None
 
     if st.session_state.get("stations_saved"):
-        st.success(t("msg_stations_saved"))
+        st.toast(t("msg_stations_saved"), icon="✅")
         st.session_state["stations_saved"] = False
 
     st.divider()
@@ -3759,7 +3760,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         save_table(_out, "test_bench_config")
         st.session_state["bench_cfg_saved"] = True
     if st.session_state.get("bench_cfg_saved"):
-        st.success(t("msg_benches_saved"))
+        st.toast(t("msg_benches_saved"), icon="✅")
         st.session_state["bench_cfg_saved"] = False
 
     # E2) Asignación valor D&A → tipo de banco
@@ -3836,7 +3837,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         save_table(_out, "da_bench_type")
         st.session_state["bench_map_saved"] = True
     if st.session_state.get("bench_map_saved"):
-        st.success(t("msg_da_saved"))
+        st.toast(t("msg_da_saved"), icon="✅")
         st.session_state["bench_map_saved"] = False
 
 # =========================================================
@@ -4354,10 +4355,7 @@ if st.session_state.active_tab == "📈 Resultados":
     # ── Bloque azul escenario (debajo del título) ─────────────────────────────
     st.markdown(_ex_header_info)
 
-    _expander_label = t("res_params_expander")
-    if _active_ov_lines:
-        _expander_label += f"  —  ✏ {len(_active_ov_lines)} activo(s)"
-    with st.expander(_expander_label, expanded=False):
+    with st.expander(t("res_params_expander"), expanded=False):
         if _planned_line_ids:
             import math as _math
             _chunk = _math.ceil(len(_planned_line_ids) / 3)
