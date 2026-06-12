@@ -3359,12 +3359,13 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _mask_t &= times_df["process"].astype(str).str.contains(_filter_t_proc, case=False, na=False)
     _times_visible = times_df[_mask_t].copy()
     _times_hidden  = times_df[~_mask_t].copy()
+    def _clear_times_filters():
+        st.session_state["filter_times_model"] = ""
+        st.session_state["filter_times_proc"] = ""
+
     if _filter_t_model or _filter_t_proc:
         st.caption(t("cfg_showing_rows").format(shown=len(_times_visible), total=len(times_df)))
-        if st.button("✕ Limpiar filtros", key="btn_clear_filter_times"):
-            st.session_state["filter_times_model"] = ""
-            st.session_state["filter_times_proc"] = ""
-            st.rerun()
+        st.button("✕ Limpiar filtros", key="btn_clear_filter_times", on_click=_clear_times_filters)
 
     edited_times = st.data_editor(
         _times_visible,
@@ -3471,13 +3472,14 @@ la carga visible sin que el trabajo desaparezca de la planta.
 
     _stations_visible = stations_df[_mask_st].copy()
     _stations_hidden  = stations_df[~_mask_st].copy()
+    def _clear_stations_filters():
+        st.session_state["filter_stations_nave"] = _all_token
+        st.session_state["filter_stations_line"] = _all_token
+        st.session_state["filter_stations_proc"] = _all_token
+
     if any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc]):
         st.caption(t("cfg_showing_rows").format(shown=len(_stations_visible), total=len(stations_df)))
-        if st.button("✕ Limpiar filtros", key="btn_clear_filter_stations"):
-            st.session_state["filter_stations_nave"] = _all_token
-            st.session_state["filter_stations_line"] = _all_token
-            st.session_state["filter_stations_proc"] = _all_token
-            st.rerun()
+        st.button("✕ Limpiar filtros", key="btn_clear_filter_stations", on_click=_clear_stations_filters)
 
     edited_stations = st.data_editor(
         _stations_visible,
@@ -3808,13 +3810,14 @@ la carga visible sin que el trabajo desaparezca de la planta.
         options=_da_opts,
         key="filter_da_bench",
     )
+    def _clear_da_filter():
+        st.session_state["filter_da_bench"] = t("cfg_filter_da_all")
+
     if _filter_da in _DA_VALUES:
         _bmap_visible = _bmap_show[_bmap_show["da_value"] == _filter_da].copy()
         _bmap_hidden  = _bmap_show[_bmap_show["da_value"] != _filter_da].copy()
         st.caption(t("cfg_showing_rows").format(shown=len(_bmap_visible), total=len(_bmap_show)))
-        if st.button("✕ Limpiar filtros", key="btn_clear_filter_da"):
-            st.session_state["filter_da_bench"] = t("cfg_filter_da_all")
-            st.rerun()
+        st.button("✕ Limpiar filtros", key="btn_clear_filter_da", on_click=_clear_da_filter)
     else:
         _bmap_visible = _bmap_show.copy()
         _bmap_hidden  = _bmap_show.iloc[0:0].copy()
