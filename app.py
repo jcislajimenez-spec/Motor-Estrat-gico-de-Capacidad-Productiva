@@ -11224,7 +11224,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "Línea a revisar",
                                 options=range(len(_rec_labels)),
                                 format_func=lambda _i: _rec_labels[_i],
-                                key=f"prog_rec_focus_select_{plant_id}",
+                                key=(
+                                    f"prog_rec_focus_select_{plant_id}_"
+                                    f"{st.session_state.get(f'_prog_alt_editor_ver_{plant_id}', 0)}_"
+                                    f"{st.session_state.get(f'_prog_extend_editor_ver_{plant_id}', 0)}"
+                                ),
                             )
                             _rec_foco = _rec_focos[_rec_sel]
                             _rec_lin  = _rec_foco["linea"]
