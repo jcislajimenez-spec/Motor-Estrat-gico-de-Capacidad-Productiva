@@ -3408,7 +3408,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
     if st.button(t("btn_save_times")):
         out = pd.concat([_times_hidden, edited_times], ignore_index=True)
         out["model"] = out["model"].astype(str).str.strip()
-        out["process"] = out["process"].astype(str).str.strip()
+        out["process"] = out["process"].astype(str).str.strip().str.upper()
         out["cycle_time"] = pd.to_numeric(out["cycle_time"], errors="coerce").fillna(0.0)
 
         # machine_time y labor_time: si vienen vacíos, convertir a 0.0
@@ -3507,7 +3507,7 @@ la carga visible sin que el trabajo desaparezca de la planta.
         out = out.reset_index(drop=True)
         out["line"] = out["line"].astype(str).str.strip()
         out["nave"] = out["nave"].astype(str).str.strip()
-        out["process"] = out["process"].astype(str).str.strip()
+        out["process"] = out["process"].astype(str).str.strip().str.upper()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
         # Reconstruir line_id para mantener coherencia
