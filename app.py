@@ -11510,6 +11510,25 @@ if st.session_state.active_tab == "📋 Programación real":
                                             .reset_index(drop=True)
                                         )
                                         _da_df_c["Aplicar"] = False
+                                        _da_ml_applied: set = {
+                                            (
+                                                str(m.get("proyecto", "")).strip(),
+                                                str(m.get("linea_actual", "")).strip(),
+                                                str(m.get("linea_destino", "")).strip(),
+                                            )
+                                            for m in (
+                                                (_da_alt_sim_existing or {}).get("movimientos") or []
+                                            )
+                                            if m.get("tipo_accion") == "Mover línea"
+                                        }
+                                        _da_df_c["Aplicado en simulación"] = _da_df_c.apply(
+                                            lambda _r: (
+                                                str(_r.get("Proyecto", "")).strip(),
+                                                str(_r.get("Línea actual", "")).strip(),
+                                                str(_r.get("Línea candidata", "")).strip(),
+                                            ) in _da_ml_applied,
+                                            axis=1,
+                                        )
                                         def _da_row_carga(r):
                                             return _da_load_pl.get((str(r.get("Proyecto", "")), str(r.get("Línea actual", ""))), (None, None))[0]
                                         def _da_row_semanas(r):
@@ -11684,7 +11703,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 _da_df_c[_f41c] = ""
                                         _da_df_c["Modelo"] = _da_df_c["Proyecto"].map(_da_mdl_por_proj).fillna("")
                                         _da_edit_cols = [c for c in [
-                                            "Aplicar", "Estado", "Modelo", "Proyecto",
+                                            "Aplicar", "Aplicado en simulación", "Estado", "Modelo", "Proyecto",
                                             "Movimiento", "Resultado", "Origen",
                                             "Carga origen prom. h/sem", "Cap. origen h/sem",
                                             "Cap. destino h/sem", "Margen si 100% h/sem",
@@ -11693,6 +11712,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_edit_cfg = {
                                             "Aplicar": st.column_config.CheckboxColumn(
                                                 label="Aplicar", default=False, width=70,
+                                            ),
+                                            "Aplicado en simulación": st.column_config.CheckboxColumn(
+                                                label="En sim.", width=70,
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 label="Estado", width=110,
@@ -12206,6 +12228,31 @@ if st.session_state.active_tab == "📋 Programación real":
                                     if "Aplicar" in _dat_df.columns:
                                         _dat_df = _dat_df.drop(columns=["Aplicar"])
                                     _dat_df.insert(0, "Aplicar", False)
+                                    _dat_as_applied: set = set()
+                                    for _dat_am in (
+                                        (_da_alt_sim_existing or {}).get("movimientos") or []
+                                    ):
+                                        if _dat_am.get("tipo_accion") == "Ajuste temporal":
+                                            try:
+                                                _dat_as_applied.add((
+                                                    str(_dat_am.get("proyecto", "")).strip(),
+                                                    int(_dat_am.get("semanas_actuales", 0)),
+                                                    int(_dat_am.get("semanas_simuladas", 0)),
+                                                ))
+                                            except (TypeError, ValueError):
+                                                pass
+                                    def _dat_row_applied(_r):
+                                        try:
+                                            return (
+                                                str(_r.get("Proyecto", "")).strip(),
+                                                int(_r.get("Semanas actuales") or 0),
+                                                int(_r.get("Semanas simuladas") or 0),
+                                            ) in _dat_as_applied
+                                        except (TypeError, ValueError):
+                                            return False
+                                    _dat_df["Aplicado en simulación"] = _dat_df.apply(
+                                        _dat_row_applied, axis=1,
+                                    )
                                     _as_pss = st.session_state.get(f"_prog_parsed_{plant_id}")
                                     _as_mdl_sets: dict = {}
                                     if _as_pss is not None:
@@ -12253,6 +12300,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                         column_config={
                                             "Aplicar": st.column_config.CheckboxColumn(
                                                 "Aplicar", width="small", default=False
+                                            ),
+                                            "Aplicado en simulación": st.column_config.CheckboxColumn(
+                                                "En sim.", width="small",
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 "Estado", width="small"
@@ -12865,12 +12915,28 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             "disponibles."
                                                         )
                                                     else:
-                                                        st.info(
-                                                            "No se ha encontrado una alternativa "
-                                                            "aplicable específicamente para este "
-                                                            "pendiente con las reglas y los datos "
-                                                            "disponibles."
-                                                        )
+                                                        if _pr_proj in _pr_fallback_keys:
+                                                            st.info(
+                                                                "Este pendiente sigue vivo, pero la "
+                                                                "app no lo ha asociado a un proyecto "
+                                                                "concreto.\n\nVuelve a las pestañas "
+                                                                "**Mover línea** o **Ampliar "
+                                                                "semanas** y revisa las alternativas "
+                                                                "de esta línea. Si una encaja, "
+                                                                "selecciónala y vuelve a calcular "
+                                                                "la 2ª ronda."
+                                                            )
+                                                        else:
+                                                            st.info(
+                                                                "Este pendiente sigue vivo, pero con "
+                                                                "la simulación activa actual no hay "
+                                                                "otra acción calculada para este "
+                                                                "proyecto.\n\nRevisa si existe alguna "
+                                                                "alternativa pendiente en **Mover "
+                                                                "línea** o **Ampliar semanas**. Si no "
+                                                                "aparece ninguna, este caso queda "
+                                                                "para revisión manual."
+                                                            )
                                                 else:
                                                     st.caption(
                                                         f"Sin ajuste: el déficit de "
