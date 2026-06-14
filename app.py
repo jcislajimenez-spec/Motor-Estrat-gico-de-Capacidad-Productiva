@@ -3365,6 +3365,18 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _mask_t &= times_df["process"].astype(str).str.contains(_filter_t_proc, case=False, na=False)
     _times_visible = times_df[_mask_t].copy()
     _times_hidden  = times_df[~_mask_t].copy()
+    _PROC_ORDER_T = ["PREM", "ML", "PRM", "PRB", "PARA", "REP+EXP"]
+    _proc_rank_t = {p: i for i, p in enumerate(_PROC_ORDER_T)}
+    _times_visible["_r"] = (
+        _times_visible["process"].astype(str).str.upper()
+        .map(lambda p: _proc_rank_t.get(p, len(_PROC_ORDER_T)))
+    )
+    _times_visible = (
+        _times_visible
+        .sort_values(["model", "_r"])
+        .drop(columns=["_r"])
+        .reset_index(drop=True)
+    )
     _filter_t_active = bool(_filter_t_model or _filter_t_proc)
     def _clear_times_filters():
         st.session_state["filter_times_model"] = ""
