@@ -12295,11 +12295,13 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _pr_dest_to_projs: dict = {}
                                     for _prm in _pr_movs:
                                         _prm_d = str(_prm.get("linea_destino", "")).strip()
+                                        _prm_a = str(_prm.get("linea_actual",  "")).strip()
                                         _prm_p = str(_prm.get("proyecto", "")).strip()
-                                        if _prm_d and _prm_p:
-                                            _pr_dest_to_projs.setdefault(_prm_d, [])
-                                            if _prm_p not in _pr_dest_to_projs[_prm_d]:
-                                                _pr_dest_to_projs[_prm_d].append(_prm_p)
+                                        if _prm_p:
+                                            for _prm_lin in filter(None, {_prm_d, _prm_a}):
+                                                _pr_dest_to_projs.setdefault(_prm_lin, [])
+                                                if _prm_p not in _pr_dest_to_projs[_prm_lin]:
+                                                    _pr_dest_to_projs[_prm_lin].append(_prm_p)
 
                                     for _, _prr in _pr_cfl.iterrows():
                                         _pr_lin = str(_prr.get("Línea", "")).strip()
