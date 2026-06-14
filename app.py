@@ -3480,6 +3480,18 @@ la carga visible sin que el trabajo desaparezca de la planta.
 
     _stations_visible = stations_df[_mask_st].copy()
     _stations_hidden  = stations_df[~_mask_st].copy()
+    _PROC_ORDER = ["PREM", "ML", "PRM", "PRB", "PARA", "REP+EXP"]
+    _proc_rank = {p: i for i, p in enumerate(_PROC_ORDER)}
+    _stations_visible["_r"] = (
+        _stations_visible["process"].astype(str).str.upper()
+        .map(lambda p: _proc_rank.get(p, len(_PROC_ORDER)))
+    )
+    _stations_visible = (
+        _stations_visible
+        .sort_values(["nave", "line", "_r"])
+        .drop(columns=["_r"])
+        .reset_index(drop=True)
+    )
     _filter_st_active = any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc])
     def _clear_stations_filters():
         st.session_state["filter_stations_nave"] = _all_token
