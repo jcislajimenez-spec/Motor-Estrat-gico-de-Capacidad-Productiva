@@ -3505,8 +3505,8 @@ la carga visible sin que el trabajo desaparezca de la planta.
     if st.button(t("btn_save_stations")):
         out = pd.concat([_stations_hidden, edited_stations], ignore_index=True)
         out = out.reset_index(drop=True)
-        out["line"] = out["line"].astype(str).str.strip()
-        out["nave"] = out["nave"].astype(str).str.strip()
+        out["line"] = out["line"].astype(str).str.strip().str.upper()
+        out["nave"] = out["nave"].astype(str).str.strip().str.upper()
         out["process"] = out["process"].astype(str).str.strip().str.upper()
         out["stations"] = pd.to_numeric(out["stations"], errors="coerce").fillna(0.0)
         out["operators_per_station"] = pd.to_numeric(out["operators_per_station"], errors="coerce").fillna(0.0)
