@@ -3365,18 +3365,20 @@ la carga visible sin que el trabajo desaparezca de la planta.
         _mask_t &= times_df["process"].astype(str).str.contains(_filter_t_proc, case=False, na=False)
     _times_visible = times_df[_mask_t].copy()
     _times_hidden  = times_df[~_mask_t].copy()
+    _filter_t_active = bool(_filter_t_model or _filter_t_proc)
     def _clear_times_filters():
         st.session_state["filter_times_model"] = ""
         st.session_state["filter_times_proc"] = ""
 
-    if _filter_t_model or _filter_t_proc:
+    if _filter_t_active:
         st.caption(t("cfg_showing_rows").format(shown=len(_times_visible), total=len(times_df)))
         st.button("✕ Limpiar filtros", key="btn_clear_filter_times", on_click=_clear_times_filters)
+        st.caption("⚠️ Limpia filtros para añadir filas nuevas.")
 
     edited_times = st.data_editor(
         _times_visible,
         use_container_width=True,
-        num_rows="dynamic",
+        num_rows="fixed" if _filter_t_active else "dynamic",
         column_order=["model", "process", "cycle_time", "machine_time", "labor_time"],
         column_config={
             "cycle_time": st.column_config.NumberColumn(
@@ -3478,19 +3480,21 @@ la carga visible sin que el trabajo desaparezca de la planta.
 
     _stations_visible = stations_df[_mask_st].copy()
     _stations_hidden  = stations_df[~_mask_st].copy()
+    _filter_st_active = any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc])
     def _clear_stations_filters():
         st.session_state["filter_stations_nave"] = _all_token
         st.session_state["filter_stations_line"] = _all_token
         st.session_state["filter_stations_proc"] = _all_token
 
-    if any(f != _all_token for f in [_filter_st_nave, _filter_st_line, _filter_st_proc]):
+    if _filter_st_active:
         st.caption(t("cfg_showing_rows").format(shown=len(_stations_visible), total=len(stations_df)))
         st.button("✕ Limpiar filtros", key="btn_clear_filter_stations", on_click=_clear_stations_filters)
+        st.caption("⚠️ Limpia filtros para añadir filas nuevas.")
 
     edited_stations = st.data_editor(
         _stations_visible,
         use_container_width=True,
-        num_rows="dynamic",
+        num_rows="fixed" if _filter_st_active else "dynamic",
         column_order=["nave", "line", "process", "stations", "operators_per_station"],
         column_config={
             "stations": st.column_config.NumberColumn("stations", min_value=0.0, step=0.1, format="%.2f"),
