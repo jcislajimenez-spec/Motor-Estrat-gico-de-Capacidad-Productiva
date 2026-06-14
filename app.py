@@ -11736,6 +11736,38 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "compatible. Útil cuando el destino absorbe mejor la "
                                                 "carga sin alargar el proyecto."
                                             )
+                                            _ml_sim_hist = [
+                                                m for m in (
+                                                    (_da_alt_sim_existing or {}).get("movimientos") or []
+                                                )
+                                                if m.get("tipo_accion") == "Mover línea"
+                                            ]
+                                            if _ml_sim_hist:
+                                                _ml_hist_parts = []
+                                                for _mlh in _ml_sim_hist:
+                                                    _mlh_frac = str(
+                                                        _mlh.get("fraccion_pct") or ""
+                                                    ).strip()
+                                                    _mlh_frac = (
+                                                        _mlh_frac
+                                                        if _mlh_frac
+                                                        and _mlh_frac.lower()
+                                                        not in ("nan", "none", "")
+                                                        else ""
+                                                    )
+                                                    _ml_hist_parts.append(
+                                                        f"**{_mlh.get('proyecto', '?')}**: "
+                                                        f"{_mlh.get('linea_actual', '?')} → "
+                                                        f"{_mlh.get('linea_destino', '?')}"
+                                                        + (
+                                                            f" ({_mlh_frac})"
+                                                            if _mlh_frac else ""
+                                                        )
+                                                    )
+                                                st.caption(
+                                                    "✓ Aplicado en la simulación activa: "
+                                                    + " · ".join(_ml_hist_parts)
+                                                )
                                             _da_df_edited = st.data_editor(
                                                 _da_df_c[_da_edit_cols],
                                                 column_config=_da_edit_cfg,
@@ -12130,6 +12162,24 @@ if st.session_state.active_tab == "📋 Programación real":
                                     "pero reparte la carga en más semanas. Puede reducir el "
                                     "déficit, aunque puede retrasar la entrega."
                                 )
+                                _as_sim_hist = [
+                                    m for m in (
+                                        (_da_alt_sim_existing or {}).get("movimientos") or []
+                                    )
+                                    if m.get("tipo_accion") == "Ajuste temporal"
+                                ]
+                                if _as_sim_hist:
+                                    _as_hist_parts = []
+                                    for _ash in _as_sim_hist:
+                                        _as_hist_parts.append(
+                                            f"**{_ash.get('proyecto', '?')}**: "
+                                            f"{_ash.get('semanas_actuales', '?')} → "
+                                            f"{_ash.get('semanas_simuladas', '?')} semanas"
+                                        )
+                                    st.caption(
+                                        "✓ Aplicado en la simulación activa: "
+                                        + " · ".join(_as_hist_parts)
+                                    )
                                 if not _dat_rows:
                                     st.caption("No hay candidatos para ajuste temporal.")
                                 else:
@@ -12786,11 +12836,47 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     )
 
                                             elif _pr_action == "No actuar":
-                                                st.caption(
-                                                    f"Sin ajuste: el déficit de "
-                                                    f"{_pr_def_str(_pr_rows)} "
-                                                    f"queda pendiente de revisión manual."
-                                                )
+                                                if len(_pr_radio_opts) == 1:
+                                                    _pr_mov_applied = any(
+                                                        str(m.get("proyecto", "")).strip()
+                                                        == _pr_proj
+                                                        and m.get("tipo_accion") in (
+                                                            "Mover línea",
+                                                            "Ajuste temporal",
+                                                        )
+                                                        for m in _pr_movs
+                                                    )
+                                                    if _pr_mov_applied:
+                                                        st.info(
+                                                            "Este proyecto ya tiene una acción "
+                                                            "aplicada en la simulación activa. "
+                                                            "Con el estado actual no se ha "
+                                                            "encontrado otra acción viable para "
+                                                            "este pendiente."
+                                                        )
+                                                    elif (
+                                                        not _pr_has_cands
+                                                        and not _pr_has_as
+                                                    ):
+                                                        st.info(
+                                                            "No se han encontrado alternativas "
+                                                            "aplicables para los pendientes "
+                                                            "actuales con las reglas y los datos "
+                                                            "disponibles."
+                                                        )
+                                                    else:
+                                                        st.info(
+                                                            "No se ha encontrado una alternativa "
+                                                            "aplicable específicamente para este "
+                                                            "pendiente con las reglas y los datos "
+                                                            "disponibles."
+                                                        )
+                                                else:
+                                                    st.caption(
+                                                        f"Sin ajuste: el déficit de "
+                                                        f"{_pr_def_str(_pr_rows)} "
+                                                        f"queda pendiente de revisión manual."
+                                                    )
 
                                             _pr_chk = st.checkbox(
                                                 "Aplicar este ajuste",
