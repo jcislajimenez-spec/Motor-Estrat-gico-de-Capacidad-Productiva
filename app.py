@@ -12110,6 +12110,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                     f"_prog_extend_editor_ver_{plant_id}", 0
                                 ) + 1
                             )
+                            st.rerun()
                             _as_foto = st.session_state[f"_prog_as_foto_{plant_id}"]
 
                         if _as_foto is not None:
