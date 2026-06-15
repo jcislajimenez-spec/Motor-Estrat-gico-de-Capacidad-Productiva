@@ -11737,8 +11737,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     [_da_df_c, pd.DataFrame(_da_ghost_ml)],
                                                     ignore_index=True,
                                                 )
+                                        _da_df_c["Bloqueo"] = _da_df_c["Aplicado en simulación"].apply(
+                                            lambda v: "✕ Ya aplicada" if v else ""
+                                        )
                                         _da_edit_cols = [c for c in [
-                                            "Aplicar", "Aplicado en simulación", "Estado", "Modelo", "Proyecto",
+                                            "Aplicar", "Aplicado en simulación", "Bloqueo", "Estado", "Modelo", "Proyecto",
                                             "Movimiento", "Resultado", "Origen",
                                             "Carga origen prom. h/sem", "Cap. origen h/sem",
                                             "Cap. destino h/sem", "Margen si 100% h/sem",
@@ -11750,6 +11753,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                             ),
                                             "Aplicado en simulación": st.column_config.CheckboxColumn(
                                                 label="En sim.", width=70,
+                                            ),
+                                            "Bloqueo": st.column_config.TextColumn(
+                                                label="Bloqueo", width=110,
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 label="Estado", width=110,
@@ -12352,6 +12358,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 [_dat_df, pd.DataFrame(_dat_ghost_as)],
                                                 ignore_index=True,
                                             )
+                                    _dat_df["Bloqueo"] = _dat_df["Aplicado en simulación"].apply(
+                                        lambda v: "✕ Ya aplicada" if v else ""
+                                    )
                                     _dat_h   = 255
                                     _ext_ver = st.session_state.get(
                                         f"_prog_extend_editor_ver_{plant_id}", 0
@@ -12372,6 +12381,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                             ),
                                             "Aplicado en simulación": st.column_config.CheckboxColumn(
                                                 "En sim.", width="small",
+                                            ),
+                                            "Bloqueo": st.column_config.TextColumn(
+                                                "Bloqueo", width="small",
                                             ),
                                             "Estado": st.column_config.TextColumn(
                                                 "Estado", width="small"
@@ -13933,6 +13945,31 @@ if st.session_state.active_tab == "📋 Programación real":
                             _as_sel = pd.DataFrame()
                         _ml_has_sel = not _ml_sel_full.empty
                         _as_has_sel = not _as_sel.empty
+                        _ml_marcadas_ya = (
+                            "Aplicar" in _da_df_edited.columns
+                            and "Aplicado en simulación" in _da_df_edited.columns
+                            and bool(
+                                (
+                                    (_da_df_edited["Aplicar"] == True)
+                                    & (_da_df_edited["Aplicado en simulación"] == True)
+                                ).any()
+                            )
+                        )
+                        _as_marcadas_ya = (
+                            "Aplicar" in _dat_edited.columns
+                            and "Aplicado en simulación" in _dat_edited.columns
+                            and bool(
+                                (
+                                    (_dat_edited["Aplicar"] == True)
+                                    & (_dat_edited["Aplicado en simulación"] == True)
+                                ).any()
+                            )
+                        )
+                        if _ml_marcadas_ya or _as_marcadas_ya:
+                            st.warning(
+                                "Esta opción ya está aplicada en la simulación activa "
+                                "y no se volverá a aplicar."
+                            )
                         if not _ml_has_sel and not _as_has_sel:
                             st.caption(t("prog_alt_sim_no_selection"))
                         elif _ml_has_sel and "Estado" in _ml_sel_full.columns and (
