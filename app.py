@@ -12365,6 +12365,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _ext_ver = st.session_state.get(
                                         f"_prog_extend_editor_ver_{plant_id}", 0
                                     )
+                                    _dat_col_order = [c for c in [
+                                        "Aplicar", "Aplicado en simulación", "Bloqueo",
+                                        "Estado", "Modelo", "Proyecto", "Línea",
+                                        "Firme/Flexible", "Semanas actuales",
+                                        "Semanas simuladas", "+ semanas",
+                                        "h/sem actual", "h/sem simulada",
+                                        "Déficit global eliminado (h)",
+                                        "Entrega objetivo", "Fin simulado",
+                                        "Impacto entrega", "Comentario",
+                                    ] if c in _dat_df.columns]
+                                    _dat_extra = [
+                                        c for c in _dat_df.columns if c not in _dat_col_order
+                                    ]
+                                    _dat_df = _dat_df[_dat_col_order + _dat_extra]
                                     _dat_cols_ro = [
                                         c for c in _dat_df.columns if c != "Aplicar"
                                     ]
