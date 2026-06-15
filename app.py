@@ -11702,6 +11702,41 @@ if st.session_state.active_tab == "📋 Programación real":
                                             for _f41c in ("Tipo solución", "Fin destino sim.", "Impacto entrega", "Aviso destino"):
                                                 _da_df_c[_f41c] = ""
                                         _da_df_c["Modelo"] = _da_df_c["Proyecto"].map(_da_mdl_por_proj).fillna("")
+                                        if _da_ml_applied:
+                                            _da_existing_keys: set = set()
+                                            if (
+                                                "Proyecto" in _da_df_c.columns
+                                                and "Línea actual" in _da_df_c.columns
+                                                and "Línea candidata" in _da_df_c.columns
+                                            ):
+                                                _da_existing_keys = set(
+                                                    zip(
+                                                        _da_df_c["Proyecto"].astype(str).str.strip(),
+                                                        _da_df_c["Línea actual"].astype(str).str.strip(),
+                                                        _da_df_c["Línea candidata"].astype(str).str.strip(),
+                                                    )
+                                                )
+                                            _da_ghost_ml = [
+                                                {
+                                                    "Aplicar": False,
+                                                    "Aplicado en simulación": True,
+                                                    "Estado": "Aplicado",
+                                                    "Modelo": _da_mdl_por_proj.get(_gk[0], ""),
+                                                    "Proyecto": _gk[0],
+                                                    "Línea actual": _gk[1],
+                                                    "Línea candidata": _gk[2],
+                                                    "Movimiento": "ya aplicado",
+                                                    "Resultado": "Aplicado en simulación",
+                                                    "Origen": "Simulación activa",
+                                                }
+                                                for _gk in _da_ml_applied
+                                                if _gk not in _da_existing_keys
+                                            ]
+                                            if _da_ghost_ml:
+                                                _da_df_c = pd.concat(
+                                                    [_da_df_c, pd.DataFrame(_da_ghost_ml)],
+                                                    ignore_index=True,
+                                                )
                                         _da_edit_cols = [c for c in [
                                             "Aplicar", "Aplicado en simulación", "Estado", "Modelo", "Proyecto",
                                             "Movimiento", "Resultado", "Origen",
@@ -12283,6 +12318,40 @@ if st.session_state.active_tab == "📋 Programación real":
                                             2, "Modelo",
                                             _dat_df["Proyecto"].map(_as_mdl_por_proj).fillna(""),
                                         )
+                                    if _dat_as_applied:
+                                        _dat_existing_keys: set = set()
+                                        if (
+                                            "Proyecto" in _dat_df.columns
+                                            and "Semanas actuales" in _dat_df.columns
+                                            and "Semanas simuladas" in _dat_df.columns
+                                        ):
+                                            for _, _dek_r in _dat_df.iterrows():
+                                                try:
+                                                    _dat_existing_keys.add((
+                                                        str(_dek_r.get("Proyecto", "")).strip(),
+                                                        int(_dek_r.get("Semanas actuales") or 0),
+                                                        int(_dek_r.get("Semanas simuladas") or 0),
+                                                    ))
+                                                except (TypeError, ValueError):
+                                                    pass
+                                        _dat_ghost_as = [
+                                            {
+                                                "Aplicar": False,
+                                                "Aplicado en simulación": True,
+                                                "Estado": "Aplicado",
+                                                "Modelo": _as_mdl_por_proj.get(_gak[0], ""),
+                                                "Proyecto": _gak[0],
+                                                "Semanas actuales": _gak[1],
+                                                "Semanas simuladas": _gak[2],
+                                            }
+                                            for _gak in _dat_as_applied
+                                            if _gak not in _dat_existing_keys
+                                        ]
+                                        if _dat_ghost_as:
+                                            _dat_df = pd.concat(
+                                                [_dat_df, pd.DataFrame(_dat_ghost_as)],
+                                                ignore_index=True,
+                                            )
                                     _dat_h   = 255
                                     _ext_ver = st.session_state.get(
                                         f"_prog_extend_editor_ver_{plant_id}", 0
@@ -12900,19 +12969,23 @@ if st.session_state.active_tab == "📋 Programación real":
                                                         st.info(
                                                             "Este proyecto ya tiene una acción "
                                                             "aplicada en la simulación activa. "
-                                                            "Con el estado actual no se ha "
-                                                            "encontrado otra acción viable para "
-                                                            "este pendiente."
+                                                            "Comprueba en las pestañas **Mover "
+                                                            "línea** o **Ampliar semanas** si queda "
+                                                            "alguna alternativa sin aplicar para "
+                                                            "este proyecto y, si aparece, "
+                                                            "selecciónala y vuelve a calcular "
+                                                            "la 2ª ronda."
                                                         )
                                                     elif (
                                                         not _pr_has_cands
                                                         and not _pr_has_as
                                                     ):
                                                         st.info(
-                                                            "No se han encontrado alternativas "
-                                                            "aplicables para los pendientes "
-                                                            "actuales con las reglas y los datos "
-                                                            "disponibles."
+                                                            "No hay alternativas calculadas "
+                                                            "todavía. Pulsa **Calcular "
+                                                            "alternativas** para obtenerlas y, "
+                                                            "si aparecen candidatas, selecciónalas "
+                                                            "antes de calcular la 2ª ronda."
                                                         )
                                                     else:
                                                         if _pr_proj in _pr_fallback_keys:
@@ -12928,14 +13001,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             )
                                                         else:
                                                             st.info(
-                                                                "Este pendiente sigue vivo, pero con "
-                                                                "la simulación activa actual no hay "
-                                                                "otra acción calculada para este "
-                                                                "proyecto.\n\nRevisa si existe alguna "
-                                                                "alternativa pendiente en **Mover "
-                                                                "línea** o **Ampliar semanas**. Si no "
-                                                                "aparece ninguna, este caso queda "
-                                                                "para revisión manual."
+                                                                "Este pendiente sigue vivo y ahora "
+                                                                "mismo no hay otra acción automática "
+                                                                "disponible para este proyecto."
+                                                                "\n\nRevisa las pestañas **Mover "
+                                                                "línea** o **Ampliar semanas**. Si "
+                                                                "ves una alternativa pendiente para "
+                                                                "este proyecto o para esta línea, "
+                                                                "selecciónala y vuelve a calcular "
+                                                                "la 2ª ronda. Si no aparece ninguna, "
+                                                                "queda para revisión manual."
                                                             )
                                                 else:
                                                     st.caption(
@@ -13827,19 +13902,35 @@ if st.session_state.active_tab == "📋 Programación real":
                             type="primary",
                         )
                     if _comb_apply_clicked:
-                        _ml_sel_idx  = (
-                            _da_df_edited[_da_df_edited["Aplicar"] == True].index
-                            if "Aplicar" in _da_df_edited.columns else pd.Index([])
-                        )
+                        if "Aplicar" in _da_df_edited.columns:
+                            _ml_aplicado_col = (
+                                _da_df_edited["Aplicado en simulación"]
+                                if "Aplicado en simulación" in _da_df_edited.columns
+                                else pd.Series(False, index=_da_df_edited.index)
+                            )
+                            _ml_sel_idx = _da_df_edited[
+                                (_da_df_edited["Aplicar"] == True)
+                                & (_ml_aplicado_col != True)
+                            ].index
+                        else:
+                            _ml_sel_idx = pd.Index([])
                         _ml_sel_full = (
                             _da_df_c.loc[_ml_sel_idx]
                             if not _da_df_c.empty and len(_ml_sel_idx) > 0
                             else pd.DataFrame()
                         )
-                        _as_sel = (
-                            _dat_edited[_dat_edited["Aplicar"] == True].copy()
-                            if "Aplicar" in _dat_edited.columns else pd.DataFrame()
-                        )
+                        if "Aplicar" in _dat_edited.columns:
+                            _as_aplicado_col = (
+                                _dat_edited["Aplicado en simulación"]
+                                if "Aplicado en simulación" in _dat_edited.columns
+                                else pd.Series(False, index=_dat_edited.index)
+                            )
+                            _as_sel = _dat_edited[
+                                (_dat_edited["Aplicar"] == True)
+                                & (_as_aplicado_col != True)
+                            ].copy()
+                        else:
+                            _as_sel = pd.DataFrame()
                         _ml_has_sel = not _ml_sel_full.empty
                         _as_has_sel = not _as_sel.empty
                         if not _ml_has_sel and not _as_has_sel:
