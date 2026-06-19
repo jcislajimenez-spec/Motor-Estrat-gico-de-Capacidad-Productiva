@@ -6576,6 +6576,82 @@ if st.session_state.active_tab == "📅 Simulación anual":
                         st.session_state[_tram_key] = _rebuilt
                         st.rerun()
 
+                    # Auto-load button: load tramos from saved scenarios named "Escenario Wxx-Wyy"
+                    _auto_msg_key = f"_tram_{plant_id}_autoload_msg"
+                    _auto_msg_txt = st.session_state.pop(f"{_auto_msg_key}_txt", None)
+                    if _auto_msg_txt:
+                        st.success(_auto_msg_txt)
+
+                    if st.button("⚡ Cargar escenarios del año", key=f"_tram_{plant_id}_autoload"):
+                        import re as _re
+                        from collections import Counter as _Counter
+
+                        if _has_db():
+                            _tram_raw_list = list_scenarios(plant_id)
+                            _tram_sc_map = {s["id"]: s["name"] for s in _tram_raw_list}
+                            st.session_state[f"_sc_name_map_{plant_id}"] = _tram_sc_map
+
+                        _auto_pat = _re.compile(r"(?i)^Escenario\s+W(\d{1,2})-W(\d{1,2})$")
+                        _auto_cands = []
+                        _range_errs = []
+
+                        for _sid, _sname in _tram_sc_map.items():
+                            _am = _auto_pat.match(str(_sname).strip())
+                            if not _am:
+                                continue
+
+                            _ini = int(_am.group(1))
+                            _fin = int(_am.group(2))
+
+                            if not (1 <= _ini <= 52 and 1 <= _fin <= 52 and _ini <= _fin):
+                                _range_errs.append(f"{_sname}: rango de semanas no válido.")
+                                continue
+
+                            _auto_cands.append({
+                                "sc_id":      _sid,
+                                "sem_inicio": _ini,
+                                "sem_fin":    _fin,
+                            })
+
+                        _rng_cnt  = _Counter((_c["sem_inicio"], _c["sem_fin"]) for _c in _auto_cands)
+                        _dup_rngs = [r for r, cnt in _rng_cnt.items() if cnt > 1]
+
+                        if not _auto_cands:
+                            st.warning(
+                                "No se ha encontrado una secuencia continua Sem 1–52 "
+                                "con formato Escenario Wxx-Wyy."
+                            )
+                        elif _range_errs:
+                            for _err in _range_errs:
+                                st.warning(_err)
+                        elif _dup_rngs:
+                            for _dr in _dup_rngs:
+                                st.warning(
+                                    f"Rango duplicado W{_dr[0]:02d}-W{_dr[1]:02d}: "
+                                    "hay más de un escenario con ese nombre de rango."
+                                )
+                        else:
+                            _auto_sorted = sorted(_auto_cands, key=lambda _x: _x["sem_inicio"])
+                            _auto_errs   = _validate_tramos(_auto_sorted)
+
+                            if _auto_errs:
+                                st.warning(
+                                    "No se ha encontrado una secuencia continua Sem 1–52 "
+                                    "con formato Escenario Wxx-Wyy."
+                                )
+                                for _ae in _auto_errs:
+                                    st.error(_ae)
+                            else:
+                                _tram_clear_keys(plant_id)
+                                st.session_state[_tram_key] = _auto_sorted
+                                st.session_state.pop(f"_sim_result_{plant_id}", None)
+                                st.session_state[f"{_auto_msg_key}_txt"] = (
+                                    f"Escenarios del año cargados: Sem 1–52 "
+                                    f"({len(_auto_sorted)} tramos). "
+                                    "Pulsa 'Calcular simulación anual' para actualizar el resultado."
+                                )
+                                st.rerun()
+
                     # Validation feedback
                     _tram_errs = _validate_tramos(_tramos)
                     if _tram_errs:
