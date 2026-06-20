@@ -6515,13 +6515,34 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             )
                         return _errs
 
-                    # Auto-load button: load tramos from saved scenarios named "Escenario Wxx-Wyy"
+                    # Action buttons — run before widget keys are instantiated
                     _auto_msg_key = f"_tram_{plant_id}_autoload_msg"
                     _auto_msg_txt = st.session_state.pop(f"{_auto_msg_key}_txt", None)
                     if _auto_msg_txt:
                         st.success(_auto_msg_txt)
 
-                    if st.button("⚡ Cargar escenarios del año", key=f"_tram_{plant_id}_autoload"):
+                    _btn_add_col, _btn_auto_col, _btn_reset_col = st.columns([1, 1.4, 1])
+
+                    if _btn_add_col.button(
+                        "＋ Añadir tramo",
+                        key=f"_tram_{plant_id}_add",
+                        disabled=len(_tramos) >= 10,
+                        use_container_width=True,
+                    ):
+                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
+                        _last_fin = _rebuilt[-1]["sem_fin"] if _rebuilt else 0
+                        _new_ini  = min(_last_fin + 1, 52)
+                        _def_sc   = _tram_sc_ids[0] if _tram_sc_ids else None
+                        _rebuilt.append({"sem_inicio": _new_ini, "sem_fin": 52, "sc_id": _def_sc})
+                        _tram_clear_keys(plant_id)
+                        st.session_state[_tram_key] = _rebuilt
+                        st.rerun()
+
+                    if _btn_auto_col.button(
+                        "⚡ Cargar escenarios del año",
+                        key=f"_tram_{plant_id}_autoload",
+                        use_container_width=True,
+                    ):
                         import re as _re
                         from collections import Counter as _Counter
 
@@ -6583,6 +6604,10 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             else:
                                 _tram_clear_keys(plant_id)
                                 st.session_state[_tram_key] = _auto_sorted
+                                for _i, _tr in enumerate(_auto_sorted):
+                                    st.session_state[f"_tram_{plant_id}_{_i}_ini"] = int(_tr["sem_inicio"])
+                                    st.session_state[f"_tram_{plant_id}_{_i}_fin"] = int(_tr["sem_fin"])
+                                    st.session_state[f"_tram_{plant_id}_{_i}_sc"]  = _tr["sc_id"]
                                 st.session_state.pop(f"_sim_result_{plant_id}", None)
                                 st.session_state[f"{_auto_msg_key}_txt"] = (
                                     f"Escenarios del año cargados: Sem 1–52 "
@@ -6590,6 +6615,25 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                     "Pulsa 'Calcular simulación anual' para actualizar el resultado."
                                 )
                                 st.rerun()
+
+                    if _btn_reset_col.button(
+                        "🧹 Reiniciar tramos",
+                        key=f"_tram_{plant_id}_reset",
+                        use_container_width=True,
+                    ):
+                        _tram_clear_keys(plant_id)
+                        _def_sc = _tram_sc_ids[0] if _tram_sc_ids else None
+                        st.session_state[_tram_key] = [
+                            {"sem_inicio": 1, "sem_fin": 52, "sc_id": _def_sc}
+                        ]
+                        st.session_state[f"_tram_{plant_id}_0_ini"] = 1
+                        st.session_state[f"_tram_{plant_id}_0_fin"] = 52
+                        st.session_state[f"_tram_{plant_id}_0_sc"]  = _def_sc
+                        st.session_state.pop(f"_sim_result_{plant_id}", None)
+                        st.session_state[f"{_auto_msg_key}_txt"] = (
+                            "Tramos reiniciados. Pulsa 'Calcular simulación anual' para actualizar el resultado."
+                        )
+                        st.rerun()
 
                     # Column headers
                     _th0, _th1, _th2, _th3 = st.columns([1, 1, 4, 1])
@@ -6633,21 +6677,6 @@ if st.session_state.active_tab == "📅 Simulación anual":
                     if _del_idx is not None:
                         _rebuilt = _tram_read_widgets(_tramos, plant_id)
                         _rebuilt.pop(_del_idx)
-                        _tram_clear_keys(plant_id)
-                        st.session_state[_tram_key] = _rebuilt
-                        st.rerun()
-
-                    # Add button — disabled only at max 10 tramos
-                    if st.button(
-                        "＋ Añadir tramo",
-                        key=f"_tram_{plant_id}_add",
-                        disabled=len(_tramos) >= 10,
-                    ):
-                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
-                        _last_fin = _rebuilt[-1]["sem_fin"] if _rebuilt else 0
-                        _new_ini  = min(_last_fin + 1, 52)
-                        _def_sc   = _tram_sc_ids[0] if _tram_sc_ids else None
-                        _rebuilt.append({"sem_inicio": _new_ini, "sem_fin": 52, "sc_id": _def_sc})
                         _tram_clear_keys(plant_id)
                         st.session_state[_tram_key] = _rebuilt
                         st.rerun()
