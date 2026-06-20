@@ -6515,67 +6515,6 @@ if st.session_state.active_tab == "📅 Simulación anual":
                             )
                         return _errs
 
-                    # Column headers
-                    _th0, _th1, _th2, _th3 = st.columns([1, 1, 4, 1])
-                    _th0.caption("Sem inicio")
-                    _th1.caption("Sem fin")
-                    _th2.caption("Escenario")
-                    _th3.caption("")
-
-                    _del_idx = None
-                    for _ti, _tr in enumerate(_tramos):
-                        _tc0, _tc1, _tc2, _tc3 = st.columns([1, 1, 4, 1])
-                        _tr["sem_inicio"] = _tc0.number_input(
-                            "ini", min_value=1, max_value=52,
-                            value=_tr["sem_inicio"],
-                            key=f"_tram_{plant_id}_{_ti}_ini",
-                            label_visibility="collapsed",
-                        )
-                        _tr["sem_fin"] = _tc1.number_input(
-                            "fin", min_value=1, max_value=52,
-                            value=_tr["sem_fin"],
-                            key=f"_tram_{plant_id}_{_ti}_fin",
-                            label_visibility="collapsed",
-                        )
-                        if _tram_sc_ids:
-                            _cur_sc = _tr["sc_id"] if _tr["sc_id"] in _tram_sc_ids else _tram_sc_ids[0]
-                            _tr["sc_id"] = _tc2.selectbox(
-                                "sc",
-                                options=_tram_sc_ids,
-                                format_func=lambda _sid: _tram_sc_map.get(_sid, str(_sid)),
-                                index=_tram_sc_ids.index(_cur_sc),
-                                key=f"_tram_{plant_id}_{_ti}_sc",
-                                label_visibility="collapsed",
-                            )
-                        else:
-                            _tc2.caption("— sin escenarios disponibles —")
-                        if len(_tramos) > 1:
-                            if _tc3.button("✕", key=f"_tram_{plant_id}_{_ti}_del", use_container_width=True):
-                                _del_idx = _ti
-
-                    # Apply delete
-                    if _del_idx is not None:
-                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
-                        _rebuilt.pop(_del_idx)
-                        _tram_clear_keys(plant_id)
-                        st.session_state[_tram_key] = _rebuilt
-                        st.rerun()
-
-                    # Add button — disabled only at max 10 tramos
-                    if st.button(
-                        "＋ Añadir tramo",
-                        key=f"_tram_{plant_id}_add",
-                        disabled=len(_tramos) >= 10,
-                    ):
-                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
-                        _last_fin = _rebuilt[-1]["sem_fin"] if _rebuilt else 0
-                        _new_ini  = min(_last_fin + 1, 52)
-                        _def_sc   = _tram_sc_ids[0] if _tram_sc_ids else None
-                        _rebuilt.append({"sem_inicio": _new_ini, "sem_fin": 52, "sc_id": _def_sc})
-                        _tram_clear_keys(plant_id)
-                        st.session_state[_tram_key] = _rebuilt
-                        st.rerun()
-
                     # Auto-load button: load tramos from saved scenarios named "Escenario Wxx-Wyy"
                     _auto_msg_key = f"_tram_{plant_id}_autoload_msg"
                     _auto_msg_txt = st.session_state.pop(f"{_auto_msg_key}_txt", None)
@@ -6651,6 +6590,67 @@ if st.session_state.active_tab == "📅 Simulación anual":
                                     "Pulsa 'Calcular simulación anual' para actualizar el resultado."
                                 )
                                 st.rerun()
+
+                    # Column headers
+                    _th0, _th1, _th2, _th3 = st.columns([1, 1, 4, 1])
+                    _th0.caption("Sem inicio")
+                    _th1.caption("Sem fin")
+                    _th2.caption("Escenario")
+                    _th3.caption("")
+
+                    _del_idx = None
+                    for _ti, _tr in enumerate(_tramos):
+                        _tc0, _tc1, _tc2, _tc3 = st.columns([1, 1, 4, 1])
+                        _tr["sem_inicio"] = _tc0.number_input(
+                            "ini", min_value=1, max_value=52,
+                            value=_tr["sem_inicio"],
+                            key=f"_tram_{plant_id}_{_ti}_ini",
+                            label_visibility="collapsed",
+                        )
+                        _tr["sem_fin"] = _tc1.number_input(
+                            "fin", min_value=1, max_value=52,
+                            value=_tr["sem_fin"],
+                            key=f"_tram_{plant_id}_{_ti}_fin",
+                            label_visibility="collapsed",
+                        )
+                        if _tram_sc_ids:
+                            _cur_sc = _tr["sc_id"] if _tr["sc_id"] in _tram_sc_ids else _tram_sc_ids[0]
+                            _tr["sc_id"] = _tc2.selectbox(
+                                "sc",
+                                options=_tram_sc_ids,
+                                format_func=lambda _sid: _tram_sc_map.get(_sid, str(_sid)),
+                                index=_tram_sc_ids.index(_cur_sc),
+                                key=f"_tram_{plant_id}_{_ti}_sc",
+                                label_visibility="collapsed",
+                            )
+                        else:
+                            _tc2.caption("— sin escenarios disponibles —")
+                        if len(_tramos) > 1:
+                            if _tc3.button("✕", key=f"_tram_{plant_id}_{_ti}_del", use_container_width=True):
+                                _del_idx = _ti
+
+                    # Apply delete
+                    if _del_idx is not None:
+                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
+                        _rebuilt.pop(_del_idx)
+                        _tram_clear_keys(plant_id)
+                        st.session_state[_tram_key] = _rebuilt
+                        st.rerun()
+
+                    # Add button — disabled only at max 10 tramos
+                    if st.button(
+                        "＋ Añadir tramo",
+                        key=f"_tram_{plant_id}_add",
+                        disabled=len(_tramos) >= 10,
+                    ):
+                        _rebuilt = _tram_read_widgets(_tramos, plant_id)
+                        _last_fin = _rebuilt[-1]["sem_fin"] if _rebuilt else 0
+                        _new_ini  = min(_last_fin + 1, 52)
+                        _def_sc   = _tram_sc_ids[0] if _tram_sc_ids else None
+                        _rebuilt.append({"sem_inicio": _new_ini, "sem_fin": 52, "sc_id": _def_sc})
+                        _tram_clear_keys(plant_id)
+                        st.session_state[_tram_key] = _rebuilt
+                        st.rerun()
 
                     # Validation feedback
                     _tram_errs = _validate_tramos(_tramos)
