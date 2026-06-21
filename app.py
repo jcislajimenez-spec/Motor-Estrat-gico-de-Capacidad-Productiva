@@ -9597,11 +9597,15 @@ def _simulate_prog_move_excess(
                     _cap_util      = max(0.0, _cap_d - _h_other - _h_same)
                     _sem_trans_dest = _sem_act
                 else:
-                    # Desde la segunda semana: bloqueada por exclusividad de línea.
-                    _bloqueado        = True
+                    # v0.3 C3: segunda semana o posterior con otro proyecto/modelo.
+                    # Usar la capacidad libre de esta semana antes de parar,
+                    # sin saltar a semanas posteriores.
+                    _cap_util         = max(0.0, _cap_d - _h_other - _h_same)
                     _causa_dest       = "línea ocupada por otro proyecto"
                     _sem_bloqueo_dest = _sem_act
-                    break
+                    _bloqueado        = True
+                    if _cap_util <= 0.001:
+                        break  # Sin hueco libre: parar sin colocar.
             elif _h_same > 0.001:
                 # Carga del mismo proyecto: no bloquea; usar capacidad restante.
                 _cap_util = max(0.0, _cap_d - _h_same)
