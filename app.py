@@ -9300,6 +9300,13 @@ def _simulate_prog_move_excess(
 
     # Plantilla para filas destino (capturar ANTES de modificar origen)
     _fila_tmpl = _sim.loc[_mask_pl].iloc[0].to_dict()
+    _modelo_s   = str(_fila_tmpl.get("Modelo / familia", "") or "").strip()
+    _modelo_col = "Modelo / familia"
+    if not _modelo_s:
+        _modelo_s   = str(_fila_tmpl.get("Equipo / modelo", "") or "").strip()
+        _modelo_col = "Equipo / modelo"
+    if not _modelo_s:
+        _modelo_col = ""  # fallback: exclusividad por Proyecto únicamente (sin modelo/equipo fiable)
 
     if modo_residual not in ("secuencial", "paralelo"):
         _empty["warning"] = f"modo_residual '{modo_residual}' no reconocido."
@@ -9477,7 +9484,10 @@ def _simulate_prog_move_excess(
             "cap_destinos":                 _cap_destinos_norm,
         }
 
-    # ── Fase 1: retirar exceso del origen semana a semana ────────────────────
+    # ── Fase S1: calcular exceso por semana (sin reducir origen todavía) ──────
+    # Separamos cálculo de reducción para poder aplicarla solo sobre lo
+    # efectivamente colocado en destino (conservación de horas correcta cuando
+    # el bloqueo por exclusividad impide colocar todo el exceso).
     _semanas_afectadas: list = []
     _exceso_acumulado   = 0.0
     _exceso_por_semana: dict = {}
@@ -9504,12 +9514,6 @@ def _simulate_prog_move_excess(
         _exceso_acumulado += _exceso_sem
         _exceso_por_semana[_s] = round(_exceso_sem, 4)
 
-        # Reducir filas origen proporcionalmente
-        _factor_keep = (_h_proj_sem - _exceso_sem) / _h_proj_sem if _h_proj_sem > 0 else 1.0
-        _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
-            _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _factor_keep
-        ).round(4)
-
     if not _semanas_afectadas:
         _empty["warning"] = (
             f"Proyecto '{proyecto}' en '{linea_origen}': "
@@ -9519,20 +9523,19 @@ def _simulate_prog_move_excess(
 
     _exc_tot = round(_exceso_acumulado, 1)
 
-    # Sem inicio destino: después de la última semana del proyecto en origen
-    _semanas_origen = sorted(
-        _sim.loc[_mask_pl, "Semana"].astype(int).unique().tolist()
-    )
-    _sem_cursor = (
-        (max(_semanas_origen) + 1)
-        if _semanas_origen
-        else (max(_semanas_afectadas) + 1)
-    )
-
-    # ── Fase 2: compactar exceso total en cada destino (cascada) ────────────
+    # ── Fase S2: colocar exceso en destino con regla de exclusividad ─────────
+    # Semana de inicio: primera semana donde aparece exceso vivo (V05 CIERRE §6.2)
+    _sem_cursor            = min(_semanas_afectadas)
     _filas_nuevas:         list = []
     _semanas_destino:      dict = {}
     _exceso_destino_h_map: dict = {}
+    _colocado_destino_h_s: dict = {}
+    _colocado_h_total      = 0.0
+    _no_absorbido_h_total  = 0.0
+    _bloqueo_causa         = ""
+    _semana_bloqueo_g: int | None  = None
+    _semana_transicion_g: int | None = None
+    _colocado_por_semana_s: dict = {}
 
     for _di, _dest in enumerate(lineas_destino):
         _dest_s      = str(_dest).strip()
@@ -9540,34 +9543,144 @@ def _simulate_prog_move_excess(
         _exc_d_total = round(_exc_tot * fracciones[_di], 4)
         _exceso_destino_h_map[_dest_s] = round(_exc_d_total, 1)
 
-        _sems_dest:       list = []
-        _dest_rows_start = len(_filas_nuevas)
-        _pendiente       = _exc_d_total
-        _sem_act         = _sem_cursor
+        _sems_dest:        list = []
+        _dest_rows_start  = len(_filas_nuevas)
+        _pendiente        = _exc_d_total
+        _sem_act          = _sem_cursor
+        _es_primera_sem   = True
+        _bloqueado        = False
+        _causa_dest       = ""
+        _sem_bloqueo_dest: int | None = None
+        _sem_trans_dest:   int | None = None
 
-        while _pendiente > 0.001:
-            _h_sem   = round(min(_pendiente, _cap_d), 4)
-            _nueva   = dict(_fila_tmpl)
+        while _pendiente > 0.001 and not _bloqueado:
+            # Carga del mismo elemento (proyecto + modelo/familia) en destino esta semana
+            _base_mask_excl = (
+                (_sim["Línea"].astype(str).str.strip() == _dest_s) &
+                (_sim["Semana"].astype(int)            == _sem_act)
+            )
+            if _modelo_s and _modelo_col and _modelo_col in _sim.columns:
+                _mask_same = (
+                    _base_mask_excl &
+                    (_sim["Proyecto"].astype(str).str.strip()   == _proj_s) &
+                    (_sim[_modelo_col].astype(str).str.strip()  == _modelo_s)
+                )
+                _mask_other = _base_mask_excl & ~(
+                    (_sim["Proyecto"].astype(str).str.strip()   == _proj_s) &
+                    (_sim[_modelo_col].astype(str).str.strip()  == _modelo_s)
+                )
+            else:
+                # Fallback: exclusividad por Proyecto únicamente (sin modelo/equipo fiable)
+                _mask_same = (
+                    _base_mask_excl &
+                    (_sim["Proyecto"].astype(str).str.strip() == _proj_s)
+                )
+                _mask_other = (
+                    _base_mask_excl &
+                    (_sim["Proyecto"].astype(str).str.strip() != _proj_s)
+                )
+            _h_same = float(_sim.loc[_mask_same, "Horas proyecto semana"].sum())
+            _h_other = float(_sim.loc[_mask_other, "Horas proyecto semana"].sum())
+
+            if _h_other > 0.001:
+                if _es_primera_sem:
+                    # Primera semana con otro proyecto: tratar como transición.
+                    # Capacidad parcial = nominal − carga otro − carga mismo.
+                    # La semana de transición queda marcada en el resultado para
+                    # que la UI pueda requerir confirmación explícita (microplan UI).
+                    _cap_util      = max(0.0, _cap_d - _h_other - _h_same)
+                    _sem_trans_dest = _sem_act
+                else:
+                    # Desde la segunda semana: bloqueada por exclusividad de línea.
+                    _bloqueado        = True
+                    _causa_dest       = "línea ocupada por otro proyecto"
+                    _sem_bloqueo_dest = _sem_act
+                    break
+            elif _h_same > 0.001:
+                # Carga del mismo proyecto: no bloquea; usar capacidad restante.
+                _cap_util = max(0.0, _cap_d - _h_same)
+            else:
+                # Semana vacía: capacidad nominal completa.
+                _cap_util = _cap_d
+
+            if _cap_util <= 0.001:
+                # Saturación: capacidad agotada (cualquier causa).
+                _bloqueado        = True
+                _causa_dest       = "saturación"
+                _sem_bloqueo_dest = _sem_act
+                break
+
+            _h_sem = round(min(_pendiente, _cap_util), 4)
+            _nueva = dict(_fila_tmpl)
             _nueva["Línea"]                 = _dest_s
             _nueva["Semana"]                = _sem_act
             _nueva["Horas proyecto semana"] = _h_sem
             _filas_nuevas.append(_nueva)
             _sems_dest.append(_sem_act)
-            _pendiente = round(_pendiente - _h_sem, 4)
-            _sem_act  += 1
+            _colocado_por_semana_s[_sem_act] = round(
+                _colocado_por_semana_s.get(_sem_act, 0.0) + _h_sem, 4
+            )
+            _pendiente      = round(_pendiente - _h_sem, 4)
+            _sem_act       += 1
+            _es_primera_sem = False
 
-        # Ajuste de redondeo para este destino
+        _colocado_d = round(_exc_d_total - _pendiente, 4)
+        _colocado_destino_h_s[_dest_s] = round(_colocado_d, 1)
+        _colocado_h_total     = round(_colocado_h_total + _colocado_d, 4)
+        _no_abs_d             = round(_pendiente, 4)
+        if _no_abs_d > 0.001:
+            _no_absorbido_h_total = round(_no_absorbido_h_total + _no_abs_d, 4)
+            if not _bloqueo_causa:
+                _bloqueo_causa    = _causa_dest
+                _semana_bloqueo_g = _sem_bloqueo_dest
+        if _sem_trans_dest is not None and _semana_transicion_g is None:
+            _semana_transicion_g = _sem_trans_dest
+
+        # Ajuste de redondeo (solo cuando algo fue colocado)
         _dest_rows = _filas_nuevas[_dest_rows_start:]
-        if _dest_rows:
+        if _dest_rows and _colocado_d > 0.001:
             _sum_dest  = round(sum(r["Horas proyecto semana"] for r in _dest_rows), 4)
-            _diff_dest = round(_exc_d_total - _sum_dest, 4)
+            _diff_dest = round(_colocado_d - _sum_dest, 4)
             if abs(_diff_dest) > 0.001:
                 _dest_rows[-1]["Horas proyecto semana"] = round(
                     float(_dest_rows[-1]["Horas proyecto semana"]) + _diff_dest, 4
                 )
 
         _semanas_destino[_dest_s] = _sems_dest
-        _sem_cursor = _sem_act  # destino siguiente empieza después de este
+        _sem_cursor = _sem_act  # siguiente destino empieza donde acabó este
+
+    if _colocado_h_total < 0.001:
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}': destino bloqueado desde la primera semana "
+            f"(S{min(_semanas_afectadas)}) — {_bloqueo_causa or 'sin capacidad'}. "
+            f"El exceso ({round(_exc_tot, 1)} h) permanece en origen."
+        )
+        return _empty
+
+    # ── Fase S3: reducir origen solo por lo efectivamente colocado ───────────
+    # Garantiza conservación de horas: origen baja exactamente lo que subió destino.
+    _reduccion_restante          = _colocado_h_total
+    _reduccion_origen_por_semana: dict = {}
+
+    for _s in sorted(_exceso_por_semana.keys()):
+        if _reduccion_restante <= 0.001:
+            break
+        _reducir_s = round(min(_reduccion_restante, _exceso_por_semana[_s]), 4)
+        if _reducir_s <= 0.001:
+            continue
+        _mask_s_proj = (
+            (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+            (_sim["Línea"].astype(str).str.strip()    == _linea_s) &
+            (_sim["Semana"].astype(int)               == _s)
+        )
+        _h_proj_sem = float(_sim.loc[_mask_s_proj, "Horas proyecto semana"].sum())
+        if _h_proj_sem > 0.001:
+            _fk = (_h_proj_sem - _reducir_s) / _h_proj_sem
+            _sim.loc[_mask_s_proj, "Horas proyecto semana"] = (
+                _sim.loc[_mask_s_proj, "Horas proyecto semana"] * _fk
+            ).round(4)
+        _reduccion_origen_por_semana[_s] = _reducir_s
+        _reduccion_restante = round(_reduccion_restante - _reducir_s, 4)
 
     if _filas_nuevas:
         _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas)], ignore_index=True)
@@ -9585,25 +9698,40 @@ def _simulate_prog_move_excess(
         )
         return _empty
 
-    _n_sems = len(_semanas_afectadas)
+    _n_sems   = len(_semanas_afectadas)
+    _warn_out = ""
+    if _no_absorbido_h_total > 0.001:
+        _warn_out = (
+            f"{round(_no_absorbido_h_total, 1)} h no colocadas"
+            + (f" — {_bloqueo_causa}" if _bloqueo_causa else "")
+            + (f" (S{_semana_bloqueo_g})" if _semana_bloqueo_g else "")
+        )
     return {
-        "load_df":                  _sim,
-        "moved_ok":                 True,
-        "warning":                  "",
-        "modo_residual":            "secuencial",
-        "exceso_total_h":           _exc_tot,
-        "colocado_h":               _exc_tot,
-        "no_absorbido_h":           0.0,
-        "semanas_afectadas":        _semanas_afectadas,
-        "exceso_h_sem_prom":        round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
-        "exceso_por_semana":        _exceso_por_semana,
-        "colocado_por_semana":      _exceso_por_semana,
-        "no_absorbido_por_semana":  {},
-        "fracciones":               fracciones,
-        "semanas_destino":          _semanas_destino,
-        "exceso_destino_h":         _exceso_destino_h_map,
-        "colocado_destino_h":       _exceso_destino_h_map,
-        "cap_destinos":             _cap_destinos_norm,
+        "load_df":                       _sim,
+        "moved_ok":                      True,
+        "warning":                       _warn_out,
+        "modo_residual":                 "secuencial",
+        "exceso_total_h":                _exc_tot,
+        "colocado_h":                    round(_colocado_h_total, 1),
+        "no_absorbido_h":                round(_no_absorbido_h_total, 1),
+        "bloqueo_causa":                 _bloqueo_causa,
+        "semana_bloqueo":                _semana_bloqueo_g,
+        "semana_transicion":             _semana_transicion_g,
+        "semanas_afectadas":             _semanas_afectadas,
+        "exceso_h_sem_prom":             round(_exc_tot / _n_sems, 1) if _n_sems > 0 else 0.0,
+        "exceso_por_semana":             _exceso_por_semana,
+        "reduccion_origen_por_semana":   _reduccion_origen_por_semana,
+        "colocado_por_semana":           _colocado_por_semana_s,
+        "no_absorbido_por_semana": (
+            {_semana_bloqueo_g: round(_no_absorbido_h_total, 1)}
+            if _semana_bloqueo_g is not None and _no_absorbido_h_total > 0.001
+            else {}
+        ),
+        "fracciones":                    fracciones,
+        "semanas_destino":               _semanas_destino,
+        "exceso_destino_h":              _exceso_destino_h_map,
+        "colocado_destino_h":            _colocado_destino_h_s,
+        "cap_destinos":                  _cap_destinos_norm,
     }
 
 
@@ -13009,6 +13137,14 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 "Reprogramar residual",
                                                 "Mover exceso a otra línea",
                                             }:
+                                                _pr_hay_transicion_real = False
+                                                _pr_semana_transicion   = None
+                                                _pr_transicion_txt      = ""
+                                                _pr_preview_trans_error = False
+                                                _pr_trans_key           = (
+                                                    f"_pr_trans_confirm_"
+                                                    f"{plant_id}_{_pr_san}"
+                                                )
                                                 _pr_aviso_tipo_proyecto(_pr_proj)
                                                 if _pr_proj_cands:
                                                     with st.container(border=True):
@@ -13078,6 +13214,231 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                         "actual y coloca el residual "
                                                                         "en semanas posteriores."
                                                                     ),
+                                                                )
+                                                            # ── Preview real de transición ────────
+                                                            # Llama a _simulate_prog_move_excess en
+                                                            # modo no persistente (sobre .copy()) con
+                                                            # los mismos parámetros que el apply.
+                                                            # semana_transicion proviene del motor
+                                                            # real, no de lógica duplicada.
+                                                            _pr_modo_prev = "secuencial"
+                                                            if _prpre_tipo == "lote_divisible":
+                                                                _pr_modo_prev = str(
+                                                                    st.session_state.get(
+                                                                        f"_pr_modo_res_"
+                                                                        f"{plant_id}_{_pr_san}",
+                                                                        "Secuencial",
+                                                                    )
+                                                                ).lower()
+                                                            if (
+                                                                _pr_dest_sel
+                                                                and _pr_modo_prev
+                                                                == "secuencial"
+                                                            ):
+                                                                _pr_lprev = (
+                                                                    _pr_sim.get(
+                                                                        "load_df_sim"
+                                                                    ) if _pr_sim else None
+                                                                )
+                                                                _pr_cprev = (
+                                                                    _pr_sim.get(
+                                                                        "cap_df_sim"
+                                                                    ) if _pr_sim else None
+                                                                )
+                                                                if (
+                                                                    _pr_lprev is not None
+                                                                    and not getattr(
+                                                                        _pr_lprev,
+                                                                        "empty", True,
+                                                                    )
+                                                                    and _pr_cprev is not None
+                                                                    and not getattr(
+                                                                        _pr_cprev,
+                                                                        "empty", True,
+                                                                    )
+                                                                    and "Línea"
+                                                                    in _pr_cprev.columns
+                                                                    and "Capacidad h/sem"
+                                                                    in _pr_cprev.columns
+                                                                ):
+                                                                    _pr_p2 = str(
+                                                                        _pr_proj
+                                                                    ).strip()
+                                                                    _pr_l2 = (
+                                                                        _pr_lprev.loc[
+                                                                            _pr_lprev[
+                                                                                "Proyecto"
+                                                                            ]
+                                                                            .astype(str)
+                                                                            .str.strip()
+                                                                            == _pr_p2,
+                                                                            "Línea",
+                                                                        ]
+                                                                        .astype(str)
+                                                                        .str.strip()
+                                                                        .unique()
+                                                                        .tolist()
+                                                                    )
+                                                                    if len(_pr_l2) == 1:
+                                                                        _pr_lin2 = _pr_l2[0]
+                                                                        # Cap. origen
+                                                                        _pr_co2 = 0.0
+                                                                        _pr_cm2 = (
+                                                                            _pr_cprev[
+                                                                                "Línea"
+                                                                            ]
+                                                                            .astype(str)
+                                                                            .str.strip()
+                                                                            .str.upper()
+                                                                            == _pr_lin2.upper()
+                                                                        )
+                                                                        if _pr_cm2.any():
+                                                                            try:
+                                                                                _pr_co2 = float(
+                                                                                    _pr_cprev.loc[
+                                                                                        _pr_cm2,
+                                                                                        "Capacidad h/sem",
+                                                                                    ].iloc[0]
+                                                                                )
+                                                                            except (
+                                                                                IndexError,
+                                                                                TypeError,
+                                                                                ValueError,
+                                                                            ):
+                                                                                pass
+                                                                        # Cap. destinos
+                                                                        _pr_cd2: dict = {}
+                                                                        for _pr_dv in (
+                                                                            _pr_dest_sel
+                                                                        ):
+                                                                            _pr_dv_n = str(
+                                                                                _pr_dv
+                                                                            ).strip().upper()
+                                                                            _pr_dv_m = (
+                                                                                _pr_cprev[
+                                                                                    "Línea"
+                                                                                ]
+                                                                                .astype(str)
+                                                                                .str.strip()
+                                                                                .str.upper()
+                                                                                == _pr_dv_n
+                                                                            )
+                                                                            try:
+                                                                                _pr_cd2[
+                                                                                    str(
+                                                                                        _pr_dv
+                                                                                    ).strip()
+                                                                                ] = float(
+                                                                                    _pr_cprev.loc[
+                                                                                        _pr_dv_m,
+                                                                                        "Capacidad h/sem",
+                                                                                    ].iloc[0]
+                                                                                )
+                                                                            except (
+                                                                                IndexError,
+                                                                                TypeError,
+                                                                                ValueError,
+                                                                            ):
+                                                                                _pr_cd2[
+                                                                                    str(
+                                                                                        _pr_dv
+                                                                                    ).strip()
+                                                                                ] = 0.0
+                                                                        if (
+                                                                            _pr_co2 > 0
+                                                                            and _pr_cd2
+                                                                        ):
+                                                                            try:
+                                                                                _pr_res2 = (
+                                                                                    _simulate_prog_move_excess(
+                                                                                        _pr_lprev.copy(),
+                                                                                        _pr_proj,
+                                                                                        _pr_lin2,
+                                                                                        _pr_dest_sel,
+                                                                                        _pr_co2,
+                                                                                        _pr_cd2,
+                                                                                        modo_residual="secuencial",
+                                                                                    )
+                                                                                )
+                                                                                _pr_st2 = (
+                                                                                    _pr_res2.get(
+                                                                                        "semana_transicion"
+                                                                                    )
+                                                                                )
+                                                                            except Exception:
+                                                                                _pr_st2 = None
+                                                                                _pr_preview_trans_error = True
+                                                                            if _pr_preview_trans_error:
+                                                                                st.warning(
+                                                                                    "No se ha podido"
+                                                                                    " validar si existe"
+                                                                                    " semana de"
+                                                                                    " transición. No se"
+                                                                                    " aplicará el"
+                                                                                    " movimiento hasta"
+                                                                                    " recalcular la"
+                                                                                    " vista previa."
+                                                                                )
+                                                                            elif (
+                                                                                _pr_st2 is not None
+                                                                            ):
+                                                                                _pr_hay_transicion_real = True
+                                                                                _pr_semana_transicion = _pr_st2
+                                                                                _pr_dest_txt2 = (
+                                                                                    str(
+                                                                                        _pr_dest_sel[0]
+                                                                                    ).strip()
+                                                                                    if len(
+                                                                                        _pr_dest_sel
+                                                                                    ) == 1
+                                                                                    else ", ".join(
+                                                                                        str(d).strip()
+                                                                                        for d in _pr_dest_sel
+                                                                                    )
+                                                                                )
+                                                                                _pr_transicion_txt = (
+                                                                                    f"Semana"
+                                                                                    f" S{_pr_st2}:"
+                                                                                    f" posible semana"
+                                                                                    f" de transición"
+                                                                                    f" con carga"
+                                                                                    f" previa de otro"
+                                                                                    f" proyecto/modelo"
+                                                                                    f" en destino"
+                                                                                    f" {_pr_dest_txt2}."
+                                                                                    f" Se usará"
+                                                                                    f" capacidad"
+                                                                                    f" parcial."
+                                                                                    f" Confirma"
+                                                                                    f" explícitamente"
+                                                                                    f" antes de"
+                                                                                    f" aplicar."
+                                                                                )
+                                                            if _pr_hay_transicion_real:
+                                                                st.warning(
+                                                                    f"⚠ {_pr_transicion_txt}"
+                                                                )
+                                                                _pr_dest_key = "_".join(
+                                                                    "".join(
+                                                                        c if c.isalnum()
+                                                                        else "_"
+                                                                        for c in str(d).strip()
+                                                                    )
+                                                                    for d in sorted(
+                                                                        _pr_dest_sel
+                                                                    )
+                                                                )
+                                                                _pr_trans_key = (
+                                                                    f"_pr_trans_confirm_"
+                                                                    f"{plant_id}_{_pr_san}"
+                                                                    f"_s{_pr_semana_transicion}"
+                                                                    f"_{_pr_dest_key}"
+                                                                )
+                                                                st.checkbox(
+                                                                    f"Confirmo la semana de"
+                                                                    f" transición"
+                                                                    f" S{_pr_semana_transicion}",
+                                                                    key=_pr_trans_key,
                                                                 )
                                                 else:
                                                     st.caption(
@@ -13198,7 +13559,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                         break
                                                                 except (TypeError, ValueError):
                                                                     pass
-                                                    if _prm_ok == len(_prm_dest_ss):
+                                                    if (
+                                                        _prm_ok == len(_prm_dest_ss)
+                                                        and not _pr_preview_trans_error
+                                                        and (
+                                                            not _pr_hay_transicion_real
+                                                            or st.session_state.get(
+                                                                _pr_trans_key,
+                                                                False,
+                                                            )
+                                                        )
+                                                    ):
                                                         _pr_n_mover_valid += 1
 
                                     if st.button(
@@ -13575,13 +13946,40 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             "no_absorbido_h", 0.0
                                                         )
                                                     )
-                                                    if _prb_no_abs_h > 0.001:
+                                                    _prb_sem_trn = _prb_excess.get(
+                                                        "semana_transicion"
+                                                    )
+                                                    if _prb_sem_trn is not None:
                                                         _prb_avisos.append(
-                                                            f"{_prb_proj}: parte del exceso "
-                                                            f"no ha podido moverse por falta "
-                                                            f"de capacidad disponible en "
-                                                            f"destino. Esas horas permanecen "
-                                                            f"en origen."
+                                                            f"{_prb_proj}: semana de transición "
+                                                            f"S{_prb_sem_trn} usada "
+                                                            f"(carga previa de otro proyecto, "
+                                                            f"capacidad parcial aplicada)."
+                                                        )
+                                                    if _prb_no_abs_h > 0.001:
+                                                        _prb_bloqueo_c = _prb_excess.get(
+                                                            "bloqueo_causa", ""
+                                                        )
+                                                        _prb_sem_blq = _prb_excess.get(
+                                                            "semana_bloqueo"
+                                                        )
+                                                        _prb_causa_txt = (
+                                                            f" Causa: {_prb_bloqueo_c}"
+                                                            + (
+                                                                f" (S{_prb_sem_blq})"
+                                                                if _prb_sem_blq
+                                                                else ""
+                                                            )
+                                                            + "."
+                                                            if _prb_bloqueo_c
+                                                            else "."
+                                                        )
+                                                        _prb_avisos.append(
+                                                            f"{_prb_proj}: "
+                                                            f"{round(_prb_no_abs_h, 1)} h "
+                                                            f"no han podido colocarse y "
+                                                            f"permanecen en origen."
+                                                            f"{_prb_causa_txt}"
                                                         )
                                                     _prb_fracs_e  = _prb_excess["fracciones"]
                                                     _prb_exc_tot  = _prb_excess["exceso_total_h"]
