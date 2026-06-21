@@ -9201,6 +9201,7 @@ def _simulate_prog_move_excess(
     cap_destinos: dict,
     fracciones=None,
     modo_residual="secuencial",
+    tipo_proyecto: str = "",
 ) -> dict:
     """
     Mueve solo el exceso de carga del proyecto de linea_origen a lineas_destino.
@@ -9524,8 +9525,13 @@ def _simulate_prog_move_excess(
     _exc_tot = round(_exceso_acumulado, 1)
 
     # ── Fase S2: colocar exceso en destino con regla de exclusividad ─────────
-    # Semana de inicio: primera semana donde aparece exceso vivo (V05 CIERRE §6.2)
-    _sem_cursor            = min(_semanas_afectadas)
+    # Equipo único: no puede estar en dos líneas a la vez → inicio tras el fin
+    # del tramo principal en origen (V05 CIERRE §4.1, Reglas v0.2 §4 F1).
+    # Resto de tipos: primera semana con exceso vivo (V05 CIERRE §6.2).
+    if tipo_proyecto == "equipo_unico":
+        _sem_cursor        = max(_semanas) + 1
+    else:
+        _sem_cursor        = min(_semanas_afectadas)
     _filas_nuevas:         list = []
     _semanas_destino:      dict = {}
     _exceso_destino_h_map: dict = {}
@@ -13358,6 +13364,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                                         _pr_co2,
                                                                                         _pr_cd2,
                                                                                         modo_residual="secuencial",
+                                                                                        tipo_proyecto=_prpre_tipo,
                                                                                     )
                                                                                 )
                                                                                 _pr_st2 = (
@@ -13932,6 +13939,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                                             _cap_orig_h,
                                                             _prb_cap_destinos,
                                                             modo_residual=_prb_modo_residual,
+                                                            tipo_proyecto=_prb_tipo_gate,
                                                         )
                                                     )
                                                     if not _prb_excess["moved_ok"]:
