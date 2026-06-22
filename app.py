@@ -11240,18 +11240,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 except (ValueError, TypeError):
                                                     pass
                                         _sl_nv = _sl_cp_d - _da_conflict_pairs_base
-                                        # Sugeridas con conflicto nuevo → descartadas "Compatible no libre"
-                                        if _sl_nv:
-                                            _da_descartadas.append({
-                                                "Proyecto":          _da_proj,
-                                                "Línea alternativa": f"(sugerida) {_sl_id}",
-                                                "Línea actual":      _da_linea_act,
-                                                "Línea resuelta":    str(_sl_id),
-                                                "Modelo proyecto":   _da_modelo_p,
-                                                "Motivo": "Compatible, pero mover el proyecto completo crearía conflicto en destino. Puede servir para ajuste parcial en segunda ronda.",
-                                                "Tipo":   "Compatible no libre",
-                                            })
-                                            continue
+                                        # MF-A: compatible con conflicto nuevo → Revisar, no descartar
+                                        # Si mejora el déficit aunque deje conflicto, el usuario decide;
+                                        # la segunda ronda existe para resolver el déficit residual.
                                         _sl_sp = _sl_sim[_sl_sim["Proyecto"].astype(str) == _da_proj]
                                         _sl_ec = any(
                                             (int(_sr["Semana"]), str(_sr["Línea"])) in _sl_cp_d
@@ -11260,13 +11251,27 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _sl_def_dest = sum(
                                             1 for _s2, _l2 in _sl_cp_d if str(_l2) == str(_sl_id)
                                         )
+                                        if _sl_nv:
+                                            _sl_nv_str = ", ".join(
+                                                sorted(f"S{_sn}/{_ln}" for _sn, _ln in _sl_nv)
+                                            )
+                                            _sl_aviso = (
+                                                f"Mejora el déficit pero crea conflicto en destino "
+                                                f"({_sl_nv_str}). Revisar en simulación y resolver "
+                                                f"en segunda ronda."
+                                            )
+                                            _sl_res_v = "Reduce"
+                                        else:
+                                            _sl_aviso = ""
+                                            _sl_res_v = "Libera" if not _sl_ec else "Reduce"
                                         _da_l2_cands.append({
                                             "_mej": _sl_mej, "_dd": _sl_def_dest,
                                             "_cap": _sl_cap_h, "_act": _sl_in_act,
                                             "lid": str(_sl_id), "cap_h": _sl_cap_h,
                                             "mej": _sl_mej,
                                             "def_desp": float(_sl_after["deficit_total_h"]),
-                                            "res": "Libera" if not _sl_ec else "Reduce",
+                                            "res": _sl_res_v,
+                                            "aviso": _sl_aviso,
                                             "acortado":            _sl_mc04.get("acortado", False),
                                             "semana_fin_nueva":    _sl_mc04.get("semana_fin_nueva"),
                                             "requiere_transicion": _sl_mc04.get("requiere_transicion", False),
@@ -11290,7 +11295,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                             "Mejora h":               _slc["mej"],
                                             "Déficit actual h":       _da_def_antes,
                                             "Déficit simulado h":     _slc["def_desp"],
-                                            "Aviso":                  "",
+                                            "Aviso":                  _slc.get("aviso", ""),
                                             "Origen":                 "Sugerida por motor",
                                             "acortado":               _slc.get("acortado", False),
                                             "semana_fin_nueva":       _slc.get("semana_fin_nueva"),
@@ -11898,7 +11903,7 @@ if st.session_state.active_tab == "📋 Programación real":
                                 _DA_NO_APLY = {
                                     "Incompatible", "Sin capacidad", "Ambigua",
                                     "No encontrada", "Misma línea", "Sin alternativas",
-                                    "No soportado", "No encontrado", "Compatible no libre",
+                                    "No soportado", "No encontrado",
                                 }
                                 _da_main_rows: list = []
                                 for _r in _da_cands:
