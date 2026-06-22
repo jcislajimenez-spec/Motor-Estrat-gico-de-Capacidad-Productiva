@@ -15067,15 +15067,12 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 _comb_ok = False
                                                 break
                                             if _da_res04.get("parcial_por_bloqueo", False):
-                                                st.error(
-                                                    f"{_da_gproj}: bloqueo parcial en "
-                                                    f"S{_da_res04['semana_bloqueo']} — "
-                                                    f"{_da_res04['no_absorbido_h']} h sin colocar. "
-                                                    "No se puede aplicar directamente. "
-                                                    "Revisa la simulación y gestiona en segunda ronda."
+                                                st.warning(
+                                                    f"{_da_gproj}: movimiento aplicado con conflicto "
+                                                    f"pendiente en S{_da_res04['semana_bloqueo']} "
+                                                    f"({_da_res04['no_absorbido_h']} h en destino). "
+                                                    "Resolver en segunda ronda."
                                                 )
-                                                _comb_ok = False
-                                                break
                                             _comb_load_acc = _da_res04["load_df"]
                                             try:
                                                 if _da_m_dh_f > 0:
