@@ -9129,6 +9129,10 @@ def _simulate_prog_move_completo_v04(
         "warning":             "",
         "h_antes":             0.0,
         "h_despues":           0.0,
+        "parcial_por_bloqueo": False,
+        "semana_bloqueo":      None,
+        "no_absorbido_h":      0.0,
+        "h_colocadas":         0.0,
     }
     if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
         _empty_ret["warning"] = "load_df vacío."
@@ -9203,37 +9207,37 @@ def _simulate_prog_move_completo_v04(
     # Semana de transición: primera semana del proyecto en destino tiene carga preexistente
     _req_trans04  = _carga_preex04.get(_sem_ini04, 0.0) > 0.001
     _sem_trans04  = _sem_ini04 if _req_trans04 else None
-    # Bloqueo físico: dos equipos no pueden convivir en la misma línea en semanas intermedias.
-    # La semana inicial puede gestionarse con checkbox de transición; las demás bloquean el movimiento.
-    # Pendiente v0.4.1: regla propia para semana final si tiene carga parcial de cierre.
-    _sems_bloq04 = sorted([
-        _s for _s in _sems_orig
-        if _s != _sem_ini04 and _carga_preex04.get(_s, 0.0) > 0.001
-    ])
-    if _sems_bloq04:
+    # Primer bloqueante: primera semana posterior a la inicial con carga preexistente en destino.
+    # La semana inicial se gestiona con checkbox de transición (MV-08); las posteriores bloquean.
+    _sem_bloq_04 = None
+    for _s in _sems_orig:
+        if _s != _sem_ini04 and _carga_preex04.get(_s, 0.0) > 0.001:
+            _sem_bloq_04 = _s
+            break
+    # Semanas disponibles para colocación: antes del bloqueante (o todas si no hay bloqueante)
+    _sems_avail04 = [_s for _s in _sems_orig if _sem_bloq_04 is None or _s < _sem_bloq_04]
+    if not _sems_avail04:
         _empty_ret["warning"] = (
-            f"Destino bloqueado: {_dest_s} ya tiene carga en semanas intermedias "
-            f"{_sems_bloq04}. No se puede mover el proyecto completo."
+            f"Destino bloqueado desde la primera semana útil: "
+            f"no hay semanas disponibles antes de S{_sem_bloq_04} en {_dest_s}."
         )
         return _empty_ret
-    # Puede acortar? Solo si el proyecto cabe COMPLETO en MENOS semanas con cap. disp. real (MV-06)
+    # Test si el proyecto cabe COMPLETO en _sems_avail04 con cap. disp. real (MV-06)
     _pend_test04 = _h_antes04
     _sems_usadas = 0
-    for _s04 in _sems_orig:
+    for _s04 in _sems_avail04:
         if _pend_test04 <= 0.001:
             break
         _pend_test04 = round(_pend_test04 - _cap_disp04[_s04], 4)
         _sems_usadas += 1
-    _puede_acortar04 = (_pend_test04 <= 0.001 and _sems_usadas < _n_sems_orig)
+    _fits_complete04 = _pend_test04 <= 0.001
     _sem_fin_nueva04 = _sem_fin04
-    if _puede_acortar04:
-        # Acortamiento: laminado semana a semana con cap. disponible real
+    if _fits_complete04 and (_sem_bloq_04 is not None or _sems_usadas < _n_sems_orig):
+        # Acortamiento (forzado por bloqueante o por cap. disp. real): laminado semana a semana
         _filas_n04: list = []
         _pend04 = _h_antes04
-        for _s04 in _sems_orig:
+        for _s04 in _sems_avail04:
             if _pend04 <= 0.001:
-                break
-            if _s04 > _sem_fin04:
                 break
             _h_s04 = round(min(_pend04, _cap_disp04[_s04]), 4)
             if _h_s04 > 0:
@@ -9244,14 +9248,48 @@ def _simulate_prog_move_completo_v04(
                 _filas_n04.append(_nr04)
                 _sem_fin_nueva04 = _s04
             _pend04 = round(_pend04 - _h_s04, 4)
-        _sim04    = pd.concat([_sim04, pd.DataFrame(_filas_n04)], ignore_index=True)
-        _acort04  = True
+        _sim04            = pd.concat([_sim04, pd.DataFrame(_filas_n04)], ignore_index=True)
+        _acort04          = True
+        _parcial_por_bloqueo = False
+        _no_absorbido_h   = 0.0
+    elif _fits_complete04 or _sem_bloq_04 is None:
+        # Opción A: no hay bloqueante (o cabe sin acortamiento); mismo patrón semanal (MV-03, MV-05)
+        _fd04             = _filas_orig.copy()
+        _fd04["Línea"]    = _dest_s
+        _sim04            = pd.concat([_sim04, _fd04], ignore_index=True)
+        _acort04          = False
+        _parcial_por_bloqueo = False
+        _no_absorbido_h   = 0.0
     else:
-        # Opción A: mismo patrón semanal en destino; déficit orgánico si hay (MV-03, MV-05)
-        _fd04         = _filas_orig.copy()
-        _fd04["Línea"] = _dest_s
-        _sim04        = pd.concat([_sim04, _fd04], ignore_index=True)
-        _acort04      = False
+        # Bloqueo parcial: el proyecto no cabe completo antes del bloqueante.
+        # Coloca lo que cabe en semanas libres; el pendiente se añade como carga viva
+        # en semana_bloqueo para que no desaparezcan horas del load_df (MV-11).
+        _filas_n04: list = []
+        _pend04 = _h_antes04
+        for _s04 in _sems_avail04:
+            if _pend04 <= 0.001:
+                break
+            _h_s04 = round(min(_pend04, _cap_disp04[_s04]), 4)
+            if _h_s04 > 0:
+                _nr04 = dict(_fila_tmpl04)
+                _nr04["Línea"]                 = _dest_s
+                _nr04["Semana"]                = _s04
+                _nr04["Horas proyecto semana"] = _h_s04
+                _filas_n04.append(_nr04)
+                _sem_fin_nueva04 = _s04
+            _pend04 = round(_pend04 - _h_s04, 4)
+        _no_absorbido_h = round(_pend04, 4)
+        # Representar horas no absorbidas como carga viva en semana_bloqueo (conflicto visible).
+        # No se usa capacidad residual del bloqueante: la fila representa el pendiente, no solución.
+        if _no_absorbido_h > 0.001:
+            _nr_pend = dict(_fila_tmpl04)
+            _nr_pend["Línea"]                 = _dest_s
+            _nr_pend["Semana"]                = _sem_bloq_04
+            _nr_pend["Horas proyecto semana"] = _no_absorbido_h
+            _filas_n04.append(_nr_pend)
+        _sim04            = pd.concat([_sim04, pd.DataFrame(_filas_n04)], ignore_index=True)
+        _acort04          = False
+        _parcial_por_bloqueo = True
     # Verificar conservación de horas (MV-11): horas retiradas de origen == horas nuevas en destino
     # Se excluye la carga previa del proyecto en destino para no falsear la comparación
     _mask_dest_proy = (
@@ -9276,9 +9314,16 @@ def _simulate_prog_move_completo_v04(
         "requiere_transicion": _req_trans04,
         "semana_transicion":   _sem_trans04,
         "linea_destino":       _dest_s,
-        "warning":             "",
+        "warning":             (
+            f"Bloqueo parcial en S{_sem_bloq_04}: {_no_absorbido_h} h en conflicto en destino. Revisar."
+            if _parcial_por_bloqueo else ""
+        ),
         "h_antes":             _h_antes04,
         "h_despues":           _h_despues04,
+        "parcial_por_bloqueo": _parcial_por_bloqueo,
+        "semana_bloqueo":      _sem_bloq_04,
+        "no_absorbido_h":      _no_absorbido_h,
+        "h_colocadas":         round(_h_antes04 - _no_absorbido_h, 4),
     }
 
 
@@ -11115,6 +11160,13 @@ if st.session_state.active_tab == "📋 Programación real":
 
                                     # Build aviso
                                     _da_avisos: list = []
+                                    if _da_mc04.get("parcial_por_bloqueo", False):
+                                        _da_resultado = "Reduce"
+                                        _da_avisos.append(
+                                            f"Bloqueo parcial en S{_da_mc04['semana_bloqueo']}: "
+                                            f"{_da_mc04['no_absorbido_h']} h en conflicto en destino. "
+                                            "Revisar en segunda ronda."
+                                        )
                                     if _da_nuevos:
                                         _n_dest  = sorted([f"S{s}/{l}" for s, l in _da_nuevos if str(l) == _da_ldest])
                                         _n_otros = sorted([f"S{s}/{l}" for s, l in _da_nuevos if str(l) != _da_ldest])
@@ -11264,6 +11316,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                         else:
                                             _sl_aviso = ""
                                             _sl_res_v = "Libera" if not _sl_ec else "Reduce"
+                                        if _sl_mc04.get("parcial_por_bloqueo", False):
+                                            _sl_res_v = "Reduce"
+                                            _sl_bloq_txt = (
+                                                f"Bloqueo parcial en S{_sl_mc04['semana_bloqueo']}: "
+                                                f"{_sl_mc04['no_absorbido_h']} h en conflicto en destino. "
+                                                "Revisar en segunda ronda."
+                                            )
+                                            _sl_aviso = (
+                                                f"{_sl_aviso} {_sl_bloq_txt}".strip()
+                                                if _sl_aviso else _sl_bloq_txt
+                                            )
                                         _da_l2_cands.append({
                                             "_mej": _sl_mej, "_dd": _sl_def_dest,
                                             "_cap": _sl_cap_h, "_act": _sl_in_act,
@@ -15000,6 +15063,16 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 )
                                                 _comb_avisos.append(
                                                     f"{_da_gproj}: {_da_res04['warning']}"
+                                                )
+                                                _comb_ok = False
+                                                break
+                                            if _da_res04.get("parcial_por_bloqueo", False):
+                                                st.error(
+                                                    f"{_da_gproj}: bloqueo parcial en "
+                                                    f"S{_da_res04['semana_bloqueo']} — "
+                                                    f"{_da_res04['no_absorbido_h']} h sin colocar. "
+                                                    "No se puede aplicar directamente. "
+                                                    "Revisa la simulación y gestiona en segunda ronda."
                                                 )
                                                 _comb_ok = False
                                                 break
