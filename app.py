@@ -14883,6 +14883,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                 "(mismo Proyecto + Línea actual + Línea destino). "
                                 "Desmarca los duplicados antes de simular."
                             )
+                        elif _ml_has_sel and "Proyecto" in _ml_sel_full.columns and _ml_sel_full["Proyecto"].duplicated().any():
+                            _ml_proj_dup = sorted(
+                                _ml_sel_full["Proyecto"][
+                                    _ml_sel_full["Proyecto"].duplicated(keep=False)
+                                ].astype(str).unique().tolist()
+                            )
+                            st.warning(
+                                t("prog_alt_sim_multi_proj_warn")
+                                + f" Proyectos con más de una alternativa marcada: "
+                                f"{', '.join(_ml_proj_dup)}."
+                            )
                         else:
                             _comb_ml_proyectos = (
                                 set(_ml_sel_full["Proyecto"].astype(str).tolist())
