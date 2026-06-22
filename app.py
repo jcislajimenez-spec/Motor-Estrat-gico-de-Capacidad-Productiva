@@ -11256,9 +11256,9 @@ if st.session_state.active_tab == "📋 Programación real":
                                                 sorted(f"S{_sn}/{_ln}" for _sn, _ln in _sl_nv)
                                             )
                                             _sl_aviso = (
-                                                f"Mejora el déficit pero crea conflicto en destino "
-                                                f"({_sl_nv_str}). Revisar en simulación y resolver "
-                                                f"en segunda ronda."
+                                                f"Nuevo conflicto en destino ({_sl_nv_str}): "
+                                                f"mejora el déficit, pero deja conflicto pendiente. "
+                                                f"Revisar en simulación y resolver en segunda ronda."
                                             )
                                             _sl_res_v = "Reduce"
                                         else:
