@@ -9097,6 +9097,290 @@ def _simulate_prog_move_line(
     return pd.concat([_sim, _filas_alt], ignore_index=True)
 
 
+def _simulate_prog_move_full(
+    load_df,
+    proyecto: str,
+    linea_origen: str,
+    linea_destino: str,
+    cap_destino_h: float,
+    tipo_proyecto: str = "",
+) -> dict:
+    """
+    Mueve el proyecto completo de linea_origen a linea_destino con regla de exclusividad.
+    M1=carga total, M2=colocar con exclusividad (C3), M3=reducir origen por lo colocado.
+    """
+    _empty = {
+        "load_df":                    load_df.copy() if load_df is not None else pd.DataFrame(),
+        "moved_ok":                   False,
+        "warning":                    "",
+        "carga_total_h":              0.0,
+        "colocado_h":                 0.0,
+        "no_absorbido_h":             0.0,
+        "semana_inicio":              None,
+        "semana_fin_actual":          None,
+        "semana_fin_nueva":           None,
+        "semana_bloqueo":             None,
+        "bloqueo_causa":              "",
+        "semana_transicion":          None,
+        "colocado_por_semana":        {},
+        "reduccion_origen_por_semana": {},
+        "no_absorbido_por_semana":    {},
+    }
+    if load_df is None or (hasattr(load_df, "empty") and load_df.empty):
+        _empty["warning"] = "load_df vacío."
+        return _empty
+
+    _sim    = load_df.copy()
+    _proj_s = str(proyecto).strip()
+    _orig_s = str(linea_origen).strip()
+    _dest_s = str(linea_destino).strip()
+    _cap_d  = float(cap_destino_h) if cap_destino_h else 0.0
+
+    if _cap_d <= 0:
+        _empty["warning"] = (
+            f"Capacidad destino '{linea_destino}' es 0 o no disponible."
+        )
+        return _empty
+
+    # ── M1: carga total en origen ─────────────────────────────────────────────
+    _mask_orig = (
+        (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+        (_sim["Línea"].astype(str).str.strip()    == _orig_s)
+    )
+    if not _mask_orig.any():
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}' no tiene filas en línea '{linea_origen}'."
+        )
+        return _empty
+
+    _tot_antes_all = round(float(
+        _sim.loc[
+            _sim["Proyecto"].astype(str).str.strip() == _proj_s,
+            "Horas proyecto semana",
+        ].sum()
+    ), 4)
+
+    try:
+        _semanas_orig = sorted(
+            _sim.loc[_mask_orig, "Semana"].astype(int).unique().tolist()
+        )
+    except (ValueError, TypeError):
+        _empty["warning"] = "No se puede convertir Semana a entero."
+        return _empty
+
+    _carga_total_h  = round(float(_sim.loc[_mask_orig, "Horas proyecto semana"].sum()), 4)
+    if _carga_total_h <= 0.001:
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}' en '{linea_origen}': carga total es 0."
+        )
+        return _empty
+
+    _semana_inicio     = min(_semanas_orig)
+    _semana_fin_actual = max(_semanas_orig)
+
+    _fila_tmpl = _sim.loc[_mask_orig].iloc[0].to_dict()
+
+    _modelo_s   = str(_fila_tmpl.get("Modelo / familia", "") or "").strip()
+    _modelo_col = "Modelo / familia"
+    if not _modelo_s:
+        _modelo_s   = str(_fila_tmpl.get("Equipo / modelo", "") or "").strip()
+        _modelo_col = "Equipo / modelo"
+    if not _modelo_s:
+        _modelo_col = ""
+
+    # ── M2: colocar en destino con exclusividad (C3) ──────────────────────────
+    _pendiente        = _carga_total_h
+    _sem_act          = _semana_inicio
+    _es_primera_sem   = True
+    _bloqueado        = False
+    _bloqueo_causa    = ""
+    _sem_bloqueo: int | None = None
+    _sem_transicion: int | None = None
+    _filas_nuevas: list = []
+    _sems_dest:    list = []
+    _colocado_por_semana: dict = {}
+
+    while _pendiente > 0.001 and not _bloqueado:
+        _base_mask_excl = (
+            (_sim["Línea"].astype(str).str.strip() == _dest_s) &
+            (_sim["Semana"].astype(int)            == _sem_act)
+        )
+        if _modelo_s and _modelo_col and _modelo_col in _sim.columns:
+            _mask_same = (
+                _base_mask_excl &
+                (_sim["Proyecto"].astype(str).str.strip()  == _proj_s) &
+                (_sim[_modelo_col].astype(str).str.strip() == _modelo_s)
+            )
+            _mask_other = _base_mask_excl & ~(
+                (_sim["Proyecto"].astype(str).str.strip()  == _proj_s) &
+                (_sim[_modelo_col].astype(str).str.strip() == _modelo_s)
+            )
+        else:
+            _mask_same = (
+                _base_mask_excl &
+                (_sim["Proyecto"].astype(str).str.strip() == _proj_s)
+            )
+            _mask_other = (
+                _base_mask_excl &
+                (_sim["Proyecto"].astype(str).str.strip() != _proj_s)
+            )
+        _h_same  = float(_sim.loc[_mask_same,  "Horas proyecto semana"].sum())
+        _h_other = float(_sim.loc[_mask_other, "Horas proyecto semana"].sum())
+
+        if _h_other > 0.001:
+            if _es_primera_sem:
+                _cap_util       = max(0.0, _cap_d - _h_other - _h_same)
+                _sem_transicion = _sem_act
+            else:
+                # v0.3 C3: usar hueco libre de la semana bloqueada y parar
+                _cap_util      = max(0.0, _cap_d - _h_other - _h_same)
+                _bloqueo_causa = "línea ocupada por otro proyecto"
+                _sem_bloqueo   = _sem_act
+                _bloqueado     = True
+                if _cap_util <= 0.001:
+                    break
+        elif _h_same > 0.001:
+            _cap_util = max(0.0, _cap_d - _h_same)
+        else:
+            _cap_util = _cap_d
+
+        if _cap_util <= 0.001:
+            _bloqueado     = True
+            _bloqueo_causa = "saturación"
+            _sem_bloqueo   = _sem_act
+            break
+
+        _h_sem = round(min(_pendiente, _cap_util), 4)
+        _nueva = dict(_fila_tmpl)
+        _nueva["Línea"]                 = _dest_s
+        _nueva["Semana"]                = _sem_act
+        _nueva["Horas proyecto semana"] = _h_sem
+        _filas_nuevas.append(_nueva)
+        _sems_dest.append(_sem_act)
+        _colocado_por_semana[_sem_act] = round(
+            _colocado_por_semana.get(_sem_act, 0.0) + _h_sem, 4
+        )
+        _pendiente      = round(_pendiente - _h_sem, 4)
+        _sem_act       += 1
+        _es_primera_sem = False
+
+    _colocado_h      = round(_carga_total_h - _pendiente, 4)
+    _no_absorbido_h  = round(_pendiente, 4)
+    _semana_fin_nueva = max(_sems_dest) if _sems_dest else None
+
+    if _filas_nuevas and _colocado_h > 0.001:
+        _sum_dest  = round(sum(r["Horas proyecto semana"] for r in _filas_nuevas), 4)
+        _diff_dest = round(_colocado_h - _sum_dest, 4)
+        if abs(_diff_dest) > 0.001:
+            _filas_nuevas[-1]["Horas proyecto semana"] = round(
+                float(_filas_nuevas[-1]["Horas proyecto semana"]) + _diff_dest, 4
+            )
+
+    if _colocado_h < 0.001:
+        _empty["warning"] = (
+            f"Proyecto '{proyecto}': destino bloqueado desde S{_semana_inicio} "
+            f"— {_bloqueo_causa or 'sin capacidad'}. Ninguna hora colocada."
+        )
+        return _empty
+
+    # ── M3: reducir origen por exactamente lo colocado ────────────────────────
+    _reduccion_origen_por_semana: dict = {}
+    if _colocado_h >= _carga_total_h - 0.001:
+        # Movimiento completo: eliminar filas de origen
+        for _s in _semanas_orig:
+            _mask_s_o = (
+                (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+                (_sim["Línea"].astype(str).str.strip()    == _orig_s) &
+                (_sim["Semana"].astype(int)               == _s)
+            )
+            _reduccion_origen_por_semana[_s] = round(float(
+                _sim.loc[_mask_s_o, "Horas proyecto semana"].sum()
+            ), 4)
+        _sim = _sim.loc[~_mask_orig].copy()
+    else:
+        # Movimiento parcial: reducir origen en orden temporal (semana a semana)
+        _reduccion_restante_m3 = _colocado_h
+        for _s in _semanas_orig:
+            if _reduccion_restante_m3 <= 0.001:
+                break
+            _mask_s_o = (
+                (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+                (_sim["Línea"].astype(str).str.strip()    == _orig_s) &
+                (_sim["Semana"].astype(int)               == _s)
+            )
+            _h_s = float(_sim.loc[_mask_s_o, "Horas proyecto semana"].sum())
+            if _h_s <= 0.001:
+                continue
+            _reducir_s = round(min(_h_s, _reduccion_restante_m3), 4)
+            _reduccion_origen_por_semana[_s] = _reducir_s
+            if _reducir_s >= _h_s - 0.001:
+                # Semana cubierta completamente: poner horas a 0
+                _sim.loc[_mask_s_o, "Horas proyecto semana"] = 0.0
+            else:
+                # Reducción parcial: escalar solo las filas de esta semana
+                _fk_s = (_h_s - _reducir_s) / _h_s
+                _sim.loc[_mask_s_o, "Horas proyecto semana"] = (
+                    _sim.loc[_mask_s_o, "Horas proyecto semana"] * _fk_s
+                ).round(4)
+            _reduccion_restante_m3 = round(_reduccion_restante_m3 - _reducir_s, 4)
+
+    # Eliminar filas del proyecto/línea origen que quedaron a 0 tras reducción parcial
+    _mask_zero_orig = (
+        (_sim["Proyecto"].astype(str).str.strip() == _proj_s) &
+        (_sim["Línea"].astype(str).str.strip()    == _orig_s) &
+        (_sim["Horas proyecto semana"].astype(float) <= 0.001)
+    )
+    if _mask_zero_orig.any():
+        _sim = _sim.loc[~_mask_zero_orig].copy()
+
+    if _filas_nuevas:
+        _sim = pd.concat([_sim, pd.DataFrame(_filas_nuevas)], ignore_index=True)
+
+    # Verificación de conservación de horas del proyecto
+    _tot_despues_all = round(float(
+        _sim.loc[
+            _sim["Proyecto"].astype(str).str.strip() == _proj_s,
+            "Horas proyecto semana",
+        ].sum()
+    ), 4)
+    if abs(_tot_antes_all - _tot_despues_all) > 0.1:
+        _empty["warning"] = (
+            f"Conservación fallida: antes={_tot_antes_all}, "
+            f"después={_tot_despues_all}."
+        )
+        return _empty
+
+    _warn_out = ""
+    if _no_absorbido_h > 0.001:
+        _warn_out = (
+            f"{round(_no_absorbido_h, 1)} h no colocadas"
+            + (f" — {_bloqueo_causa}" if _bloqueo_causa else "")
+            + (f" (S{_sem_bloqueo})" if _sem_bloqueo else "")
+        )
+
+    return {
+        "load_df":                    _sim,
+        "moved_ok":                   True,
+        "warning":                    _warn_out,
+        "carga_total_h":              round(_carga_total_h, 1),
+        "colocado_h":                 round(_colocado_h, 1),
+        "no_absorbido_h":             round(_no_absorbido_h, 1),
+        "semana_inicio":              _semana_inicio,
+        "semana_fin_actual":          _semana_fin_actual,
+        "semana_fin_nueva":           _semana_fin_nueva,
+        "semana_bloqueo":             _sem_bloqueo,
+        "bloqueo_causa":              _bloqueo_causa,
+        "semana_transicion":          _sem_transicion,
+        "colocado_por_semana":        _colocado_por_semana,
+        "reduccion_origen_por_semana": _reduccion_origen_por_semana,
+        "no_absorbido_por_semana": (
+            {_sem_bloqueo: round(_no_absorbido_h, 1)}
+            if _sem_bloqueo is not None and _no_absorbido_h > 0.001
+            else {}
+        ),
+    }
+
+
 def _simulate_prog_split_line(
     load_df,
     proyecto: str,
@@ -14422,6 +14706,180 @@ if st.session_state.active_tab == "📋 Programación real":
                                         else:
                                             st.caption("Sin movimientos registrados.")
 
+                    # ── Preview Fase 2: mover proyecto completo (un solo destino) ────
+                    _ml_pv_prj = _ml_pv_lac = _ml_pv_ldst = None
+                    _ml_pv_data = None
+                    if (
+                        not _da_df_c.empty
+                        and "Aplicar" in _da_df_edited.columns
+                        and "Proyecto" in _da_df_c.columns
+                        and "Línea actual" in _da_df_c.columns
+                        and "Línea candidata" in _da_df_c.columns
+                    ):
+                        try:
+                            _ml_pv_ap_col = (
+                                _da_df_edited["Aplicado en simulación"]
+                                if "Aplicado en simulación" in _da_df_edited.columns
+                                else pd.Series(False, index=_da_df_edited.index)
+                            )
+                            _ml_pv_idx = _da_df_edited[
+                                (_da_df_edited["Aplicar"] == True)
+                                & (_ml_pv_ap_col != True)
+                            ].index
+                            _ml_pv_sel = (
+                                _da_df_c.loc[_ml_pv_idx]
+                                if not _da_df_c.empty and len(_ml_pv_idx) > 0
+                                else pd.DataFrame()
+                            )
+                            if not _ml_pv_sel.empty:
+                                _ml_pv_grupos: dict = {}
+                                for _, _ml_pv_sr in _ml_pv_sel.iterrows():
+                                    _ml_pv_gk = (
+                                        str(_ml_pv_sr["Proyecto"]),
+                                        str(_ml_pv_sr["Línea actual"]),
+                                    )
+                                    _ml_pv_grupos.setdefault(_ml_pv_gk, []).append(_ml_pv_sr)
+                                if len(_ml_pv_grupos) == 1:
+                                    (_ml_pv_prj, _ml_pv_lac), _ml_pv_glist = next(
+                                        iter(_ml_pv_grupos.items())
+                                    )
+                                    if len(_ml_pv_glist) == 1:
+                                        _ml_pv_ldst = str(_ml_pv_glist[0]["Línea candidata"])
+                                        _ml_pv_cap  = float(
+                                            _ml_pv_glist[0].get("capacidad_destino_h") or 0.0
+                                        )
+                                        _ml_pv_alt_res  = st.session_state.get(
+                                            f"_prog_alt_result_{plant_id}"
+                                        )
+                                        _ml_pv_src_tag  = (
+                                            _ml_pv_alt_res.get("source", "real")
+                                            if _ml_pv_alt_res else "real"
+                                        )
+                                        _ml_pv_sim_prev = st.session_state.get(
+                                            f"_prog_alt_sim_{plant_id}"
+                                        )
+                                        if _ml_pv_src_tag == "sim" and _ml_pv_sim_prev:
+                                            _ml_pv_load_base = _ml_pv_sim_prev["load_df_sim"]
+                                        elif _ml_pv_src_tag != "sim":
+                                            _ml_pv_load_base = (
+                                                _prog_result.get("load_df")
+                                                if _prog_result else None
+                                            )
+                                        else:
+                                            _ml_pv_load_base = None
+                                        if _ml_pv_load_base is not None and _ml_pv_cap > 0:
+                                            try:
+                                                _ml_pv_data = _simulate_prog_move_full(
+                                                    _ml_pv_load_base,
+                                                    _ml_pv_prj,
+                                                    _ml_pv_lac,
+                                                    _ml_pv_ldst,
+                                                    _ml_pv_cap,
+                                                )
+                                            except Exception:
+                                                _ml_pv_data = None
+                        except Exception:
+                            _ml_pv_data = None
+
+                    _ml_pv_ss_key = f"_prog_ml_preview_{plant_id}"
+                    if _ml_pv_prj is not None and _ml_pv_data is None:
+                        # Selección aplicable pero preview falló: invalidar cualquier preview anterior
+                        st.session_state.pop(_ml_pv_ss_key, None)
+                    elif _ml_pv_data is not None and _ml_pv_prj is not None:
+                        try:
+                            _ml_pv_m_of2 = (
+                                (_ml_pv_load_base["Proyecto"].astype(str).str.strip() == _ml_pv_prj) &
+                                (_ml_pv_load_base["Línea"].astype(str).str.strip()    == _ml_pv_lac)
+                            )
+                            _ml_pv_m_df2 = (
+                                (_ml_pv_load_base["Proyecto"].astype(str).str.strip() == _ml_pv_prj) &
+                                (_ml_pv_load_base["Línea"].astype(str).str.strip()    == _ml_pv_ldst)
+                            )
+                            _ml_pv_sems_o2 = _ml_pv_load_base.loc[_ml_pv_m_of2, "Semana"].astype(int)
+                            _ml_pv_firma = (
+                                len(_ml_pv_load_base),
+                                round(float(_ml_pv_load_base["Horas proyecto semana"].sum()), 1),
+                                round(float(_ml_pv_load_base.loc[_ml_pv_m_of2, "Horas proyecto semana"].sum()), 1),
+                                round(float(_ml_pv_load_base.loc[_ml_pv_m_df2, "Horas proyecto semana"].sum()), 1),
+                                int(_ml_pv_sems_o2.min()) if len(_ml_pv_sems_o2) > 0 else 0,
+                                int(_ml_pv_sems_o2.max()) if len(_ml_pv_sems_o2) > 0 else 0,
+                            )
+                        except Exception:
+                            _ml_pv_firma = None
+                        st.session_state[_ml_pv_ss_key] = {
+                            "proyecto":          _ml_pv_prj,
+                            "linea_origen":      _ml_pv_lac,
+                            "linea_destino":     _ml_pv_ldst,
+                            "cap_destino_h":     _ml_pv_cap,
+                            "semana_transicion": _ml_pv_data.get("semana_transicion"),
+                            "moved_ok":          _ml_pv_data.get("moved_ok", False),
+                            "source":            _ml_pv_src_tag,
+                            "base_firma":        _ml_pv_firma,
+                        }
+                    elif _ml_pv_prj is None:
+                        st.session_state.pop(_ml_pv_ss_key, None)
+
+                    if _ml_pv_data is not None and _ml_pv_data.get("moved_ok"):
+                        with st.container():
+                            _pv_carga   = _ml_pv_data["carga_total_h"]
+                            _pv_coloc   = _ml_pv_data["colocado_h"]
+                            _pv_no_abs  = _ml_pv_data["no_absorbido_h"]
+                            _pv_s_fin_a = _ml_pv_data.get("semana_fin_actual")
+                            _pv_s_fin_n = _ml_pv_data.get("semana_fin_nueva")
+                            _pv_s_blq   = _ml_pv_data.get("semana_bloqueo")
+                            _pv_causa   = _ml_pv_data.get("bloqueo_causa", "")
+                            _pv_s_trans = _ml_pv_data.get("semana_transicion")
+                            _pv_warn    = _ml_pv_data.get("warning", "")
+                            st.caption(
+                                f"**Vista previa** — {_ml_pv_prj} | "
+                                f"{_ml_pv_lac} → {_ml_pv_ldst}"
+                            )
+                            _pv_c1, _pv_c2, _pv_c3 = st.columns(3)
+                            with _pv_c1:
+                                st.metric("Carga total", f"{_pv_carga:.0f} h")
+                            with _pv_c2:
+                                st.metric("Colocado", f"{_pv_coloc:.0f} h")
+                            with _pv_c3:
+                                st.metric("No absorbido", f"{_pv_no_abs:.0f} h")
+                            if _pv_s_fin_a and _pv_s_fin_n:
+                                if _pv_s_fin_n > _pv_s_fin_a:
+                                    _pv_fin_lbl = (
+                                        f"S{_pv_s_fin_a} → S{_pv_s_fin_n} (retraso)"
+                                    )
+                                elif _pv_s_fin_n < _pv_s_fin_a:
+                                    _pv_fin_lbl = (
+                                        f"S{_pv_s_fin_a} → S{_pv_s_fin_n} (adelanto)"
+                                    )
+                                else:
+                                    _pv_fin_lbl = f"S{_pv_s_fin_n} (sin cambio)"
+                                st.caption(f"Fin estimado: {_pv_fin_lbl}")
+                            if _pv_s_blq:
+                                st.caption(
+                                    f"Bloqueo en S{_pv_s_blq}"
+                                    + (f" — {_pv_causa}" if _pv_causa else "")
+                                )
+                            if _pv_warn:
+                                st.warning(_pv_warn)
+                            if _pv_s_trans is not None:
+                                st.warning(
+                                    f"S{_pv_s_trans} es una **semana de transición**: "
+                                    f"hay carga de otro proyecto en esa semana. "
+                                    f"Confirma si quieres incluirla."
+                                )
+                                _pv_trans_key = (
+                                    f"_prog_ml_trans_{plant_id}_{_ml_pv_prj}"
+                                    f"_{_ml_pv_lac}_{_ml_pv_ldst}_S{_pv_s_trans}"
+                                )
+                                st.checkbox(
+                                    "Confirmo la semana de transición y acepto el movimiento parcial",
+                                    key=_pv_trans_key,
+                                )
+                    elif _ml_pv_data is not None and not _ml_pv_data.get("moved_ok"):
+                        st.warning(
+                            "Vista previa: "
+                            + _ml_pv_data.get("warning", "Error al calcular movimiento.")
+                        )
+
                     # ── Botón combinado: Mover línea + Ampliar semanas ───────────────
                     st.markdown(f"""<style>
 [class*="st-key-prog_alt_apply_area_{plant_id}"] button[data-testid="stBaseButton-primary"] {{
@@ -14598,6 +15056,23 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _comb_movs: list   = []
                                     _comb_avisos: list = []
                                     _comb_ok = True
+                                    # ── Bloqueo: ampliar + mover completo recalculado ──────
+                                    if _comb_ok and _ml_has_sel and _as_has_sel:
+                                        _da_chk_grps: dict = {}
+                                        for _, _da_cs in _ml_sel_full.iterrows():
+                                            _da_ck = (
+                                                str(_da_cs["Proyecto"]),
+                                                str(_da_cs["Línea actual"]),
+                                            )
+                                            _da_chk_grps.setdefault(_da_ck, []).append(_da_cs)
+                                        if any(len(v) == 1 for v in _da_chk_grps.values()):
+                                            st.warning(
+                                                "Para mover proyecto completo recalculado, aplica primero "
+                                                "la ampliación o primero el movimiento. "
+                                                "La combinación simultánea queda bloqueada "
+                                                "hasta que exista preview conjunta."
+                                            )
+                                            _comb_ok = False
                                     # ── Paso 1: Ampliar semanas ────────────────────────────
                                     if _as_has_sel:
                                         for _, _as_r in _as_sel.iterrows():
@@ -14664,97 +15139,276 @@ if st.session_state.active_tab == "📋 Programación real":
                                                     )
                                                 ]["Horas proyecto semana"].sum()
                                             ), 1)
-                                            _da_split = _simulate_prog_split_line(
-                                                _comb_load_acc,
-                                                _da_gproj,
-                                                _da_glac,
-                                                _da_gdests,
-                                            )
-                                            if not _da_split["moved_ok"]:
-                                                _comb_avisos.append(
-                                                    f"{_da_gproj}: {_da_split['warning']}"
+                                            if len(_da_gdests) == 1:
+                                                # ── Fase 2: mover completo con exclusividad ──
+                                                _da_cap_d_f = float(
+                                                    _da_glist[0].get("capacidad_destino_h") or 0.0
                                                 )
-                                                continue
-                                            _comb_load_acc = _da_split["load_df"]
-                                            _da_fracs = _da_split["fracciones"]
-                                            for _da_gi, _da_sr in enumerate(_da_glist):
-                                                _da_m_ldst = str(_da_sr["Línea candidata"])
-                                                _da_m_dh   = _da_sr.get("capacidad_destino_h")
-                                                _da_frac   = (
-                                                    _da_fracs[_da_gi]
-                                                    if _da_gi < len(_da_fracs)
-                                                    else 1.0 / len(_da_glist)
+                                                if _da_cap_d_f <= 0.0:
+                                                    _comb_avisos.append(
+                                                        f"{_da_gproj}: capacidad de destino no disponible."
+                                                    )
+                                                    _comb_ok = False
+                                                    continue
+                                                # ── Validar preview vigente ────────────────
+                                                _da_pv_ss = st.session_state.get(
+                                                    f"_prog_ml_preview_{plant_id}"
                                                 )
+                                                _da_source_actual = _comb_alt_src_tag
+                                                _da_pv_invalid = (
+                                                    _da_pv_ss is None
+                                                    or _da_pv_ss.get("proyecto") != _da_gproj
+                                                    or _da_pv_ss.get("linea_origen") != _da_glac
+                                                    or _da_pv_ss.get("linea_destino") != _da_gdests[0]
+                                                    or abs(float(_da_pv_ss.get("cap_destino_h", 0)) - _da_cap_d_f) > 0.01
+                                                    or not _da_pv_ss.get("moved_ok", False)
+                                                    or _da_pv_ss.get("source") != _da_source_actual
+                                                )
+                                                if not _da_pv_invalid:
+                                                    try:
+                                                        _da_m_of = (
+                                                            (_comb_load_acc["Proyecto"].astype(str).str.strip() == _da_gproj) &
+                                                            (_comb_load_acc["Línea"].astype(str).str.strip()    == _da_glac)
+                                                        )
+                                                        _da_m_df = (
+                                                            (_comb_load_acc["Proyecto"].astype(str).str.strip() == _da_gproj) &
+                                                            (_comb_load_acc["Línea"].astype(str).str.strip()    == _da_gdests[0])
+                                                        )
+                                                        _da_sems_of = _comb_load_acc.loc[_da_m_of, "Semana"].astype(int)
+                                                        _da_cur_firma = (
+                                                            len(_comb_load_acc),
+                                                            round(float(_comb_load_acc["Horas proyecto semana"].sum()), 1),
+                                                            round(float(_comb_load_acc.loc[_da_m_of, "Horas proyecto semana"].sum()), 1),
+                                                            round(float(_comb_load_acc.loc[_da_m_df, "Horas proyecto semana"].sum()), 1),
+                                                            int(_da_sems_of.min()) if len(_da_sems_of) > 0 else 0,
+                                                            int(_da_sems_of.max()) if len(_da_sems_of) > 0 else 0,
+                                                        )
+                                                        _da_pv_bf = _da_pv_ss.get("base_firma")
+                                                        if _da_pv_bf is not None and _da_cur_firma != _da_pv_bf:
+                                                            _da_pv_invalid = True
+                                                    except Exception:
+                                                        _da_pv_invalid = True
+                                                if _da_pv_invalid:
+                                                    st.error(
+                                                        f"{_da_gproj}: no se puede aplicar — "
+                                                        f"la vista previa no está calculada o no corresponde "
+                                                        f"a la selección actual. "
+                                                        f"Recalcula la selección antes de aplicar."
+                                                    )
+                                                    _comb_ok = False
+                                                    continue
+                                                # ── Gate: transición requiere confirmación ──
+                                                _da_trans_s = _da_pv_ss.get("semana_transicion")
+                                                _da_trans_key = (
+                                                    f"_prog_ml_trans_{plant_id}_{_da_gproj}"
+                                                    f"_{_da_glac}_{_da_gdests[0]}_S{_da_trans_s}"
+                                                )
+                                                if (
+                                                    _da_trans_s is not None
+                                                    and not st.session_state.get(_da_trans_key, False)
+                                                ):
+                                                    st.error(
+                                                        f"{_da_gproj}: hay una semana de transición "
+                                                        f"(S{_da_trans_s}). "
+                                                        f"Confirma el checkbox antes de aplicar."
+                                                    )
+                                                    _comb_ok = False
+                                                    continue
                                                 try:
-                                                    _da_m_dh_f = float(_da_m_dh)
-                                                    if not pd.isna(_da_m_dh_f):
+                                                    _da_full = _simulate_prog_move_full(
+                                                        _comb_load_acc,
+                                                        _da_gproj,
+                                                        _da_glac,
+                                                        _da_gdests[0],
+                                                        _da_cap_d_f,
+                                                    )
+                                                except Exception as _ex_full:
+                                                    _comb_avisos.append(
+                                                        f"{_da_gproj}: error en motor Fase 2 ({_ex_full})."
+                                                    )
+                                                    _comb_ok = False
+                                                    continue
+                                                if not _da_full["moved_ok"]:
+                                                    _comb_avisos.append(
+                                                        f"{_da_gproj}: {_da_full['warning']}"
+                                                    )
+                                                    _comb_ok = False
+                                                    continue
+                                                _comb_load_acc  = _da_full["load_df"]
+                                                _da_m_ldst_f    = _da_gdests[0]
+                                                _da_m_dh_f_val  = _da_glist[0].get("capacidad_destino_h")
+                                                try:
+                                                    _da_m_dh_fv = float(_da_m_dh_f_val)
+                                                    if not pd.isna(_da_m_dh_fv):
                                                         _comb_cap_acc.loc[
                                                             _comb_cap_acc["Línea"].astype(str)
-                                                            == _da_m_ldst,
+                                                            == _da_m_ldst_f,
                                                             "Capacidad h/sem",
-                                                        ] = _da_m_dh_f
+                                                        ] = _da_m_dh_fv
                                                 except (TypeError, ValueError):
                                                     pass
-                                                _da_estado_ml = str(
-                                                    _da_sr.get("Estado") or ""
+                                                _da_dest_mh = (
+                                                    (_comb_load_acc["Proyecto"].astype(str) == _da_gproj) &
+                                                    (_comb_load_acc["Línea"].astype(str)    == _da_m_ldst_f)
+                                                )
+                                                _da_dest_rh   = _comb_load_acc[_da_dest_mh]
+                                                _da_h_mov_f   = round(float(
+                                                    _da_dest_rh["Horas proyecto semana"].sum()
+                                                ), 1)
+                                                _da_sem_cnt_f = int(_da_dest_rh["Semana"].nunique())
+                                                _da_h_sp_f    = (
+                                                    round(_da_h_mov_f / _da_sem_cnt_f, 1)
+                                                    if _da_sem_cnt_f > 0 else 0.0
+                                                )
+                                                _da_est_f = str(
+                                                    _da_glist[0].get("Estado") or ""
                                                 ).strip()
-                                                _da_av_base = str(
-                                                    _da_sr.get("Aviso") or
-                                                    _da_sr.get("Motivo") or ""
+                                                _da_avb_f = str(
+                                                    _da_glist[0].get("Aviso") or
+                                                    _da_glist[0].get("Motivo") or ""
                                                 ).strip()
-                                                if _da_estado_ml == "Revisar":
-                                                    _da_av = "Movimiento pendiente de revisar."
-                                                    if _da_av_base and _da_av_base.lower() not in (
+                                                if _da_est_f == "Revisar":
+                                                    _da_av_f = "Movimiento pendiente de revisar."
+                                                    if _da_avb_f and _da_avb_f.lower() not in (
                                                         "nan", "none", "null", ""
                                                     ):
-                                                        _da_av = f"{_da_av} {_da_av_base}"
+                                                        _da_av_f = f"{_da_av_f} {_da_avb_f}"
                                                 else:
-                                                    _da_av = _da_av_base
-                                                _da_dest_mask_h = (
-                                                    (
-                                                        _comb_load_acc["Proyecto"].astype(str)
-                                                        == _da_gproj
-                                                    ) & (
-                                                        _comb_load_acc["Línea"].astype(str)
-                                                        == _da_m_ldst
+                                                    _da_av_f = _da_avb_f
+                                                if _da_full.get("no_absorbido_h", 0) > 0.001:
+                                                    _da_na_msg = (
+                                                        f"{round(_da_full['no_absorbido_h'], 1)} h no colocadas"
+                                                        + (
+                                                            f" — {_da_full['bloqueo_causa']}"
+                                                            if _da_full.get("bloqueo_causa") else ""
+                                                        )
                                                     )
-                                                )
-                                                _da_dest_rows_h = _comb_load_acc[_da_dest_mask_h]
-                                                _da_h_movidas = round(float(
-                                                    _da_dest_rows_h[
-                                                        "Horas proyecto semana"
-                                                    ].sum()
-                                                ), 1)
-                                                _da_sem_cnt = int(
-                                                    _da_dest_rows_h["Semana"].nunique()
-                                                )
-                                                _da_h_sem_p = (
-                                                    round(_da_h_movidas / _da_sem_cnt, 1)
-                                                    if _da_sem_cnt > 0 else 0.0
-                                                )
+                                                    _da_av_f = f"{_da_na_msg}. {_da_av_f}".strip(" .")
+                                                if _da_full.get("semana_transicion") is not None:
+                                                    _da_av_f = (
+                                                        f"Transición S{_da_full['semana_transicion']}. "
+                                                        + _da_av_f
+                                                    ).strip()
                                                 _comb_movs.append({
                                                     "proyecto":           _da_gproj,
                                                     "linea_actual":       _da_glac,
-                                                    "linea_destino":      _da_m_ldst,
-                                                    "fraccion":           round(_da_frac, 4),
-                                                    "fraccion_pct":       f"{round(_da_frac * 100, 1)} %",
-                                                    "horas_movidas":      _da_h_movidas,
-                                                    "sem_count":          _da_sem_cnt,
-                                                    "h_sem_prom":         _da_h_sem_p,
+                                                    "linea_destino":      _da_m_ldst_f,
+                                                    "fraccion":           1.0,
+                                                    "fraccion_pct":       "100 %",
+                                                    "horas_movidas":      _da_h_mov_f,
+                                                    "sem_count":          _da_sem_cnt_f,
+                                                    "h_sem_prom":         _da_h_sp_f,
                                                     "mejora_h_est":       float(
-                                                        _da_sr.get("Mejora h") or 0.0
+                                                        _da_glist[0].get("Mejora h") or 0.0
                                                     ),
                                                     "tipo_linea":         str(
-                                                        _da_sr.get("tipo_linea") or ""
+                                                        _da_glist[0].get("tipo_linea") or ""
                                                     ),
                                                     "tipo_accion":        "Mover línea",
-                                                    "aviso":              _da_av,
+                                                    "aviso":              _da_av_f,
                                                     "carga_total_origen": _da_orig_total_h,
                                                 })
-                                                if _da_av:
+                                                if _da_av_f:
                                                     _comb_avisos.append(
-                                                        f"{_da_gproj}: {_da_av}"
+                                                        f"{_da_gproj}: {_da_av_f}"
                                                     )
+                                            else:
+                                                # ── Múltiples destinos: split_line sin exclusividad Fase 2 ──
+                                                _comb_avisos.append(
+                                                    f"{_da_gproj}: reparto multi-línea — "
+                                                    f"exclusividad de Fase 2 no aplicada."
+                                                )
+                                                _da_split = _simulate_prog_split_line(
+                                                    _comb_load_acc,
+                                                    _da_gproj,
+                                                    _da_glac,
+                                                    _da_gdests,
+                                                )
+                                                if not _da_split["moved_ok"]:
+                                                    _comb_avisos.append(
+                                                        f"{_da_gproj}: {_da_split['warning']}"
+                                                    )
+                                                    continue
+                                                _comb_load_acc = _da_split["load_df"]
+                                                _da_fracs = _da_split["fracciones"]
+                                                for _da_gi, _da_sr in enumerate(_da_glist):
+                                                    _da_m_ldst = str(_da_sr["Línea candidata"])
+                                                    _da_m_dh   = _da_sr.get("capacidad_destino_h")
+                                                    _da_frac   = (
+                                                        _da_fracs[_da_gi]
+                                                        if _da_gi < len(_da_fracs)
+                                                        else 1.0 / len(_da_glist)
+                                                    )
+                                                    try:
+                                                        _da_m_dh_f = float(_da_m_dh)
+                                                        if not pd.isna(_da_m_dh_f):
+                                                            _comb_cap_acc.loc[
+                                                                _comb_cap_acc["Línea"].astype(str)
+                                                                == _da_m_ldst,
+                                                                "Capacidad h/sem",
+                                                            ] = _da_m_dh_f
+                                                    except (TypeError, ValueError):
+                                                        pass
+                                                    _da_estado_ml = str(
+                                                        _da_sr.get("Estado") or ""
+                                                    ).strip()
+                                                    _da_av_base = str(
+                                                        _da_sr.get("Aviso") or
+                                                        _da_sr.get("Motivo") or ""
+                                                    ).strip()
+                                                    if _da_estado_ml == "Revisar":
+                                                        _da_av = "Movimiento pendiente de revisar."
+                                                        if _da_av_base and _da_av_base.lower() not in (
+                                                            "nan", "none", "null", ""
+                                                        ):
+                                                            _da_av = f"{_da_av} {_da_av_base}"
+                                                    else:
+                                                        _da_av = _da_av_base
+                                                    _da_dest_mask_h = (
+                                                        (
+                                                            _comb_load_acc["Proyecto"].astype(str)
+                                                            == _da_gproj
+                                                        ) & (
+                                                            _comb_load_acc["Línea"].astype(str)
+                                                            == _da_m_ldst
+                                                        )
+                                                    )
+                                                    _da_dest_rows_h = _comb_load_acc[_da_dest_mask_h]
+                                                    _da_h_movidas = round(float(
+                                                        _da_dest_rows_h[
+                                                            "Horas proyecto semana"
+                                                        ].sum()
+                                                    ), 1)
+                                                    _da_sem_cnt = int(
+                                                        _da_dest_rows_h["Semana"].nunique()
+                                                    )
+                                                    _da_h_sem_p = (
+                                                        round(_da_h_movidas / _da_sem_cnt, 1)
+                                                        if _da_sem_cnt > 0 else 0.0
+                                                    )
+                                                    _comb_movs.append({
+                                                        "proyecto":           _da_gproj,
+                                                        "linea_actual":       _da_glac,
+                                                        "linea_destino":      _da_m_ldst,
+                                                        "fraccion":           round(_da_frac, 4),
+                                                        "fraccion_pct":       f"{round(_da_frac * 100, 1)} %",
+                                                        "horas_movidas":      _da_h_movidas,
+                                                        "sem_count":          _da_sem_cnt,
+                                                        "h_sem_prom":         _da_h_sem_p,
+                                                        "mejora_h_est":       float(
+                                                            _da_sr.get("Mejora h") or 0.0
+                                                        ),
+                                                        "tipo_linea":         str(
+                                                            _da_sr.get("tipo_linea") or ""
+                                                        ),
+                                                        "tipo_accion":        "Mover línea",
+                                                        "aviso":              _da_av,
+                                                        "carga_total_origen": _da_orig_total_h,
+                                                    })
+                                                    if _da_av:
+                                                        _comb_avisos.append(
+                                                            f"{_da_gproj}: {_da_av}"
+                                                        )
                                     if _comb_ok:
                                         _comb_final = _recompute_prog_deficit_global(
                                             _comb_load_acc, _comb_cap_acc
