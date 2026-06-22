@@ -9203,6 +9203,19 @@ def _simulate_prog_move_completo_v04(
     # Semana de transición: primera semana del proyecto en destino tiene carga preexistente
     _req_trans04  = _carga_preex04.get(_sem_ini04, 0.0) > 0.001
     _sem_trans04  = _sem_ini04 if _req_trans04 else None
+    # Bloqueo físico: dos equipos no pueden convivir en la misma línea en semanas intermedias.
+    # La semana inicial puede gestionarse con checkbox de transición; las demás bloquean el movimiento.
+    # Pendiente v0.4.1: regla propia para semana final si tiene carga parcial de cierre.
+    _sems_bloq04 = sorted([
+        _s for _s in _sems_orig
+        if _s != _sem_ini04 and _carga_preex04.get(_s, 0.0) > 0.001
+    ])
+    if _sems_bloq04:
+        _empty_ret["warning"] = (
+            f"Destino bloqueado: {_dest_s} ya tiene carga en semanas intermedias "
+            f"{_sems_bloq04}. No se puede mover el proyecto completo."
+        )
+        return _empty_ret
     # Puede acortar? Solo si el proyecto cabe COMPLETO en MENOS semanas con cap. disp. real (MV-06)
     _pend_test04 = _h_antes04
     _sems_usadas = 0
@@ -11031,6 +11044,20 @@ if st.session_state.active_tab == "📋 Programación real":
                                         _da_load_base, _da_proj, _da_linea_act, _da_ldest,
                                         _da_cap_nom_h_pv,
                                     )
+                                    if not _da_mc04["moved_ok"]:
+                                        _da_descartadas.append({
+                                            "Proyecto":               _da_proj,
+                                            "Línea alternativa":      _da_alt_raw_l,
+                                            "Línea actual":           _da_linea_act,
+                                            "Línea resuelta":         _da_ldest,
+                                            "Modelo proyecto":        _da_modelo_p,
+                                            "tipo_linea":             _da_tipo_linea,
+                                            "modelo_capacidad_usado": _da_mdl_cap_us,
+                                            "capacidad_origen":       _da_cap_orig,
+                                            "Motivo":                 _da_mc04["warning"],
+                                            "Tipo":                   "No aplicable",
+                                        })
+                                        continue
                                     _da_sim      = _da_mc04["load_df"]
                                     _da_after    = _recompute_prog_deficit_global(_da_sim, _da_cap_df_sim)
                                     _da_def_desp = _da_after["deficit_total_h"]
@@ -11186,6 +11213,17 @@ if st.session_state.active_tab == "📋 Programación real":
                                             _da_load_base, _da_proj, _da_linea_act,
                                             str(_sl_id), _sl_cap_h,
                                         )
+                                        if not _sl_mc04["moved_ok"]:
+                                            _da_descartadas.append({
+                                                "Proyecto":          _da_proj,
+                                                "Línea alternativa": f"(sugerida) {_sl_id}",
+                                                "Línea actual":      _da_linea_act,
+                                                "Línea resuelta":    str(_sl_id),
+                                                "Modelo proyecto":   _da_modelo_p,
+                                                "Motivo":            _sl_mc04["warning"],
+                                                "Tipo":              "No aplicable",
+                                            })
+                                            continue
                                         _sl_sim  = _sl_mc04["load_df"]
                                         _sl_after = _recompute_prog_deficit_global(
                                             _sl_sim, _da_cap_df_alts_ext
