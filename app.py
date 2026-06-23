@@ -10708,7 +10708,10 @@ if st.session_state.active_tab == "📋 Programación real":
                 with _da_act_col:
                     st.markdown("#### Acciones simulables")
                     if _da_alt_sim_existing is not None:
-                        st.info("⚠ Simulación activa — el plan real no ha cambiado.")
+                        st.info(
+                            "⚠ Simulación activa — el plan real no ha cambiado. "
+                            "Para descartar todos los cambios, usa el botón 'Reiniciar simulación'."
+                        )
                         _da_alt_src = st.radio(
                             "Fuente para nuevas alternativas",
                             options=["Simulación activa", "Plan real"],
@@ -13258,9 +13261,10 @@ if st.session_state.active_tab == "📋 Programación real":
                                     elif _tipo == "lote_divisible":
                                         st.info(
                                             "Lote divisible: reprogramar residual puede tener sentido si "
-                                            "el proyecto representa varias unidades separables. Elige "
-                                            "Paralelo si el exceso puede repartirse entre unidades/líneas, "
-                                            "o Secuencial si debe ejecutarse después."
+                                            "el proyecto representa varias unidades separables. "
+                                            "Paralelo: el exceso se reparte entre destinos en las mismas semanas "
+                                            "del conflicto. Secuencial: el exceso se reparte igual, pero se coloca "
+                                            "después del tramo principal del proyecto, en cascada temporal entre destinos."
                                         )
                                     elif _tipo == "fase_transferible":
                                         st.info(
@@ -13551,13 +13555,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                                                     f"{plant_id}_{_pr_san}",
                                                                     horizontal=True,
                                                                     help=(
-                                                                        "Paralelo: mueve el exceso "
-                                                                        "a otra línea en las mismas "
-                                                                        "semanas donde aparece el "
-                                                                        "déficit. Secuencial: "
-                                                                        "mantiene el comportamiento "
-                                                                        "actual y coloca el residual "
-                                                                        "en semanas posteriores."
+                                                                        "Paralelo: el exceso se reparte entre las líneas destino "
+                                                                        "y se coloca en las mismas semanas del conflicto. "
+                                                                        "Secuencial: el exceso se reparte igual, pero se coloca "
+                                                                        "después del tramo principal del proyecto, en cascada temporal "
+                                                                        "entre destinos. La diferencia es temporal, no de porcentaje."
                                                                     ),
                                                                 )
                                                             # ── Preview real de transición ────────
