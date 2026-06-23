@@ -10758,7 +10758,6 @@ if st.session_state.active_tab == "📋 Programación real":
                         elif not _pr_trigger:
                             _da_load_base     = _prog_result["load_df"]
                             _da_conflict_base = _prog_result["conflict_df"]
-                            st.session_state.pop(f"_prog_alt_sim_{plant_id}", None)
                         _da_parsed_now = st.session_state.get(f"_prog_parsed_{plant_id}")
 
                         if _da_parsed_now is None or _da_parsed_now.get("proyectos") is None:
@@ -14926,6 +14925,11 @@ if st.session_state.active_tab == "📋 Programación real":
                                     _comb_prev_movs     = []
                                     _comb_def_antes_ref = None
                                 elif _comb_alt_src_tag == "sim" and _comb_sim_prev is not None:
+                                    _comb_load_base     = _comb_sim_prev["load_df_sim"]
+                                    _comb_prev_movs     = list(_comb_sim_prev.get("movimientos", []))
+                                    _comb_def_antes_ref = float(_comb_sim_prev.get("deficit_antes", 0.0))
+                                elif _comb_sim_prev is not None:
+                                    # source=="real" pero existe simulación activa → acumular sobre ella
                                     _comb_load_base     = _comb_sim_prev["load_df_sim"]
                                     _comb_prev_movs     = list(_comb_sim_prev.get("movimientos", []))
                                     _comb_def_antes_ref = float(_comb_sim_prev.get("deficit_antes", 0.0))
