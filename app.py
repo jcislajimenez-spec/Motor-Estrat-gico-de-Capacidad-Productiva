@@ -9755,13 +9755,10 @@ def _simulate_prog_move_excess(
     _exc_tot = round(_exceso_acumulado, 1)
 
     # ── Fase S2: colocar exceso en destino con regla de exclusividad ─────────
-    # Equipo único: no puede estar en dos líneas a la vez → inicio tras el fin
-    # del tramo principal en origen (V05 CIERRE §4.1, Reglas v0.2 §4 F1).
-    # Resto de tipos: primera semana con exceso vivo (V05 CIERRE §6.2).
-    if tipo_proyecto == "equipo_unico":
-        _sem_cursor        = max(_semanas) + 1
-    else:
-        _sem_cursor        = min(_semanas_afectadas)
+    # Modo secuencial: cada destino recibe su fracción, pero se coloca
+    # en cascada temporal después del tramo principal en origen.
+    # La diferencia con paralelo es temporal, no de porcentaje.
+    _sem_cursor            = max(_semanas) + 1
     _filas_nuevas:         list = []
     _semanas_destino:      dict = {}
     _exceso_destino_h_map: dict = {}
